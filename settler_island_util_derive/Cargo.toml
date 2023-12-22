@@ -1,0 +1,15 @@
+[package]
+name = "settler_island_util_derive"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+settler_island_util = { path = "../settler_island_util" }

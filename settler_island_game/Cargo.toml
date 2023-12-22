@@ -1,0 +1,25 @@
+[package]
+name = "settler_island_game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures-util = { version = "0.3.29", default-features = false, features = [
+    "std",
+] }
+tokio-tungstenite = "0.20.1"
+tokio = { version = "1.0.0", features = ["full"] }
+log = "0.4"
+futures-channel = "0.3"
+env_logger = "0.10"
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1.74"
+uuid = { version = "1.6.1", features = ["v4"] }
+rand = "0.8.5"
+syn = "2.0"
+quote = "1.0"
+settler_island_util = { path = "../settler_island_util" }
+settler_island_util_derive = { path = "../settler_island_util_derive" }

@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "settler_island_game",
+    "settler_island_server",
+    "settler_island_util",
+    "settler_island_util_derive",
+]
