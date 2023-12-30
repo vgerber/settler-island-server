@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::game::board::hexagon::cube_coordinates::CubeCoordinates;
 
+use super::seaport_location::SeaportLocation;
+
 pub type SettlementLocationId = String;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -16,19 +18,21 @@ pub struct PlayerSettlement {
     settlement_type: SettlementType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SettlementLocation {
     id: SettlementLocationId,
     neighbor_tiles: Vec<CubeCoordinates>,
     settlement: Option<PlayerSettlement>,
+    seaport: Option<SeaportLocation>,
 }
 
 impl SettlementLocation {
-    pub fn from(neighbor_tiles: Vec<CubeCoordinates>) -> Self {
+    pub fn from(neighbor_tiles: Vec<CubeCoordinates>, seaport: Option<SeaportLocation>) -> Self {
         SettlementLocation {
             id: SettlementLocation::id_from_tiles(&neighbor_tiles),
             neighbor_tiles: neighbor_tiles,
             settlement: None,
+            seaport: seaport,
         }
     }
 

@@ -38,13 +38,13 @@ impl GameState for Trading {
             match action.id.as_str() {
                 COMPLETE_TRADE_ACTION => process_complete_trade(game, action.data),
                 CANCEL_TRADE_ACTION => process_cancel_trade(game),
-                _ => Err(crate::game::GameError::ActionNotAllowed),
+                _ => Err(GameError::ActionNotAllowed),
             }
         } else {
             match action.id.as_str() {
                 ACCEPT_TRADE_ACTION => process_accept_trade_offer(game, *player_id),
                 REJECT_TRADE_ACTION => process_reject_trade_offer(game, *player_id),
-                _ => Err(crate::game::GameError::ActionNotAllowed),
+                _ => Err(GameError::ActionNotAllowed),
             }
         }
     }

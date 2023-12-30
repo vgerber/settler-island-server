@@ -31,7 +31,7 @@ impl HexagonMap {
         self.tiles.get(coordinates)
     }
 
-    /// # Return Order
+    /// # Return Order (Filters non existing tiles)
     /// ```
     ///  4 5
     /// 3 T 0

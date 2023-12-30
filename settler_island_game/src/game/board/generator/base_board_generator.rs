@@ -1,4 +1,4 @@
-use std::{iter::repeat, sync::Arc};
+use std::{iter::repeat, rc::Rc, sync::Arc};
 
 use rand::{seq::SliceRandom, thread_rng};
 
@@ -13,12 +13,14 @@ use crate::game::{
             dice_chip_location::DiceChipLocation,
             road_location::RoadLocation,
             robber_location::RobberLocation,
+            seaport_location::SeaportLocation,
             settlement_location::{SettlementLocation, SettlementLocationId},
             settlement_map::SettlementMap,
         },
         resource::base_resource::{
             ResourcedId, RESOURCE_CLAY, RESOURCE_ORE, RESOURCE_SHEEP, RESOURCE_WHEAT, RESOURCE_WOOD,
         },
+        trade_contract::AcceptsNAnyTradeContract,
         GameBoard,
     },
     state::states::development_card::{
@@ -38,10 +40,13 @@ pub fn generate_board() -> Result<GameBoard, String> {
         Err(err) => return Err(err),
     };
     let robber_location = get_robber_location();
-    let settlement_map = match generate_settlement_map(&mut tile_map) {
+    let mut settlement_map = match generate_settlement_map(&mut tile_map) {
         Ok(map) => map,
         Err(err) => return Err(err),
     };
+    if let Err(_) = generate_seaports(&mut settlement_map, &tile_map) {
+        return Err(format!("Failed to generate seaports"));
+    }
     let development_cards = match generate_development_cards() {
         Ok(cards) => cards,
         Err(err) => return Err(err),
@@ -81,7 +86,8 @@ fn generate_hexagon_map() -> Result<(HexagonMap, Vec<ResourcedId>), String> {
     for q in -(board_size - 1)..board_size {
         for r in -(board_size - 1)..board_size {
             let coordinates = CubeCoordinates::from_qr(q, r);
-            if !is_coordinates_in_map(coordinates, board_size) {
+            // sea tiles are not stored
+            if !is_tile_in_map(&coordinates, board_size) {
                 continue;
             }
 
@@ -140,18 +146,22 @@ fn generate_settlement_map(hexagon_map: &mut HexagonMap) -> Result<SettlementMap
 
     for map_tile in hexagon_map.get_tiles() {
         let mut tile = map_tile.borrow_mut();
-        let tile_neighbors = hexagon_map.get_tile_neighbors(tile.get_coordinates());
+        let tile_neighbors = tile.get_coordinates().get_neighbor_coordinates();
         let mut corner_settlements = Vec::<SettlementLocationId>::new();
         for tile_neighbor_index in 0..tile_neighbors.len() {
-            let tile_neighbor_1 = tile_neighbors[tile_neighbor_index].borrow();
-            let tile_neighbor_2 =
-                tile_neighbors[(tile_neighbor_index + 1) % tile_neighbors.len()].borrow();
+            let tile_neighbor_1 = tile_neighbors[tile_neighbor_index];
+            let tile_neighbor_2 = tile_neighbors[(tile_neighbor_index + 1) % tile_neighbors.len()];
+            let neighbor_tiles = vec![*tile.get_coordinates(), tile_neighbor_1, tile_neighbor_2];
 
-            let settlement = SettlementLocation::from(vec![
-                *tile.get_coordinates(),
-                *tile_neighbor_1.get_coordinates(),
-                *tile_neighbor_2.get_coordinates(),
-            ]);
+            let mut seaport: Option<SeaportLocation> = None;
+            if is_any_sea_tile(&neighbor_tiles, 3) {
+                // TODO generate seaport
+                seaport = Some(SeaportLocation::new(Rc::new(
+                    AcceptsNAnyTradeContract::new(1, 3),
+                )));
+            }
+
+            let settlement = SettlementLocation::from(neighbor_tiles, seaport);
 
             if settlement_map.get_settlement(settlement.get_id()).is_none() {
                 if let Err(err) = settlement_map.add_settlement(settlement.clone()) {
@@ -186,10 +196,16 @@ fn get_robber_location() -> RobberLocation {
     RobberLocation::from(CubeCoordinates::from(0, 0, 0))
 }
 
-fn is_coordinates_in_map(coordinates: CubeCoordinates, board_size: i32) -> bool {
+fn is_tile_in_map(coordinates: &CubeCoordinates, board_size: i32) -> bool {
     coordinates.q.abs() < board_size
         && coordinates.r.abs() < board_size
         && coordinates.s.abs() < board_size
+}
+
+fn is_any_sea_tile(coordinates: &Vec<CubeCoordinates>, board_size: i32) -> bool {
+    coordinates
+        .iter()
+        .any(|coordinates| is_tile_in_map(coordinates, board_size))
 }
 
 fn generate_development_cards() -> Result<Vec<DevelopmentCard>, String> {
@@ -209,4 +225,8 @@ fn generate_development_cards() -> Result<Vec<DevelopmentCard>, String> {
         .collect();
     cards.shuffle(&mut thread_rng());
     Ok(cards)
+}
+
+fn generate_seaports(settlement_map: &mut SettlementMap, tile_map: &HexagonMap) -> Result<(), ()> {
+    Err(())
 }

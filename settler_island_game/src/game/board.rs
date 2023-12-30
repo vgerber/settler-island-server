@@ -21,6 +21,7 @@ pub mod generator;
 pub mod hexagon;
 pub mod location;
 pub mod resource;
+pub mod trade_contract;
 
 pub struct DoubleDiceRoll {
     dice_a: u8,
