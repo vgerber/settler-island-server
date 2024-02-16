@@ -1,9 +1,13 @@
-use std::{any, cell::RefCell, sync::Arc};
+use std::{
+    any,
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 
 use rand::{
     distributions::{Distribution, Standard},
-    rngs::ThreadRng,
-    Rng,
+    rngs::StdRng,
+    Rng, SeedableRng,
 };
 
 use self::{
@@ -52,7 +56,7 @@ impl Distribution<DoubleDiceRoll> for Standard {
 }
 
 pub struct GameBoard {
-    rng: ThreadRng,
+    rng: StdRng,
     tile_map: HexagonMap,
     settlement_map: SettlementMap,
     dice_chips: Vec<DiceChipLocation>,
@@ -71,7 +75,7 @@ impl GameBoard {
         development_cards: Vec<DevelopmentCard>,
     ) -> Self {
         GameBoard {
-            rng: rand::thread_rng(),
+            rng: StdRng::seed_from_u64(0),
             tile_map: tile_map,
             settlement_map: settlement_map,
             dice_chips: dice_chips,

@@ -4,8 +4,11 @@ use serde::Serialize;
 use settler_island_game::game::{
     board::generator::base_board_generator::generate_board,
     state::{
-        state_machine::{GameStateBox, StateMachine},
-        states::{start_village_placement::StartVillagePlacement, start_road_placement::StartRoadPlacement},
+        state_machine::{GameStateT, StateMachine},
+        states::{
+            start_road_placement::StartRoadPlacement,
+            start_village_placement::StartVillagePlacement,
+        },
     },
     Game, GameSettings,
 };
@@ -22,7 +25,7 @@ pub struct GameLobby {
     player_count: u32,
     owner_id: UserId,
     users: HashMap<UserId, UserConnection>,
-    game: Option<Game>,
+    game: Mutex<Option<Game>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -60,7 +63,7 @@ impl GameLobby {
             player_count: player_count,
             owner_id: owner_id,
             users: users,
-            game: None,
+            game: Mutex::new(None),
         }
     }
 
@@ -84,7 +87,7 @@ impl GameLobby {
         return self.password == password;
     }
 
-    pub fn start_game(
+    pub async fn start_game(
         &mut self,
         settings: GameSettings,
         player_user_ids: Vec<UserId>,
@@ -93,12 +96,18 @@ impl GameLobby {
             Ok(board) => board,
             Err(err) => return Err(format!("Failed to generated board \"{}\"", err)),
         };
-        let states: Vec<GameStateBox> = vec![Box::new(StartVillagePlacement::new()), Box::new(StartRoadPlacement::new()), Box::new(x)];
+        let states: Vec<GameStateT> = vec![
+            Box::new(StartVillagePlacement::new()),
+            Box::new(StartRoadPlacement::new()),
+        ];
         let start_state_id = states[0].get_id().to_string();
 
         let state_machine = StateMachine::from(states, start_state_id);
 
-        self.game = Some(Game::from(board, settings, state_machine));
+        self.game
+            .lock()
+            .await
+            .replace(Game::from(board, settings, state_machine));
         Ok(())
     }
 }

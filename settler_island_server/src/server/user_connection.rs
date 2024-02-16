@@ -42,6 +42,10 @@ pub struct UserConnection {
     game_state: UserGameStateAccess,
 }
 
+unsafe impl Send for UserConnection {}
+
+unsafe impl Sync for UserConnection {}
+
 impl UserGameState {
     pub fn new() -> Self {
         UserGameState {

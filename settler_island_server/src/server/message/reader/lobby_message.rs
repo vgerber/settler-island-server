@@ -45,6 +45,7 @@ impl LobbyMessage {
             .lock()
             .await
             .start_game(GameSettings { players: 2 }, vec![])
+            .await
         {
             return Err(format!("User could not start game \"{}\"", err));
         }
