@@ -5,7 +5,7 @@ use super::resource::{
     player_resources::{get_total_resources, ResourceCollection},
 };
 
-pub trait TradeContract {
+pub trait TradeContract: Sync + Send {
     fn accepts_offer(&self, receive: ResourceCollection, send: ResourceCollection) -> bool;
 }
 
@@ -29,7 +29,7 @@ impl AcceptsNAnyTradeContract {
 }
 
 impl TradeContract for AcceptsNAnyTradeContract {
-    pub fn accepts_offer(&self, receive: ResourceCollection, send: ResourceCollection) -> bool {
+    fn accepts_offer(&self, receive: ResourceCollection, send: ResourceCollection) -> bool {
         let receive_count = get_total_resources(&receive);
         let send_count = get_total_resources(&send);
 
@@ -54,7 +54,7 @@ pub struct AcceptsNSingleResourceTradeContract {
 }
 
 impl AcceptsNSingleResourceTradeContract {
-    fn new(receive_count: usize, send_count: usize, resource: ResourcedId) -> Self {
+    pub fn new(receive_count: usize, send_count: usize, resource: ResourcedId) -> Self {
         if receive_count == 0 || send_count == 0 {
             panic!("Invalid trade contract");
         }
