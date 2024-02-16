@@ -33,15 +33,18 @@ impl RoadLocation {
         settlement_b_id: SettlementLocationId,
     ) -> Self {
         RoadLocation {
-            id: format!(
-                "({})-({})",
-                settlement_a_id.clone(),
-                settlement_b_id.clone()
-            ),
+            id: RoadLocation::to_id(settlement_a_id.clone(), settlement_b_id.clone()),
             player_road: None,
             settlement_a_id: settlement_a_id,
             settlement_b_id: settlement_b_id,
         }
+    }
+
+    pub fn to_id(
+        settlement_a_id: SettlementLocationId,
+        settlement_b_id: SettlementLocationId,
+    ) -> RoadLocationId {
+        format!("({})-({})", settlement_a_id, settlement_b_id)
     }
 
     pub fn has_road(&self) -> bool {

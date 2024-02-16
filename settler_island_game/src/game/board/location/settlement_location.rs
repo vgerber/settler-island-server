@@ -36,7 +36,7 @@ impl SettlementLocation {
         }
     }
 
-    fn id_from_tiles(tiles: &Vec<CubeCoordinates>) -> SettlementLocationId {
+    pub fn id_from_tiles(tiles: &Vec<CubeCoordinates>) -> SettlementLocationId {
         let min = CubeCoordinates::min(tiles);
         let max = CubeCoordinates::max(tiles);
         format!("{}-{}", min.to_string(), max.to_string())
