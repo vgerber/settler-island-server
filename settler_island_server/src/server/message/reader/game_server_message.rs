@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use futures_util::future::join_all;
 use log::warn;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Error;
 
 use crate::server::{
@@ -19,6 +19,12 @@ struct RegisterUserMessage {
 struct GetLobbiesMessage {
     pub page: u32,
     pub items_per_page: u32,
+}
+
+#[derive(Serialize)]
+struct LobbiesMessage {
+    pub page: u32,
+    pub lobbies: Vec<GameLobbySummary>,
 }
 
 #[derive(Deserialize)]
@@ -107,7 +113,7 @@ impl GameServerMessage {
         lobbies_request: GetLobbiesMessage,
     ) -> Result<(), String> {
         let server = user_connection.get_server().lock().await;
-        let serialized_lobbies_results = join_all(
+        let lobbies = join_all(
             server
                 .lobby_browser
                 .get_lobby_page(
@@ -117,27 +123,23 @@ impl GameServerMessage {
                 .into_iter()
                 .map(|lobby| async move {
                     let locked_lobby = lobby.lock().await;
-                    match serde_json::to_value(GameLobbySummary::from(&locked_lobby)) {
-                        Ok(summary) => Some(summary),
-                        Err(err) => {
-                            warn!(
-                                "Failed to transform summary to value \"{}\"",
-                                err.to_string()
-                            );
-                            None
-                        }
-                    }
+                    GameLobbySummary::from(&locked_lobby)
                 }),
-        );
+        )
+        .await;
 
-        let serialized_lobbies = serialized_lobbies_results
-            .await
-            .into_iter()
-            .filter_map(|serialized_lobby| serialized_lobby)
-            .collect();
+        let page_message = LobbiesMessage {
+            page: lobbies_request.page,
+            lobbies: lobbies,
+        };
+
+        let serialized_page_message = match serde_json::to_value(page_message) {
+            Ok(value) => value,
+            Err(err) => return Err(err.to_string()),
+        };
 
         match user_connection
-            .send(self.get_group(), "lobbies", serialized_lobbies)
+            .send(self.get_group(), "lobbies", serialized_page_message)
             .await
         {
             Ok(_) => Ok(()),
@@ -220,7 +222,7 @@ impl GameServerMessage {
         self.send_lobby(user_connection).await
     }
 
-    async fn create_game(
+    async fn create_game_lobby(
         &self,
         user_connection: &UserConnection,
         message: &str,
@@ -281,7 +283,7 @@ impl MessageReaderProvider for GameServerMessage {
             "join-lobby" => return self.join_lobby(&user_connection, json_message).await,
             "get-user" => return self.send_user(&user_connection).await,
             "get-lobby" => return self.send_lobby(&user_connection).await,
-            "create-lobby" => return self.create_game(&user_connection, json_message).await,
+            "create-lobby" => return self.create_game_lobby(&user_connection, json_message).await,
             _ => (),
         }
 

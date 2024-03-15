@@ -12,6 +12,7 @@ use self::{
     user_connection::UserConnection,
 };
 
+pub mod error;
 pub mod lobby;
 pub mod message;
 pub mod user;
@@ -60,12 +61,16 @@ impl GameServer {
 
     pub async fn unregister_user(&mut self, id: &UserId) -> Result<(), String> {
         debug!("Unregister {} {}", id, self.users.try_lock().is_ok());
-        match self.users.lock().await.remove(id) {
-            None => Err(String::from("User not found")),
-            Some(user_connection) => {
-                user_connection.get_game_state().lock().await.user = None;
-                Ok(())
-            }
+        let users = self.users.lock().await;
+        let user_connection = match users.get(id) {
+            None => return Err(String::from("User not found")),
+            Some(user_connection) => user_connection,
+        };
+        let mut game_state = user_connection.get_game_state().lock().await;
+        if let Some(lobby) = game_state.lobby.clone() {
+            self.lobby_browser.leave_lobby(id, lobby).await;
         }
+        game_state.user = None;
+        Ok(())
     }
 }
