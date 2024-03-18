@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use log::{debug, info};
+use log::{debug, info, trace};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -61,15 +61,19 @@ impl GameServer {
 
     pub async fn unregister_user(&mut self, id: &UserId) -> Result<(), String> {
         debug!("Unregister {} {}", id, self.users.try_lock().is_ok());
+        trace!("Lock users");
         let users = self.users.lock().await;
         let user_connection = match users.get(id) {
             None => return Err(String::from("User not found")),
             Some(user_connection) => user_connection,
         };
+        trace!("Lock game_state");
         let mut game_state = user_connection.get_game_state().lock().await;
-        if let Some(lobby) = game_state.lobby.clone() {
-            self.lobby_browser.leave_lobby(id, lobby).await;
-        }
+
+        game_state
+            .leave_lobby(&mut self.lobby_browser)
+            .await
+            .unwrap();
         game_state.user = None;
         Ok(())
     }

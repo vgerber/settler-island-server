@@ -6,22 +6,30 @@ use futures_util::{
 };
 use log::{debug, error, info};
 use serde_json::{json, Error, Value};
-use tokio::{net::TcpStream, sync::Mutex};
+use settler_island_game::game;
+use tokio::{
+    net::TcpStream,
+    sync::{Mutex, MutexGuard},
+};
 use tokio_tungstenite::{
     tungstenite::{Message, Result},
     WebSocketStream,
 };
 
-use crate::server::message::reader::MessageBase;
+use crate::server::message::reader::{lobby_message::LobbyMessage, MessageBase};
 
 use super::{
-    lobby::game_lobby::GameLobbyAccess,
+    lobby::{
+        game_lobby::GameLobbyAccess,
+        lobby_browser::{self, LobbyBrowser},
+    },
     message::{
-        broker::MessageBroker, error_codes::ErrorCode,
+        broker::MessageBroker,
+        error_codes::{self, ErrorCode},
         reader::game_server_message::GameServerMessage,
     },
     user::UserData,
-    GameServerAccess,
+    GameServer, GameServerAccess,
 };
 
 pub type StreamSendAccess = Arc<Mutex<SplitSink<WebSocketStream<TcpStream>, Message>>>;
@@ -53,6 +61,26 @@ impl UserGameState {
             lobby: None,
         }
     }
+
+    pub async fn leave_lobby(
+        &mut self,
+        lobby_browser: &mut LobbyBrowser,
+    ) -> Result<(), error_codes::ErrorCode> {
+        let user = match self.user.as_ref() {
+            None => return Err(error_codes::NOT_REGISTERED),
+            Some(user) => user,
+        };
+
+        let mut lobby = match self.lobby.take() {
+            None => return Err(error_codes::NOT_IN_LOBBY),
+            Some(lobby) => lobby,
+        };
+
+        match lobby_browser.leave_lobby(user.get_id(), lobby).await {
+            Err(err) => Err(err),
+            Ok(_) => Ok(()),
+        }
+    }
 }
 
 impl UserConnection {
@@ -81,6 +109,9 @@ impl UserConnection {
         message_broker
             .register(Box::new(GameServerMessage::new()))
             .expect("Failed to register GameServerMessage");
+        message_broker
+            .register(Box::new(LobbyMessage::new()))
+            .expect("Failed to register LobbyMessage");
         let connection_address = user_connection.connection_address;
         while let Some(connection_message) =
             user_connection.stream_receive.lock().await.next().await
@@ -195,3 +226,5 @@ impl UserConnection {
         &self.game_state
     }
 }
+
+impl UserGameState {}

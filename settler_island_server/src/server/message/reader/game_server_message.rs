@@ -2,10 +2,14 @@ use async_trait::async_trait;
 use futures_util::future::join_all;
 use log::warn;
 use serde::{Deserialize, Serialize};
-use serde_json::Error;
+use serde_json::{json, Error};
+use settler_island_game::game;
 
 use crate::server::{
-    lobby::game_lobby::GameLobbySummary, message::error_codes, user_connection::UserConnection,
+    lobby::game_lobby::{GameLobbyAccess, GameLobbySummary},
+    message::error_codes,
+    user::UserData,
+    user_connection::UserConnection,
 };
 
 use super::MessageReaderProvider;
@@ -181,44 +185,25 @@ impl GameServerMessage {
             Err(err) => return Err(format!("Failed to parse join lobby request \"{}\"", err)),
         };
 
-        if let Some(_) = &user_connection.get_game_state().lock().await.lobby {
-            let _ = user_connection
-                .send_error(error_codes::ALREADY_IN_LOBBY)
-                .await;
-            return Err("User has already joined a lobby".to_string());
-        };
-
-        let found_lobby = match user_connection
+        if let Err(join_error) = user_connection
             .get_server()
             .lock()
             .await
             .lobby_browser
-            .get_lobby_by_id(&join_lobby_message.lobby_id)
-        {
-            Some(lobby) => lobby,
-            None => {
-                let _ = user_connection
-                    .send_error(error_codes::LOBBY_NOT_FOUND)
-                    .await;
-                return Err(format!("Lobby {} not found", join_lobby_message.lobby_id));
-            }
-        };
-
-        if !found_lobby
-            .lock()
+            .join_lobby(
+                user_connection,
+                &join_lobby_message.lobby_id,
+                &join_lobby_message.password,
+            )
             .await
-            .is_password(&join_lobby_message.password)
         {
-            let _ = user_connection
-                .send_error(error_codes::INVALID_PASSWORD)
-                .await;
-            return Err(format!(
-                "Password for lobby {} invalid",
-                join_lobby_message.lobby_id
-            ));
+            user_connection
+                .send_error(join_error)
+                .await
+                .expect("Send error failed");
+            return Err(format!("join lobby failed \"{}\"", join_error.0));
         }
 
-        user_connection.get_game_state().lock().await.lobby = Some(found_lobby.clone());
         self.send_lobby(user_connection).await
     }
 

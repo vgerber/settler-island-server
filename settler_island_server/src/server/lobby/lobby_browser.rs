@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::server::{
+    message::error_codes,
     user::UserId,
     user_connection::{self, UserConnection},
 };
@@ -69,27 +70,60 @@ impl LobbyBrowser {
         Ok(())
     }
 
+    pub async fn join_lobby(
+        &self,
+        user_connection: &UserConnection,
+        lobby_id: &String,
+        password: &String,
+    ) -> Result<(), error_codes::ErrorCode> {
+        if let Some(_) = &user_connection.get_game_state().lock().await.lobby {
+            return Err(error_codes::ALREADY_IN_LOBBY);
+        };
+
+        let found_lobby = match self.get_lobby_by_id(&lobby_id) {
+            Some(lobby) => lobby,
+            None => {
+                return Err(error_codes::LOBBY_NOT_FOUND);
+            }
+        };
+
+        let mut found_lobby_locked = found_lobby.lock().await;
+
+        if !found_lobby_locked.is_password(&password) {
+            return Err(error_codes::INVALID_PASSWORD);
+        }
+
+        found_lobby_locked
+            .add_user(user_connection.clone())
+            .await
+            .unwrap();
+        user_connection.get_game_state().lock().await.lobby = Some(found_lobby.clone());
+
+        Ok(())
+    }
+
     pub async fn leave_lobby(
         &mut self,
         user_id: &UserId,
         lobby: GameLobbyAccess,
-    ) -> Result<(), String> {
+    ) -> Result<(), error_codes::ErrorCode> {
+        trace!("Lock lobby");
         let mut lobby = lobby.lock().await;
 
         if let Err(err) = lobby.remove_user(user_id) {
-            return Err(err);
+            return Err(error_codes::LOBBY_INTERNAL_ERROR);
         }
 
-        trace!("User \"{}\" left lobby \"{}\"", user_id, lobby.get_id());
+        debug!("User \"{}\" left lobby \"{}\"", user_id, lobby.get_id());
 
         if lobby.get_joined_user_count() > 0 {
             return Ok(());
         }
 
-        trace!("Lobby \"{}\" is closing", lobby.get_id());
+        debug!("Lobby \"{}\" is closing", lobby.get_id());
 
         match self.lobbies.remove(lobby.get_id()) {
-            None => Err(String::from("Lobby not found")),
+            None => Err(error_codes::LOBBY_NOT_FOUND),
             Some(_) => Ok(()),
         }
     }

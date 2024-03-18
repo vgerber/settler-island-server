@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::format, sync::Arc};
 
 use log::trace;
 use serde::Serialize;
@@ -88,6 +88,25 @@ impl GameLobby {
         return self.password == password;
     }
 
+    pub async fn add_user(&mut self, user_connection: UserConnection) -> Result<(), String> {
+        let user_id = user_connection
+            .get_game_state()
+            .lock()
+            .await
+            .user
+            .as_ref()
+            .unwrap()
+            .get_id()
+            .clone();
+
+        if (self.users.contains_key(&user_id)) {
+            return Err(format!("\"{}\" is already in lobby", user_id));
+        }
+
+        self.users.insert(user_id, user_connection);
+        Ok(())
+    }
+
     pub fn remove_user(&mut self, user_id: &UserId) -> Result<(), String> {
         if !self.users.contains_key(user_id) {
             return Err(format!("\"{}\" is not in lobby", user_id));
@@ -107,6 +126,10 @@ impl GameLobby {
         );
 
         Ok(())
+    }
+
+    pub fn get_users(&self) -> &HashMap<UserId, UserConnection> {
+        &self.users
     }
 
     pub async fn start_game(
