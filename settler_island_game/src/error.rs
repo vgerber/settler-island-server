@@ -40,6 +40,4 @@ pub enum GameError {
     InvalidDiscard,
     #[error("the game is finished")]
     GameFinished,
-    #[error("not implemented yet")]
-    NotImplemented,
 }
