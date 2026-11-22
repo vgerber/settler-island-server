@@ -10,10 +10,8 @@ use evaluation::{
 };
 use hand::{bank_trade_toward, goal, keep_score, missing, offer_toward, trade_rates, Build};
 
-/// `PlayerView` does not carry the win target; this is the standard one.
-const POINTS_TO_WIN: u8 = 10;
-/// No trade partner this close to winning.
-const CLOSE_TO_WINNING: u8 = POINTS_TO_WIN - 2;
+/// No trade partner this many points short of winning or closer.
+const LEADER_MARGIN: u8 = 2;
 const LARGEST_ARMY_MIN: u8 = 3;
 /// Monopoly only pays when the others hold enough cards.
 const MONOPOLY_MIN_CARDS: u32 = 5;
@@ -51,7 +49,7 @@ impl HeuristicBot {
                 _ => None,
             }),
             Phase::Steal { .. } => steal(view, legal),
-            Phase::TradeOffered => Some(answer_trade(view, legal)),
+            Phase::TradeOffered => Some(answer_trade(view, own, legal)),
             Phase::Finished { .. } => None,
         }
     }
@@ -100,7 +98,7 @@ impl HeuristicBot {
         target: Build,
     ) -> Option<Action> {
         let points = view.players.get(usize::from(seat))?.points;
-        if self.offered_on_turn == Some(view.turn_number) || points >= CLOSE_TO_WINNING {
+        if self.offered_on_turn == Some(view.turn_number) || near_win(view, points) {
             return None;
         }
         let (give, receive) = offer_toward(hand, &target.cost())?;
@@ -287,15 +285,20 @@ fn steal(view: &PlayerView, legal: &[Action]) -> Option<Action> {
         .map(|(action, _)| action.clone())
 }
 
-/// The open offer is not in the view, so only own offers are settled: with the weakest accepting seat.
-fn answer_trade(view: &PlayerView, legal: &[Action]) -> Action {
+/// Too close to the win target to help.
+fn near_win(view: &PlayerView, points: u8) -> bool {
+    points >= view.points_to_win.saturating_sub(LEADER_MARGIN)
+}
+
+/// Own offers settle with the weakest accepting seat; foreign offers are accepted when they help the goal.
+fn answer_trade(view: &PlayerView, own: &OwnView, legal: &[Action]) -> Action {
     let partner = legal
         .iter()
         .filter_map(|action| match action {
             Action::ConfirmTrade { with } => view.players.get(usize::from(*with)),
             _ => None,
         })
-        .filter(|player| player.points < CLOSE_TO_WINNING)
+        .filter(|player| !near_win(view, player.points))
         .min_by_key(|player| player.points);
     if let Some(player) = partner {
         return Action::ConfirmTrade { with: player.seat };
@@ -303,13 +306,42 @@ fn answer_trade(view: &PlayerView, legal: &[Action]) -> Action {
     if legal.contains(&Action::CancelTrade) {
         return Action::CancelTrade;
     }
+    if legal.contains(&Action::AcceptTrade) && helps_goal(view, own) {
+        return Action::AcceptTrade;
+    }
     Action::RejectTrade
+}
+
+/// We receive `give` and pay `receive`: accept when that closes the gap to the goal without opening another.
+fn helps_goal(view: &PlayerView, own: &OwnView) -> bool {
+    let Some(offer) = &view.trade else {
+        return false;
+    };
+    let Some(offerer) = view.players.get(usize::from(offer.seat)) else {
+        return false;
+    };
+    let mut after = own.hand;
+    if after.try_remove(&offer.receive).is_err() || near_win(view, offerer.points) {
+        return false;
+    }
+    for resource in Resource::ALL {
+        after.set(
+            resource,
+            after.get(resource).saturating_add(offer.give.get(resource)),
+        );
+    }
+    let cost = goal(view, own.seat, &own.hand).cost();
+    let (before, now) = (missing(&own.hand, &cost), missing(&after, &cost));
+    let opens_gap = Resource::ALL
+        .into_iter()
+        .any(|resource| now.get(resource) > before.get(resource));
+    now.total() < before.total() && !opens_gap
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, TileId};
+    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, TileId, TradeOffer};
 
     /// A real board after four heuristic bots placed their setup pieces.
     fn after_setup(seed: u64) -> Game {
@@ -516,5 +548,56 @@ mod tests {
             let action = bots[usize::from(seat)].choose(&view, &game.legal_actions(seat));
             game.apply(seat, action).unwrap();
         }
+    }
+
+    /// Seat 1 offers `give` for `receive` to us; our hand saves for a city (one ore short).
+    fn offered_view(give: Resource, receive: Resource, offerer_points: u8) -> PlayerView {
+        let game = after_setup(7);
+        let hand = ResourceCounts::new([1, 0, 0, 2, 2]);
+        let mut view = view_with(&game, Phase::TradeOffered, hand);
+        view.players[1].points = offerer_points;
+        view.trade = Some(TradeOffer {
+            seat: 1,
+            give: ResourceCounts::single(give, 1),
+            receive: ResourceCounts::single(receive, 1),
+            to: None,
+            answers: Vec::new(),
+        });
+        view
+    }
+
+    fn answer(view: &PlayerView) -> Action {
+        let legal = vec![Action::AcceptTrade, Action::RejectTrade];
+        HeuristicBot::new().choose(view, &legal)
+    }
+
+    #[test]
+    fn accepts_an_offer_that_completes_the_build() {
+        let view = offered_view(Resource::Ore, Resource::Clay, 3);
+
+        assert_eq!(answer(&view), Action::AcceptTrade);
+    }
+
+    #[test]
+    fn rejects_an_offer_that_takes_a_needed_card() {
+        let view = offered_view(Resource::Ore, Resource::Wheat, 3);
+
+        assert_eq!(answer(&view), Action::RejectTrade);
+    }
+
+    #[test]
+    fn rejects_an_offer_that_does_not_help() {
+        let view = offered_view(Resource::Sheep, Resource::Clay, 3);
+
+        assert_eq!(answer(&view), Action::RejectTrade);
+    }
+
+    #[test]
+    fn rejects_a_good_offer_from_a_seat_near_the_win() {
+        let mut view = offered_view(Resource::Ore, Resource::Clay, 8);
+        assert_eq!(answer(&view), Action::RejectTrade);
+
+        view.points_to_win = 15;
+        assert_eq!(answer(&view), Action::AcceptTrade);
     }
 }
