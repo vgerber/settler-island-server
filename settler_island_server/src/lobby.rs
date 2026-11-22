@@ -15,7 +15,6 @@ use crate::store::{GameId, GameStore, NewGame, SeatPlayer, StoredAction};
 
 const COMMAND_QUEUE: usize = 64;
 /// Stands in for a player who leaves a running game.
-const REPLACEMENT_DIFFICULTY: Difficulty = Difficulty::Random;
 const STORE_RETRY: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub(crate) type Reply = oneshot::Sender<Result<(), ErrorCode>>;
@@ -89,6 +88,8 @@ pub(crate) struct LobbySetup {
     pub request_id: u32,
     pub has_password: bool,
     pub seats: u8,
+    pub points_to_win: u8,
+    pub bot_difficulty: Difficulty,
 }
 
 struct Member {
@@ -113,6 +114,9 @@ struct Lobby<S> {
     owner: User,
     has_password: bool,
     seats: Vec<SeatOccupant>,
+    points_to_win: u8,
+    /// Plays for a player who leaves a running game.
+    bot_difficulty: Difficulty,
     members: Vec<Member>,
     game: Option<RunningGame>,
     bot_deadline: Instant,
@@ -138,6 +142,8 @@ pub(crate) fn spawn<S: GameStore>(
         owner: setup.owner.clone(),
         has_password: setup.has_password,
         seats,
+        points_to_win: setup.points_to_win,
+        bot_difficulty: setup.bot_difficulty,
         members: vec![Member {
             user: setup.owner,
             outbox: setup.outbox,
@@ -242,10 +248,10 @@ impl<S: GameStore> Lobby<S> {
         self.seats[seat] = match &mut self.game {
             Some(running) => {
                 let seed = bot_seed(running.seed, seat);
-                running.bots[seat] = Some(create_bot(REPLACEMENT_DIFFICULTY, seed));
+                running.bots[seat] = Some(create_bot(self.bot_difficulty, seed));
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
                 SeatOccupant::Bot {
-                    difficulty: REPLACEMENT_DIFFICULTY,
+                    difficulty: self.bot_difficulty,
                     reserved_for: Some(member.user),
                 }
             }
@@ -326,13 +332,17 @@ impl<S: GameStore> Lobby<S> {
         }
         let settings = GameSettings {
             seats: self.seats.len() as u8,
-            points_to_win: self.config.points_to_win,
+            points_to_win: self.points_to_win,
             seed: self.config.seed.unwrap_or_else(rand::random),
         };
         let game = Game::new(settings.clone()).map_err(|error| ErrorCode::Game { error })?;
         let new_game = NewGame {
             settings: settings.clone(),
-            seats: self.seats.iter().map(seat_player).collect(),
+            seats: self
+                .seats
+                .iter()
+                .map(|occupant| seat_player(occupant, self.bot_difficulty))
+                .collect(),
         };
         let id = self.store.create_game(new_game).await.map_err(|error| {
             error!(lobby = self.id.0, %error, "storing the new game failed");
@@ -546,6 +556,8 @@ impl<S: GameStore> Lobby<S> {
             owner: self.owner.clone(),
             has_password: self.has_password,
             started: self.game.is_some(),
+            points_to_win: self.points_to_win,
+            bot_difficulty: self.bot_difficulty,
             seats: self.seats.clone(),
         }
     }
@@ -564,6 +576,8 @@ impl<S: GameStore> Lobby<S> {
             open_seats: open_seats as u8,
             has_password: self.has_password,
             started: self.game.is_some(),
+            points_to_win: self.points_to_win,
+            bot_difficulty: self.bot_difficulty,
         }
     }
 }
@@ -603,12 +617,12 @@ async fn apply_and_store<S: GameStore>(
     Ok(events)
 }
 
-fn seat_player(occupant: &SeatOccupant) -> SeatPlayer {
+fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
     match occupant {
         SeatOccupant::Human { user } => SeatPlayer::Human(user.id.clone()),
         SeatOccupant::Bot { difficulty, .. } => SeatPlayer::Bot(*difficulty),
         // Start requires every seat filled.
-        SeatOccupant::Open => SeatPlayer::Bot(REPLACEMENT_DIFFICULTY),
+        SeatOccupant::Open => SeatPlayer::Bot(fallback),
     }
 }
 

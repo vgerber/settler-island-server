@@ -13,6 +13,9 @@ pub const MAX_LOBBY_NAME_CHARS: usize = 40;
 pub const MAX_LOBBIES_PER_PAGE: u32 = 50;
 pub const MIN_SEATS: u8 = 3;
 pub const MAX_SEATS: u8 = 4;
+pub const MIN_POINTS_TO_WIN: u8 = 3;
+pub const MAX_POINTS_TO_WIN: u8 = 15;
+pub const DEFAULT_POINTS_TO_WIN: u8 = 10;
 
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -52,6 +55,12 @@ pub enum ClientMessage {
         name: String,
         password: Option<String>,
         seats: u8,
+        /// `MIN_POINTS_TO_WIN` to `MAX_POINTS_TO_WIN`; `None` means `DEFAULT_POINTS_TO_WIN`.
+        #[serde(default)]
+        points_to_win: Option<u8>,
+        /// Replaces a player who leaves a running game; `None` means `Difficulty::Heuristic`.
+        #[serde(default)]
+        bot_difficulty: Option<Difficulty>,
     },
     JoinLobby {
         request_id: u32,
@@ -161,6 +170,8 @@ pub struct LobbySummary {
     pub open_seats: u8,
     pub has_password: bool,
     pub started: bool,
+    pub points_to_win: u8,
+    pub bot_difficulty: Difficulty,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -170,6 +181,8 @@ pub struct LobbyDetails {
     pub owner: User,
     pub has_password: bool,
     pub started: bool,
+    pub points_to_win: u8,
+    pub bot_difficulty: Difficulty,
     /// Index is the game seat.
     pub seats: Vec<SeatOccupant>,
 }
@@ -199,6 +212,7 @@ pub enum ErrorCode {
     InvalidName,
     InvalidLobbyName,
     InvalidSeatCount,
+    InvalidPointsToWin,
     InvalidPage,
     LobbyNotFound,
     LobbyFull,
@@ -225,6 +239,7 @@ impl ErrorCode {
             ErrorCode::InvalidName => "the name must have 1 to 24 visible characters",
             ErrorCode::InvalidLobbyName => "the lobby name must have 1 to 40 visible characters",
             ErrorCode::InvalidSeatCount => "a lobby has 3 or 4 seats",
+            ErrorCode::InvalidPointsToWin => "points to win must be between 3 and 15",
             ErrorCode::InvalidPage => "per_page must be between 1 and 50",
             ErrorCode::LobbyNotFound => "no such lobby",
             ErrorCode::LobbyFull => "the lobby is full",
@@ -333,5 +348,23 @@ mod tests {
             seats
         );
         assert!(text.contains(r#"{"type":"Bot","difficulty":"Random","reserved_for":null}"#));
+    }
+
+    #[test]
+    fn create_lobby_settings_are_optional() {
+        let text = r#"{"type":"CreateLobby","request_id":1,"name":"T","password":null,"seats":3}"#;
+        let message: ClientMessage = serde_json::from_str(text).unwrap();
+
+        assert_eq!(
+            message,
+            ClientMessage::CreateLobby {
+                request_id: 1,
+                name: "T".to_string(),
+                password: None,
+                seats: 3,
+                points_to_win: None,
+                bot_difficulty: None,
+            }
+        );
     }
 }

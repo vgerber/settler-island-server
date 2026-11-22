@@ -5,6 +5,20 @@ use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerMessage,
 };
 
+fn create_with(
+    points_to_win: Option<u8>,
+    bot_difficulty: Option<Difficulty>,
+) -> impl Fn(u32) -> ClientMessage {
+    move |request_id| ClientMessage::CreateLobby {
+        request_id,
+        name: "Table".to_string(),
+        password: None,
+        seats: 3,
+        points_to_win,
+        bot_difficulty,
+    }
+}
+
 fn add_bot(request_id: u32) -> ClientMessage {
     ClientMessage::AddBot {
         request_id,
@@ -157,7 +171,11 @@ async fn a_bot_plays_for_a_player_who_left_until_they_rejoin() {
     let (mut owner, _) = Client::welcomed(address, "Owner").await;
     let (mut guest, guest_user) = Client::welcomed(address, "Guest").await;
     let (mut outsider, _) = Client::welcomed(address, "Outsider").await;
-    let lobby = owner.create_lobby("Table", 3, None).await;
+    // The lobby default is Heuristic, so Random proves the lobby's setting is used.
+    let lobby = owner
+        .expect_lobby(create_with(None, Some(Difficulty::Random)))
+        .await
+        .id;
     guest.join(lobby, None).await;
     owner.expect_lobby(add_bot).await;
     owner.expect_lobby(start_game).await;
@@ -256,6 +274,8 @@ async fn a_user_is_in_at_most_one_lobby() {
         name: "Another".to_string(),
         password: None,
         seats: 3,
+        points_to_win: None,
+        bot_difficulty: None,
     };
     assert_eq!(first.expect_error(create).await, ErrorCode::AlreadyInLobby);
     let ServerMessage::Error { code, .. } = first.join(other, None).await else {
@@ -336,6 +356,8 @@ async fn requests_need_hello_first_and_valid_names() {
         name: "x".repeat(41),
         password: None,
         seats: 3,
+        points_to_win: None,
+        bot_difficulty: None,
     };
     assert_eq!(
         client.expect_error(long_lobby).await,
@@ -346,9 +368,55 @@ async fn requests_need_hello_first_and_valid_names() {
         name: "Table".to_string(),
         password: None,
         seats: 5,
+        points_to_win: None,
+        bot_difficulty: None,
     };
     assert_eq!(
         client.expect_error(five_seats).await,
         ErrorCode::InvalidSeatCount
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lobby_settings_default_and_reach_the_game() {
+    let address = start(test_config()).await;
+    let (mut client, _) = Client::welcomed(address, "Ada").await;
+    let defaults = client.expect_lobby(create_with(None, None)).await;
+    assert_eq!(defaults.points_to_win, 10);
+    assert_eq!(defaults.bot_difficulty, Difficulty::Heuristic);
+    client.request(leave).await;
+
+    let custom = client
+        .expect_lobby(create_with(Some(4), Some(Difficulty::Random)))
+        .await;
+    assert_eq!(custom.points_to_win, 4);
+    assert_eq!(custom.bot_difficulty, Difficulty::Random);
+    client.expect_lobby(add_bot).await;
+    client.expect_lobby(add_bot).await;
+    client.expect_lobby(start_game).await;
+    client
+        .send(|request_id| ClientMessage::GetState { request_id })
+        .await;
+    let view = loop {
+        if let ServerMessage::GameStarted { view, .. } = client.receive().await {
+            break view;
+        }
+    };
+    assert_eq!(view.points_to_win, 4);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn points_to_win_outside_three_to_fifteen_is_rejected() {
+    let address = start(test_config()).await;
+    let (mut client, _) = Client::welcomed(address, "Ada").await;
+    for points in [0, 2, 16, 255] {
+        assert_eq!(
+            client.expect_error(create_with(Some(points), None)).await,
+            ErrorCode::InvalidPointsToWin
+        );
+    }
+    for points in [3, 15] {
+        client.expect_lobby(create_with(Some(points), None)).await;
+        client.request(leave).await;
+    }
 }

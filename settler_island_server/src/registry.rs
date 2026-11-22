@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use settler_island_protocol::{ErrorCode, LobbyId, LobbySummary, User};
+use settler_island_protocol::{Difficulty, ErrorCode, LobbyId, LobbySummary, User};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::config::Config;
@@ -18,6 +18,8 @@ pub(crate) struct NewLobby {
     pub request_id: u32,
     pub password_hash: Option<String>,
     pub seats: u8,
+    pub points_to_win: u8,
+    pub bot_difficulty: Difficulty,
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +180,8 @@ impl<S: GameStore> Registry<S> {
             request_id: lobby.request_id,
             has_password: lobby.password_hash.is_some(),
             seats: lobby.seats,
+            points_to_win: lobby.points_to_win,
+            bot_difficulty: lobby.bot_difficulty,
         };
         let (handle, summary) = lobby::spawn(
             setup,

@@ -6,8 +6,9 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use settler_island_protocol::{
-    ClientMessage, ErrorCode, ServerMessage, User, UserId, MAX_LOBBIES_PER_PAGE,
-    MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_SEATS, MAX_USER_NAME_CHARS, MIN_SEATS,
+    ClientMessage, Difficulty, ErrorCode, ServerMessage, User, UserId, DEFAULT_POINTS_TO_WIN,
+    MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MAX_SEATS,
+    MAX_USER_NAME_CHARS, MIN_POINTS_TO_WIN, MIN_SEATS,
 };
 use tokio::sync::{mpsc, Notify};
 use tracing::{debug, error};
@@ -17,6 +18,13 @@ use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest};
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
 use crate::password;
 use crate::registry::{NewLobby, RegistryHandle};
+
+/// The unvalidated settings of a `CreateLobby` request.
+struct LobbyOptions {
+    seats: u8,
+    points_to_win: Option<u8>,
+    bot_difficulty: Option<Difficulty>,
+}
 
 /// Counts messages in fixed one-second windows.
 #[derive(Debug)]
@@ -176,7 +184,17 @@ impl Connection {
                 name,
                 password,
                 seats,
-            } => self.create(user, request_id, &name, password, seats).await,
+                points_to_win,
+                bot_difficulty,
+            } => {
+                let options = LobbyOptions {
+                    seats,
+                    points_to_win,
+                    bot_difficulty,
+                };
+                self.create(user, request_id, &name, password, options)
+                    .await
+            }
             ClientMessage::JoinLobby {
                 request_id,
                 lobby,
@@ -255,14 +273,18 @@ impl Connection {
         request_id: u32,
         name: &str,
         password: Option<String>,
-        seats: u8,
+        options: LobbyOptions,
     ) -> Result<(), ErrorCode> {
         if self.lobby.is_some() {
             return Err(ErrorCode::AlreadyInLobby);
         }
         let name = clean_name(name, MAX_LOBBY_NAME_CHARS).ok_or(ErrorCode::InvalidLobbyName)?;
-        if !(MIN_SEATS..=MAX_SEATS).contains(&seats) {
+        if !(MIN_SEATS..=MAX_SEATS).contains(&options.seats) {
             return Err(ErrorCode::InvalidSeatCount);
+        }
+        let points_to_win = options.points_to_win.unwrap_or(DEFAULT_POINTS_TO_WIN);
+        if !(MIN_POINTS_TO_WIN..=MAX_POINTS_TO_WIN).contains(&points_to_win) {
+            return Err(ErrorCode::InvalidPointsToWin);
         }
         let password_hash = match password.filter(|password| !password.is_empty()) {
             Some(password) => Some(hash_password(password).await?),
@@ -274,7 +296,9 @@ impl Connection {
             outbox: self.outbox.clone(),
             request_id,
             password_hash,
-            seats,
+            seats: options.seats,
+            points_to_win,
+            bot_difficulty: options.bot_difficulty.unwrap_or(Difficulty::Heuristic),
         };
         self.lobby = Some(self.registry.create(lobby).await?);
         Ok(())

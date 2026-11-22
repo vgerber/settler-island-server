@@ -24,7 +24,6 @@ struct Finished {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
     let config = Config {
-        points_to_win: POINTS_TO_WIN,
         seed: Some(SEED),
         messages_per_second: 10_000,
         ..test_config()
@@ -61,7 +60,17 @@ async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
 /// Plays one game with the random bot logic for the human; `None` when it runs too long.
 async fn play_once(address: std::net::SocketAddr, attempt: u64) -> Option<Finished> {
     let (mut client, _) = Client::welcomed(address, "Human").await;
-    client.create_lobby("Seeded", 4, None).await;
+    let password = None;
+    client
+        .expect_lobby(|request_id| ClientMessage::CreateLobby {
+            request_id,
+            name: "Seeded".to_string(),
+            password,
+            seats: 4,
+            points_to_win: Some(POINTS_TO_WIN),
+            bot_difficulty: None,
+        })
+        .await;
     for _ in 0..3 {
         client
             .expect_lobby(|request_id| ClientMessage::AddBot {

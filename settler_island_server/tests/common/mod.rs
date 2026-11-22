@@ -159,6 +159,8 @@ impl Client {
                 name,
                 password,
                 seats,
+                points_to_win: None,
+                bot_difficulty: None,
             })
             .await;
         lobby.id
