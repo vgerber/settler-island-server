@@ -212,14 +212,15 @@ async fn upgrade_session<I: IdentityStore>(
     Ok(Json(Upgraded { user }))
 }
 
-/// The caller's address: the socket peer, or the first `X-Forwarded-For` entry when a trusted proxy sets it.
+/// The caller's address: the socket peer, or the last `X-Forwarded-For` entry (the one the trusted proxy appended;
+/// earlier entries come from the client and can be forged).
 fn client_address(request: &Request, trust_forwarded_for: bool) -> Option<IpAddr> {
     if trust_forwarded_for {
         let forwarded = request
             .headers()
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(',').next())
+            .and_then(|value| value.rsplit(',').next())
             .and_then(|value| value.trim().parse().ok());
         if forwarded.is_some() {
             return forwarded;

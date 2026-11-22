@@ -64,3 +64,19 @@ async fn forwarded_for_is_ignored_unless_trusted_and_then_separates_clients() {
     assert_eq!(post_guest(trusted, Some("2.2.2.2")).await.status(), 200);
     assert_eq!(post_guest(trusted, Some("1.1.1.1")).await.status(), 429);
 }
+
+#[tokio::test]
+async fn forged_forwarded_for_entries_do_not_escape_the_limit() {
+    let address = start(Config {
+        trust_forwarded_for: true,
+        session_burst: 1,
+        session_requests_per_minute: 1,
+        ..test_config()
+    })
+    .await;
+    // The proxy appends the real client last; the client controls everything before it.
+    let first = post_guest(address, Some("9.9.9.1, 3.3.3.3")).await;
+    let forged = post_guest(address, Some("9.9.9.2, 3.3.3.3")).await;
+    assert_eq!(first.status(), 200);
+    assert_eq!(forged.status(), 429);
+}
