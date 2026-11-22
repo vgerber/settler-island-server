@@ -1,0 +1,2969 @@
+{
+  "$defs": {
+    "Action": {
+      "oneOf": [
+        {
+          "description": "Setup phase.",
+          "properties": {
+            "corner": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "type": {
+              "const": "PlaceSettlement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "corner"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Setup phase.",
+          "properties": {
+            "edge": {
+              "$ref": "#/$defs/EdgeId"
+            },
+            "type": {
+              "const": "PlaceRoad",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "edge"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "RollDice",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "EndTurn",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "edge": {
+              "$ref": "#/$defs/EdgeId"
+            },
+            "type": {
+              "const": "BuildRoad",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "edge"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "corner": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "type": {
+              "const": "BuildSettlement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "corner"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "corner": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "type": {
+              "const": "BuildCity",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "corner"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "tile": {
+              "$ref": "#/$defs/TileId"
+            },
+            "type": {
+              "const": "MoveRobber",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tile"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Steal",
+              "type": "string"
+            },
+            "victim": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "victim"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resources": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "type": {
+              "const": "Discard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "resources"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The rate comes from the seat's ports, 4:1 by default.",
+          "properties": {
+            "give": {
+              "$ref": "#/$defs/Resource"
+            },
+            "receive": {
+              "$ref": "#/$defs/Resource"
+            },
+            "type": {
+              "const": "BankTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "give",
+            "receive"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "give": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "receive": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "to": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "OfferTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "give",
+            "receive"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "AcceptTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "RejectTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "ConfirmTrade",
+              "type": "string"
+            },
+            "with": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "with"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "CancelTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "BuyDevelopmentCard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "PlayKnight",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "PlayRoadBuilding",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "first": {
+              "$ref": "#/$defs/Resource"
+            },
+            "second": {
+              "$ref": "#/$defs/Resource"
+            },
+            "type": {
+              "const": "PlayYearOfPlenty",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "first",
+            "second"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resource": {
+              "$ref": "#/$defs/Resource"
+            },
+            "type": {
+              "const": "PlayMonopoly",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "resource"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Board": {
+      "description": "The layout plus the pieces on it.",
+      "properties": {
+        "buildings": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Building"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "corners": {
+          "items": {
+            "$ref": "#/$defs/Corner"
+          },
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/Edge"
+          },
+          "type": "array"
+        },
+        "roads": {
+          "items": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "robber": {
+          "$ref": "#/$defs/TileId"
+        },
+        "tiles": {
+          "items": {
+            "$ref": "#/$defs/Tile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tiles",
+        "corners",
+        "edges",
+        "buildings",
+        "roads",
+        "robber"
+      ],
+      "type": "object"
+    },
+    "Building": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/BuildingKind"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seat",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "BuildingKind": {
+      "enum": [
+        "Settlement",
+        "City"
+      ],
+      "type": "string"
+    },
+    "ClientMessage": {
+      "description": "Every request carries a `request_id` that the direct reply (or error) echoes.",
+      "oneOf": [
+        {
+          "description": "Guest login without a token; must be the first message.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "Hello",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`page` starts at 0; `per_page` is 1 to `MAX_LOBBIES_PER_PAGE`.",
+          "properties": {
+            "page": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "per_page": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "ListLobbies",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "page",
+            "per_page"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "bot_difficulty": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Difficulty"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Replaces a player who leaves a running game; `None` means `Difficulty::Heuristic`."
+            },
+            "name": {
+              "type": "string"
+            },
+            "password": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "points_to_win": {
+              "default": null,
+              "description": "`MIN_POINTS_TO_WIN` to `MAX_POINTS_TO_WIN`; `None` means `DEFAULT_POINTS_TO_WIN`.",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seats": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "CreateLobby",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "name",
+            "seats"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "lobby": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "password": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "JoinLobby",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "lobby"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "LeaveLobby",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "difficulty": {
+              "$ref": "#/$defs/Difficulty"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "AddBot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "difficulty"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "RemoveBot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "seat"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "StartGame",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/Action"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "Act",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Answered with `LobbyState`, plus `GameStarted` when a game runs.",
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "GetState",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "GetRecord",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Corner": {
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/EdgeId"
+          },
+          "type": "array"
+        },
+        "neighbors": {
+          "items": {
+            "$ref": "#/$defs/CornerId"
+          },
+          "type": "array"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tiles": {
+          "description": "Land tiles touching this corner (1 to 3).",
+          "items": {
+            "$ref": "#/$defs/TileId"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tiles",
+        "neighbors",
+        "edges"
+      ],
+      "type": "object"
+    },
+    "CornerId": {
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "CubeCoordinates": {
+      "description": "Hex cube coordinates; `q + r + s == 0` always holds.",
+      "properties": {
+        "q": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "r": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "s": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "q",
+        "r",
+        "s"
+      ],
+      "type": "object"
+    },
+    "DevelopmentCard": {
+      "enum": [
+        "Knight",
+        "RoadBuilding",
+        "YearOfPlenty",
+        "Monopoly",
+        "VictoryPoint"
+      ],
+      "type": "string"
+    },
+    "Difficulty": {
+      "enum": [
+        "Random",
+        "Heuristic"
+      ],
+      "type": "string"
+    },
+    "Edge": {
+      "properties": {
+        "corners": {
+          "items": {
+            "$ref": "#/$defs/CornerId"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "corners"
+      ],
+      "type": "object"
+    },
+    "EdgeId": {
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "ErrorCode": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidMessage",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "MessageTooLarge",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "RateLimited",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "NotWelcomed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "AlreadyWelcomed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidName",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidLobbyName",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidSeatCount",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidPointsToWin",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidPage",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "LobbyNotFound",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "LobbyFull",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "GameAlreadyStarted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "WrongPassword",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "AlreadyInLobby",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "NotInLobby",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "NotOwner",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "SeatsNotFilled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "NotABot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "NoGame",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Internal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/GameError"
+            },
+            "type": {
+              "const": "Game",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Event": {
+      "description": "What happened; random outcomes (dice, stolen card, drawn card) are events so a record replays without the seed.",
+      "oneOf": [
+        {
+          "properties": {
+            "corner": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "SettlementPlaced",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "corner"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "edge": {
+              "$ref": "#/$defs/EdgeId"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "RoadPlaced",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "edge"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "corner": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "CityBuilt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "corner"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "first": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "second": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "DiceRolled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "first",
+            "second"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resources": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "ResourcesProduced",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "resources"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resources": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "ResourcesPaid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "resources"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tile": {
+              "$ref": "#/$defs/TileId"
+            },
+            "type": {
+              "const": "RobberMoved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "tile"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resources": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "CardsDiscarded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "resources"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resource": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Resource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thief": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "ResourceStolen",
+              "type": "string"
+            },
+            "victim": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "thief",
+            "victim"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "gave": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "received": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "BankTraded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "gave",
+            "received"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "give": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "receive": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "to": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "TradeOffered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "give",
+            "receive"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "TradeAnswered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "accepted"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "gave": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "received": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "TradeCompleted",
+              "type": "string"
+            },
+            "with": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "with",
+            "gave",
+            "received"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "TradeCancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "card": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DevelopmentCard"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "DevelopmentCardBought",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "card": {
+              "$ref": "#/$defs/DevelopmentCard"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "DevelopmentCardPlayed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "card"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "amount": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "resource": {
+              "$ref": "#/$defs/Resource"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "MonopolyTaken",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "resource",
+            "amount"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "resources": {
+              "$ref": "#/$defs/ResourceCounts"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "YearOfPlentyTaken",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "resources"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "holder": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "length": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "LongestRoadChanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "length"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "holder": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "knights": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "LargestArmyChanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "knights"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "TurnEnded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "TurnStarted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "phase": {
+              "$ref": "#/$defs/Phase"
+            },
+            "type": {
+              "const": "PhaseChanged",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "points": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "GameWon",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "points"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GameError": {
+      "oneOf": [
+        {
+          "properties": {
+            "code": {
+              "const": "InvalidSettings",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NotYourTurn",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "WrongPhase",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "InvalidLocation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NotConnected",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "TooClose",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "Occupied",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NoPiecesLeft",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NotEnoughResources",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "BankEmpty",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "InvalidTrade",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NoTradeOpen",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "NoCard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "CardNotPlayable",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "InvalidVictim",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "InvalidDiscard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "const": "GameFinished",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GameRecord": {
+      "description": "A game as header plus ordered entries; random outcomes are in the events, the seed is never stored.",
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/RecordEntry"
+          },
+          "type": "array"
+        },
+        "header": {
+          "$ref": "#/$defs/RecordHeader"
+        }
+      },
+      "required": [
+        "header",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "LobbyDetails": {
+      "properties": {
+        "bot_difficulty": {
+          "$ref": "#/$defs/Difficulty"
+        },
+        "has_password": {
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/User"
+        },
+        "points_to_win": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seats": {
+          "description": "Index is the game seat.",
+          "items": {
+            "$ref": "#/$defs/SeatOccupant"
+          },
+          "type": "array"
+        },
+        "started": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "owner",
+        "has_password",
+        "started",
+        "points_to_win",
+        "bot_difficulty",
+        "seats"
+      ],
+      "type": "object"
+    },
+    "LobbySummary": {
+      "properties": {
+        "bot_difficulty": {
+          "$ref": "#/$defs/Difficulty"
+        },
+        "has_password": {
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "open_seats": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "owner": {
+          "$ref": "#/$defs/User"
+        },
+        "points_to_win": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seats": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "started": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "owner",
+        "seats",
+        "open_seats",
+        "has_password",
+        "started",
+        "points_to_win",
+        "bot_difficulty"
+      ],
+      "type": "object"
+    },
+    "OwnView": {
+      "properties": {
+        "development_cards": {
+          "items": {
+            "$ref": "#/$defs/DevelopmentCard"
+          },
+          "type": "array"
+        },
+        "hand": {
+          "$ref": "#/$defs/ResourceCounts"
+        },
+        "new_development_cards": {
+          "description": "Bought this turn, playable from the next turn on.",
+          "items": {
+            "$ref": "#/$defs/DevelopmentCard"
+          },
+          "type": "array"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seat",
+        "hand",
+        "development_cards",
+        "new_development_cards"
+      ],
+      "type": "object"
+    },
+    "Phase": {
+      "oneOf": [
+        {
+          "properties": {
+            "round": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "SetupSettlement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "round"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "round": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "settlement": {
+              "$ref": "#/$defs/CornerId"
+            },
+            "type": {
+              "const": "SetupRoad",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "round",
+            "settlement"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Roll",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Main",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Seats that still have to discard and how many cards each (step 2d).",
+          "properties": {
+            "remaining": {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "uint8",
+                    "maximum": 255,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "format": "uint8",
+                    "maximum": 255,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "Discard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "remaining"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "After a 7 or a knight.",
+          "properties": {
+            "then_steal": {
+              "type": "boolean"
+            },
+            "type": {
+              "const": "MoveRobber",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "then_steal"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Step 2d.",
+          "properties": {
+            "tile": {
+              "$ref": "#/$defs/TileId"
+            },
+            "type": {
+              "const": "Steal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tile"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Step 2b.",
+          "properties": {
+            "roads_left": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "RoadBuilding",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "roads_left"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A player trade is open (step 2a).",
+          "properties": {
+            "type": {
+              "const": "TradeOffered",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Finished",
+              "type": "string"
+            },
+            "winner": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "type",
+            "winner"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PlayerView": {
+      "description": "What one seat (or a spectator) may see of a game.",
+      "properties": {
+        "bank": {
+          "$ref": "#/$defs/ResourceCounts"
+        },
+        "board": {
+          "$ref": "#/$defs/Board"
+        },
+        "current": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "development_cards_left": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "largest_army": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "longest_road": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "own": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OwnView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` for spectators."
+        },
+        "phase": {
+          "$ref": "#/$defs/Phase"
+        },
+        "players": {
+          "items": {
+            "$ref": "#/$defs/PublicPlayerView"
+          },
+          "type": "array"
+        },
+        "points_to_win": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TradeOffer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The open player trade while `phase` is `TradeOffered`."
+        },
+        "turn_number": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "board",
+        "phase",
+        "current",
+        "turn_number",
+        "points_to_win",
+        "bank",
+        "development_cards_left",
+        "players"
+      ],
+      "type": "object"
+    },
+    "Port": {
+      "oneOf": [
+        {
+          "const": "Generic",
+          "description": "Trades 3:1 for any resource.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Trades 2:1 for this resource.",
+          "properties": {
+            "Specific": {
+              "$ref": "#/$defs/Resource"
+            }
+          },
+          "required": [
+            "Specific"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PublicPlayerView": {
+      "properties": {
+        "cities_left": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "development_card_count": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "knights_played": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "points": {
+          "description": "Without hidden victory point cards, except in the viewer's own entry.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resource_count": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "roads_left": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "settlements_left": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seat",
+        "resource_count",
+        "development_card_count",
+        "roads_left",
+        "settlements_left",
+        "cities_left",
+        "knights_played",
+        "points"
+      ],
+      "type": "object"
+    },
+    "RecordEntry": {
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "index": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "seat",
+        "action",
+        "events"
+      ],
+      "type": "object"
+    },
+    "RecordHeader": {
+      "properties": {
+        "board": {
+          "$ref": "#/$defs/Board"
+        },
+        "format_version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rules_version": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "settings_without_seed": {
+          "$ref": "#/$defs/RecordSettings"
+        }
+      },
+      "required": [
+        "format_version",
+        "rules_version",
+        "settings_without_seed",
+        "board"
+      ],
+      "type": "object"
+    },
+    "RecordSettings": {
+      "description": "`GameSettings` without the seed, which would reveal future rolls.",
+      "properties": {
+        "points_to_win": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seats": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seats",
+        "points_to_win"
+      ],
+      "type": "object"
+    },
+    "Resource": {
+      "enum": [
+        "Clay",
+        "Wood",
+        "Sheep",
+        "Wheat",
+        "Ore"
+      ],
+      "type": "string"
+    },
+    "ResourceCounts": {
+      "description": "Counts per resource, in the order of `Resource::ALL`.",
+      "items": {
+        "format": "uint8",
+        "maximum": 255,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "SeatOccupant": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "const": "Open",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "Human",
+              "type": "string"
+            },
+            "user": {
+              "$ref": "#/$defs/User"
+            }
+          },
+          "required": [
+            "type",
+            "user"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`reserved_for` is the player this bot stands in for until they rejoin.",
+          "properties": {
+            "difficulty": {
+              "$ref": "#/$defs/Difficulty"
+            },
+            "reserved_for": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/User"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "const": "Bot",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "difficulty"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ServerMessage": {
+      "description": "Broadcasts carry `request_id` only in the copy sent to the member whose request caused them.",
+      "oneOf": [
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "Welcome",
+              "type": "string"
+            },
+            "user": {
+              "$ref": "#/$defs/User"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "user"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "lobbies": {
+              "items": {
+                "$ref": "#/$defs/LobbySummary"
+              },
+              "type": "array"
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "Lobbies",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "page",
+            "total",
+            "lobbies"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sent to every member whenever the lobby changes.",
+          "properties": {
+            "lobby": {
+              "$ref": "#/$defs/LobbyDetails"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "LobbyState",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "lobby"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "LobbyLeft",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sent at the start and on rejoin; `legal_actions` is empty when the seat need not act.",
+          "properties": {
+            "legal_actions": {
+              "items": {
+                "$ref": "#/$defs/Action"
+              },
+              "type": "array"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "seat": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "GameStarted",
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/$defs/PlayerView"
+            }
+          },
+          "required": [
+            "type",
+            "seat",
+            "view",
+            "legal_actions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Events are filtered for the receiving seat.",
+          "properties": {
+            "events": {
+              "items": {
+                "$ref": "#/$defs/Event"
+              },
+              "type": "array"
+            },
+            "legal_actions": {
+              "items": {
+                "$ref": "#/$defs/Action"
+              },
+              "type": "array"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "GameUpdate",
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/$defs/PlayerView"
+            }
+          },
+          "required": [
+            "type",
+            "events",
+            "view",
+            "legal_actions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Filtered for the requesting seat while the game runs, complete once it is finished.",
+          "properties": {
+            "record": {
+              "$ref": "#/$defs/GameRecord"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "Record",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "record"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`request_id` is `None` when the message could not be read far enough to find it.",
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/ErrorCode"
+            },
+            "message": {
+              "type": "string"
+            },
+            "request_id": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "Error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Tile": {
+      "properties": {
+        "coordinates": {
+          "$ref": "#/$defs/CubeCoordinates"
+        },
+        "corners": {
+          "description": "Corners going around the tile; corner `i` lies between neighbour `i` and `i + 1`.",
+          "items": {
+            "$ref": "#/$defs/CornerId"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "number": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "resource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Resource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` is the desert."
+        }
+      },
+      "required": [
+        "coordinates",
+        "corners"
+      ],
+      "type": "object"
+    },
+    "TileId": {
+      "format": "uint8",
+      "maximum": 255,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "TradeOffer": {
+      "description": "An open player trade (step 2a).",
+      "properties": {
+        "answers": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "format": "uint8",
+                "maximum": 255,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "give": {
+          "$ref": "#/$defs/ResourceCounts"
+        },
+        "receive": {
+          "$ref": "#/$defs/ResourceCounts"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "to": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "seat",
+        "give",
+        "receive",
+        "answers"
+      ],
+      "type": "object"
+    },
+    "User": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A WebSocket text frame holds one ClientMessage (client to server) or one ServerMessage (server to client).",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ClientMessage"
+    },
+    {
+      "$ref": "#/$defs/ServerMessage"
+    }
+  ],
+  "title": "Settler Island protocol"
+}

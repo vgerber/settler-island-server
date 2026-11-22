@@ -1,0 +1,8 @@
+; Headless test project for the generated client; settler_island_client_generator/tests/godot.rs
+; copies it with ../godot/settler_island_api into a temporary directory and runs the scripts.
+
+config_version=5
+
+[application]
+
+config/name="Settler Island client tests"

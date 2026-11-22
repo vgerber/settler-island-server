@@ -1474,6 +1474,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "settler_island_client_generator"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "settler_island_bot",
+ "settler_island_game",
+ "settler_island_protocol",
+ "settler_island_server",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "settler_island_game"
 version = "0.1.0"
 dependencies = [

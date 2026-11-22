@@ -1,0 +1,3 @@
+# Godot writes these next to scripts and projects it opens.
+*.uid
+.godot/

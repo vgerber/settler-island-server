@@ -6,6 +6,7 @@ members = [
     "settler_island_bot",
     "settler_island_protocol",
     "settler_island_server",
+    "settler_island_client_generator",
 ]
 
 [profile.dev.package.argon2]

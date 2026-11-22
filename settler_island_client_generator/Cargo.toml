@@ -1,0 +1,17 @@
+[package]
+name = "settler_island_client_generator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+settler_island_protocol = { path = "../settler_island_protocol" }
+schemars = "1.2"
+serde_json = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+settler_island_game = { path = "../settler_island_game" }
+settler_island_bot = { path = "../settler_island_bot" }
+settler_island_server = { path = "../settler_island_server" }
+serde = "1.0.193"
+tokio = { version = "1.44", features = ["rt-multi-thread", "net"] }

@@ -1,0 +1,61 @@
+# Settler Island Godot client
+
+Generated from the protocol types in `settler_island_protocol`; never edit these files by hand.
+
+- `schema.json`: JSON Schema of `ClientMessage` and `ServerMessage` (definitions under `$defs`).
+- `godot/settler_island_api/`: Godot 4 GDScript, one `Si<Type>.gd` per schema type, plus the `SiClient` node.
+- `godot_tests/`: headless test project used by `settler_island_client_generator/tests/godot.rs`.
+
+## Regenerate
+
+```sh
+cargo run -p settler_island_client_generator            # rewrite client/
+cargo run -p settler_island_client_generator -- --check # exit 1 when client/ is stale
+```
+
+`cargo test --workspace` fails while the committed output is stale. The Godot tests run when Godot is at
+`/home/vincent/Software/godot/godot` or `$SETTLER_GODOT`, and pass with a notice otherwise.
+
+## Use in a Godot project
+
+Symlink (or copy) the API folder into the project; Godot picks up the `class_name`s on the next scan:
+
+```sh
+ln -s /path/to/settler-island-server/client/godot/settler_island_api /path/to/game/addons/settler_island_api
+```
+
+## Types
+
+- Structs become classes with typed properties, `static func from_dict(data) -> Si<Name>` and `func to_dict()`.
+- Tagged enums (`Action`, `Event`, `ServerMessage`, ...) become a base class whose `from_dict` picks the variant
+  class `Si<Enum><Variant>` by its tag; check the variant with `is`, e.g. `action is SiActionBuildRoad`.
+- String enums (`Resource`, `Difficulty`, ...) stay plain strings; `SiResource.ORE` and `SiResource.VALUES` name them.
+- Id newtypes and fixed arrays (`TileId`, `ResourceCounts`) map to `int` and `Array[int]`.
+- `Option` fields are `Variant` (or the class type) holding `null` when absent.
+
+## Example
+
+```gdscript
+extends Node
+
+var client := SiClient.new()
+
+func _ready() -> void:
+	add_child(client)
+	client.connected.connect(func(): client.send_hello("Ada"))
+	client.welcome_received.connect(_on_welcome)
+	client.game_update_received.connect(_on_game_update)
+	client.error_received.connect(func(message): push_warning(message.message))
+	client.connect_to_url("ws://127.0.0.1:8080/api/v1/ws")
+
+func _on_welcome(message: SiServerMessageWelcome) -> void:
+	print("logged in as ", message.user.name)
+	client.send_list_lobbies(0, 20)
+
+func _on_game_update(message: SiServerMessageGameUpdate) -> void:
+	for event in message.events:
+		if event is SiEventDiceRolled:
+			print("rolled ", event.first + event.second)
+	if not message.legal_actions.is_empty():
+		client.send_act(message.legal_actions[0])
+```
