@@ -3,18 +3,21 @@ name = "settler_island_server"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-futures-util = { version = "0.3.29", default-features = false, features = [
-    "std",
-] }
-tokio-tungstenite = "0.20.1"
-tokio = { version = "1.0.0", features = ["full"] }
-log = "0.4"
-env_logger = "0.10"
+settler_island_game = { path = "../settler_island_game" }
+settler_island_bot = { path = "../settler_island_bot" }
+settler_island_protocol = { path = "../settler_island_protocol" }
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["std", "sink"] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0"
-async-trait = "0.1.74"
-uuid = { version = "1.6.1", features = ["v4"] }
-settler_island_game = { path = "../settler_island_game" }
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+argon2 = { version = "0.5", features = ["std"] }
+rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
+uuid = { version = "1.18", features = ["v4"] }
+
+[dev-dependencies]
+tokio-tungstenite = "0.26"
