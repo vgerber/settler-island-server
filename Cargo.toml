@@ -1,4 +1,9 @@
 [workspace]
 resolver = "2"
 
-members = ["settler_island_game", "settler_island_bot", "settler_island_server"]
+members = [
+    "settler_island_game",
+    "settler_island_bot",
+    "settler_island_protocol",
+    "settler_island_server",
+]
