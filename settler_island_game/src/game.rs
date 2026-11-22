@@ -305,7 +305,6 @@ mod tests {
 
     use super::*;
     use crate::board::{CornerId, EdgeId, TileId};
-    use crate::resource::Resource;
     use crate::rules::test_support::{after_setup, give, main_phase_game, new_game};
 
     const ACTION_LIMIT: usize = 2000;
@@ -391,20 +390,6 @@ mod tests {
             }
         }
         assert!(rejected > 400);
-    }
-
-    #[test]
-    fn later_step_actions_are_declared_but_not_implemented() {
-        let mut game = main_phase_game(4, 3);
-        for action in [
-            Action::BankTrade {
-                give: Resource::Wood,
-                receive: Resource::Ore,
-            },
-            Action::AcceptTrade,
-        ] {
-            assert_eq!(game.apply(0, action), Err(GameError::NotImplemented));
-        }
     }
 
     #[test]

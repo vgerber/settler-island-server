@@ -1,7 +1,8 @@
 use rand::seq::SliceRandom;
+use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::board::{topology, Board, Tile, TileId};
+use crate::board::{topology, Board, Corner, Edge, Port, Tile, TileId};
 use crate::resource::Resource;
 
 const ISLAND_RADIUS: i32 = 2;
@@ -15,7 +16,9 @@ const TERRAIN_COUNTS: [(Option<Resource>, usize); 6] = [
     (None, 1),
 ];
 
-/// The base board: shuffled terrain (desert anywhere), shuffled chips, robber on the desert.
+const PORT_COUNT: usize = 9;
+
+/// The base board: shuffled terrain (desert anywhere), shuffled chips, ports on the coast, robber on the desert.
 pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
     let topology = topology::build(ISLAND_RADIUS);
 
@@ -48,13 +51,76 @@ pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
         });
     }
 
+    let mut corners = topology.corners;
+    place_ports(&mut corners, &topology.edges, rng);
+
     Board {
-        buildings: vec![None; topology.corners.len()],
+        buildings: vec![None; corners.len()],
         roads: vec![None; topology.edges.len()],
         tiles,
-        corners: topology.corners,
+        corners,
         edges: topology.edges,
         robber,
+    }
+}
+
+/// Coast edges (one land tile on both corners) in order around the island.
+fn coast_ring(corners: &[Corner], edges: &[Edge]) -> Vec<usize> {
+    let on_coast = |edge: &Edge| {
+        let [first, second] = edge.corners;
+        let first_tiles = &corners[usize::from(first.0)].tiles;
+        let second_tiles = &corners[usize::from(second.0)].tiles;
+        first_tiles
+            .iter()
+            .filter(|tile| second_tiles.contains(tile))
+            .count()
+            == 1
+    };
+    let coast: Vec<usize> = (0..edges.len())
+        .filter(|index| on_coast(&edges[*index]))
+        .collect();
+    let shares_corner = |first: usize, second: usize| {
+        edges[first]
+            .corners
+            .iter()
+            .any(|corner| edges[second].corners.contains(corner))
+    };
+
+    let mut ring = vec![coast[0]];
+    while ring.len() < coast.len() {
+        let last = ring[ring.len() - 1];
+        let next = coast
+            .iter()
+            .copied()
+            .find(|candidate| !ring.contains(candidate) && shares_corner(last, *candidate));
+        match next {
+            Some(edge) => ring.push(edge),
+            None => break,
+        }
+    }
+    ring
+}
+
+/// 4 generic and one specific port per resource on shuffled coast edges with at least one free coast edge between.
+fn place_ports(corners: &mut [Corner], edges: &[Edge], rng: &mut ChaCha8Rng) {
+    let ring = coast_ring(corners, edges);
+    let mut ports: Vec<Port> = std::iter::repeat_n(Port::Generic, 4)
+        .chain(Resource::ALL.into_iter().map(Port::Specific))
+        .collect();
+    ports.shuffle(rng);
+
+    // Every port is followed by one free edge; the leftover free edges go to random gaps.
+    let mut gaps = vec![1usize; PORT_COUNT];
+    for _ in 0..ring.len().saturating_sub(PORT_COUNT * 2) {
+        gaps[rng.random_range(0..PORT_COUNT)] += 1;
+    }
+    let mut position = rng.random_range(0..ring.len());
+    for (port, gap) in ports.into_iter().zip(gaps) {
+        let edge = &edges[ring[position % ring.len()]];
+        for corner in edge.corners {
+            corners[usize::from(corner.0)].port = Some(port);
+        }
+        position += 1 + gap;
     }
 }
 
@@ -63,6 +129,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
+    use crate::board::CornerId;
 
     fn board_for(seed: u64) -> Board {
         generate(&mut ChaCha8Rng::seed_from_u64(seed))
@@ -115,5 +182,58 @@ mod tests {
         assert!(desert_positions
             .iter()
             .any(|position| *position != desert_positions[0]));
+    }
+
+    fn port_corners(board: &Board) -> Vec<(CornerId, Port)> {
+        board
+            .corner_ids()
+            .filter_map(|id| Some((id, board.corner(id)?.port?)))
+            .collect()
+    }
+
+    #[test]
+    fn nine_ports_of_the_right_kinds_on_the_coast() {
+        for seed in 0..50 {
+            let board = board_for(seed);
+            let corners = port_corners(&board);
+            let count = |wanted: Port| corners.iter().filter(|(_, port)| *port == wanted).count();
+
+            // Two corners per port; 18 distinct corners also means no two ports share a corner.
+            assert_eq!(corners.len(), 18, "seed {seed}");
+            assert_eq!(count(Port::Generic), 8, "seed {seed}");
+            for resource in Resource::ALL {
+                assert_eq!(count(Port::Specific(resource)), 2, "seed {seed}");
+            }
+            for (corner, _) in &corners {
+                assert!(
+                    board.corner(*corner).unwrap().tiles.len() < 3,
+                    "seed {seed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn both_corners_of_a_port_are_joined_by_a_coast_edge() {
+        for seed in 0..50 {
+            let board = board_for(seed);
+            let joined = |corner: CornerId, port: Port| {
+                board
+                    .corner(corner)
+                    .unwrap()
+                    .neighbors
+                    .iter()
+                    .any(|other| board.corner(*other).unwrap().port == Some(port))
+            };
+
+            for (corner, port) in port_corners(&board) {
+                assert!(joined(corner, port), "seed {seed} corner {corner:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn ports_vary_with_the_seed() {
+        assert_ne!(port_corners(&board_for(1)), port_corners(&board_for(2)));
     }
 }
