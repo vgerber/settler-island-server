@@ -151,7 +151,12 @@ fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
 }
 
 /// A road may start at an own building, or at an own road unless an opponent's building sits on the corner.
-fn road_continues_from(board: &Board, seat: Seat, corner: CornerId, new_edge: EdgeId) -> bool {
+pub(crate) fn road_continues_from(
+    board: &Board,
+    seat: Seat,
+    corner: CornerId,
+    new_edge: EdgeId,
+) -> bool {
     if let Some(building) = board.building(corner) {
         return building.seat == seat;
     }
