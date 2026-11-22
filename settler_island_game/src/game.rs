@@ -29,6 +29,7 @@ pub struct GameSettings {
 
 pub struct Game {
     board: GameBoard,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     settings: GameSettings,
     state_machine: RefCell<StateMachine>,
     current_player_index: usize,
@@ -39,8 +40,8 @@ pub struct Game {
 impl Game {
     pub fn from(board: GameBoard, settings: GameSettings, state_machine: StateMachine) -> Self {
         Game {
-            board: board,
-            settings: settings,
+            board,
+            settings,
             state_machine: RefCell::new(state_machine),
             current_player_index: 0,
             players: vec![],

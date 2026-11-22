@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
-use super::{
-    board::resource::player_resources::PlayerResources, color::Color,
-    state::states::development_card::DevelopmentCard,
-};
+use super::{board::resource::player_resources::PlayerResources, color::Color};
 
 pub type PlayerId = usize;
 pub type DevelopmentCards = HashMap<String, usize>;
 
 pub struct Player {
     id: PlayerId,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     user_id: Option<String>,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     color: Color,
     resources: PlayerResources,
     development_cards: DevelopmentCards,

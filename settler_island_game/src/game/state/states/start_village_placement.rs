@@ -7,10 +7,10 @@ use crate::game::{
         settlement_location::{SettlementLocation, SettlementType},
         settlement_map::SettlementMap,
     },
-    player::{Player, PlayerId},
+    player::PlayerId,
     state::{
         action_data::{PlaceSettlementData, BUILD_SETTLEMENT_ACTION},
-        state_machine::{GameAction, GameState, StateMachine},
+        state_machine::{GameAction, GameState},
         states::start_road_placement::StartRoadPlacement,
     },
     Game, GameError,
@@ -18,6 +18,12 @@ use crate::game::{
 
 #[derive(HasStateId)]
 pub struct StartVillagePlacement;
+
+impl Default for StartVillagePlacement {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StartVillagePlacement {
     pub fn new() -> Self {
@@ -38,15 +44,13 @@ impl StartVillagePlacement {
             }
         };
 
-        if let Err(err) = StartVillagePlacement::place_village(
+        StartVillagePlacement::place_village(
             game.get_board_mut().get_settlement_map_mut(),
             &place_village_data.settlement_id,
             player_id,
-        ) {
-            return Err(err);
-        }
+        )?;
 
-        if let Err(err) = game
+        if let Err(_err) = game
             .get_state_machine()
             .borrow_mut()
             .transition_to(game, StartRoadPlacement::get_id())
@@ -69,7 +73,7 @@ impl StartVillagePlacement {
         }
 
         let settlement: &mut SettlementLocation =
-            match settlement_map.get_settlement_mut(&settlement_id) {
+            match settlement_map.get_settlement_mut(settlement_id) {
                 Some(settlement) => settlement,
                 None => {
                     trace!("Settlement \"{}\" not found", settlement_id);
@@ -84,25 +88,6 @@ impl StartVillagePlacement {
                 Err(GameError::ActionFailed)
             }
         }
-    }
-
-    fn get_player_settlement_count(game: &Game, player_id: &PlayerId) -> usize {
-        game.get_board()
-            .get_settlement_map()
-            .get_player_settlements(player_id)
-            .len()
-    }
-
-    fn all_players_have_at_least_n_settlements(
-        game: &Game,
-        expected_settlement_count: usize,
-    ) -> bool {
-        game.get_players()
-            .iter()
-            .map(|player| {
-                StartVillagePlacement::get_player_settlement_count(game, &player.borrow().get_id())
-            })
-            .all(|settlement_count| settlement_count >= expected_settlement_count)
     }
 }
 
@@ -127,5 +112,5 @@ impl GameState for StartVillagePlacement {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }

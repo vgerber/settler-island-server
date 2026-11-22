@@ -1,8 +1,4 @@
-use std::{
-    any,
-    cell::RefCell,
-    sync::{Arc, Mutex},
-};
+use std::cell::RefCell;
 
 use rand::{
     distributions::{Distribution, Standard},
@@ -61,6 +57,7 @@ pub struct GameBoard {
     settlement_map: SettlementMap,
     dice_chips: Vec<DiceChipLocation>,
     robber: RobberLocation,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     board_resources: Vec<ResourcedId>,
     development_cards: Vec<DevelopmentCard>,
 }
@@ -76,12 +73,12 @@ impl GameBoard {
     ) -> Self {
         GameBoard {
             rng: StdRng::seed_from_u64(0),
-            tile_map: tile_map,
-            settlement_map: settlement_map,
-            dice_chips: dice_chips,
+            tile_map,
+            settlement_map,
+            dice_chips,
             robber: robber_location,
-            board_resources: board_resources,
-            development_cards: development_cards,
+            board_resources,
+            development_cards,
         }
     }
 

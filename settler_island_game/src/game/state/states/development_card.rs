@@ -1,4 +1,4 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::RefMut;
 
 use log::trace;
 use serde::Deserialize;
@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::game::{
     player::{Player, PlayerId},
     state::{
-        action_data::{DrawDevelopmentCardData, PlaceRobberData},
+        action_data::DrawDevelopmentCardData,
         state_machine::{GameAction, GameActionResult},
     },
     Game, GameError,
@@ -52,9 +52,7 @@ pub fn process_action(
     };
 
     let card = card_data.card.as_str();
-    if let Err(err) = play_card(&mut game.get_player(*player_id).borrow_mut(), card) {
-        return Err(err);
-    }
+    play_card(&mut game.get_player(*player_id).borrow_mut(), card)?;
 
     match card {
         DEVELOPMENT_CARD_STREET_CONSTRUCTION => Ok(()),
@@ -79,15 +77,15 @@ fn play_card(player: &mut RefMut<'_, Player>, card: &str) -> GameActionResult {
 
 pub fn process_street_construction(
     game: &mut Game,
-    player_id: &PlayerId,
-    action: GameAction,
+    _player_id: &PlayerId,
+    _action: GameAction,
 ) -> GameActionResult {
     match game
         .get_state_machine()
         .borrow_mut()
         .transition_to(game, BuildNFreeRoads::get_id())
     {
-        Err(err) => Err(GameError::ActionFailed),
+        Err(_err) => Err(GameError::ActionFailed),
         Ok(_) => Ok(()),
     }
 }
@@ -155,15 +153,15 @@ pub fn process_invention(
 
 pub fn process_knight(
     game: &mut Game,
-    player_id: &PlayerId,
-    action: GameAction,
+    _player_id: &PlayerId,
+    _action: GameAction,
 ) -> GameActionResult {
     match game
         .get_state_machine()
         .borrow_mut()
         .transition_to(game, RobberRelocate::get_id())
     {
-        Err(err) => Err(GameError::ActionFailed),
+        Err(_err) => Err(GameError::ActionFailed),
         Ok(_) => Ok(()),
     }
 }

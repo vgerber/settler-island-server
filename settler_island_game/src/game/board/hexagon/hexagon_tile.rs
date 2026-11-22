@@ -18,8 +18,8 @@ pub struct HexagonTile {
 impl HexagonTile {
     pub fn from(coordinates: CubeCoordinates, tile_type: TileType) -> Self {
         HexagonTile {
-            coordinates: coordinates,
-            tile_type: tile_type,
+            coordinates,
+            tile_type,
             corner_settlements: vec![],
         }
     }

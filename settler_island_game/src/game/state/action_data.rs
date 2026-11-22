@@ -8,9 +8,8 @@ use crate::game::{
     player::PlayerId,
 };
 
-use super::states::development_card::DevelopmentCard;
-
-pub const DRAW_DEVELOPMENT_CARD_ACTION: &str = "BuildSettlement";
+pub const DRAW_DEVELOPMENT_CARD_ACTION: &str = "DrawDevelopmentCard";
+pub const PLAY_DEVELOPMENT_CARD_ACTION: &str = "PlayDevelopmentCard";
 pub const BUILD_SETTLEMENT_ACTION: &str = "BuildSettlement";
 pub const BUILD_ROAD_ACTION: &str = "BuildRoad";
 pub const PLACE_ROBBER_ACTION: &str = "PlaceRobber";

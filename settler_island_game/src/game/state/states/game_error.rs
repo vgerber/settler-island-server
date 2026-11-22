@@ -2,12 +2,18 @@ use settler_island_util_derive::HasStateId;
 
 use crate::game::{
     player::PlayerId,
-    state::state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+    state::state_machine::{GameAction, GameActionResult, GameState},
     Game, GameError,
 };
 
 #[derive(HasStateId)]
 pub struct GameErrorState {}
+
+impl Default for GameErrorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GameErrorState {
     pub fn new() -> Self {
@@ -18,9 +24,9 @@ impl GameErrorState {
 impl GameState for GameErrorState {
     fn perform_action(
         &mut self,
-        game: &mut Game,
-        player_id: &PlayerId,
-        action: GameAction,
+        _game: &mut Game,
+        _player_id: &PlayerId,
+        _action: GameAction,
     ) -> GameActionResult {
         Err(GameError::ActionNotAllowed)
     }
@@ -29,5 +35,5 @@ impl GameState for GameErrorState {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }

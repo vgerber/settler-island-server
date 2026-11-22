@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
 use super::{
     road_location::{RoadLocation, RoadLocationId},
@@ -9,6 +9,12 @@ pub struct SettlementMap {
     settlements: HashMap<String, SettlementLocation>,
     roads: HashMap<String, RoadLocation>,
     settlement_connections: HashMap<String, Vec<String>>,
+}
+
+impl Default for SettlementMap {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SettlementMap {
@@ -82,7 +88,6 @@ impl SettlementMap {
                     road.get_settlement_a_id().clone(),
                     vec![road.get_id().clone()],
                 );
-                ()
             }
         }
 
@@ -96,7 +101,6 @@ impl SettlementMap {
                     road.get_settlement_b_id().clone(),
                     vec![road.get_id().clone()],
                 );
-                ()
             }
         }
 
@@ -150,7 +154,6 @@ impl SettlementMap {
     pub fn get_player_settlements(&self, player_id: &usize) -> Vec<&SettlementLocation> {
         self.settlements
             .values()
-            .into_iter()
             .filter(|settlement| settlement.is_owner(player_id))
             .collect()
     }

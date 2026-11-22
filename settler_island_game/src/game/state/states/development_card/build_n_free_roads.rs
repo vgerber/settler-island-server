@@ -6,7 +6,7 @@ use crate::game::{
     player::PlayerId,
     state::{
         action_data::{PlaceRoadData, BUILD_ROAD_ACTION},
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
         states::select_action::{self, SelectAction},
     },
     Game, GameError,
@@ -21,7 +21,7 @@ pub struct BuildNFreeRoads {
 impl BuildNFreeRoads {
     pub fn new(free_roads: usize) -> Self {
         BuildNFreeRoads {
-            free_roads: free_roads,
+            free_roads,
             free_roads_left: 0,
         }
     }
@@ -45,13 +45,11 @@ impl BuildNFreeRoads {
             Ok(data) => data,
         };
 
-        if let Err(err) = select_action::place_road(
+        select_action::place_road(
             game.get_board_mut().get_settlement_map_mut(),
             &place_road_data.road_id,
             player_id,
-        ) {
-            return Err(err);
-        }
+        )?;
 
         self.free_roads_left -= 1;
         if self.free_roads_left > 0 {
@@ -63,7 +61,7 @@ impl BuildNFreeRoads {
             .borrow_mut()
             .transition_to(game, SelectAction::get_id())
         {
-            Err(err) => Err(GameError::ActionFailed),
+            Err(_err) => Err(GameError::ActionFailed),
             Ok(_) => Ok(()),
         }
     }
@@ -90,7 +88,7 @@ impl GameState for BuildNFreeRoads {
         None
     }
 
-    fn activate(&mut self, game: &Game) {
+    fn activate(&mut self, _game: &Game) {
         self.free_roads_left = self.free_roads
     }
 }

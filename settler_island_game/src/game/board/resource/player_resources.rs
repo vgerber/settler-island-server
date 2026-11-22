@@ -1,6 +1,4 @@
-use std::{collections::HashMap, ops::Add};
-
-use serde::de::value;
+use std::collections::HashMap;
 
 use super::base_resource::ResourcedId;
 
@@ -8,6 +6,12 @@ pub type ResourceCollection = HashMap<ResourcedId, usize>;
 
 pub struct PlayerResources {
     resources: ResourceCollection,
+}
+
+impl Default for PlayerResources {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PlayerResources {
@@ -52,8 +56,8 @@ impl PlayerResources {
 
     pub fn remove_resources(&mut self, removed_resources: &ResourceCollection) -> bool {
         removed_resources
-            .into_iter()
-            .any(|(resource, count)| self.remove_resource(&resource, &count))
+            .iter()
+            .any(|(resource, count)| self.remove_resource(resource, count))
     }
 
     pub fn get_resource(&self, resource: &ResourcedId) -> Option<&usize> {
@@ -70,19 +74,11 @@ impl PlayerResources {
 
     pub fn has_resources(&self, checked_resources: &ResourceCollection) -> bool {
         checked_resources
-            .into_iter()
-            .all(|(resource, count)| self.has_resource(&resource, &count))
+            .iter()
+            .all(|(resource, count)| self.has_resource(resource, count))
     }
 }
 
 pub fn get_total_resources(resource_collection: &ResourceCollection) -> usize {
-    match resource_collection
-        .values()
-        .into_iter()
-        .map(|value| *value)
-        .reduce(|a, b| a + b)
-    {
-        None => 0,
-        Some(sum) => sum,
-    }
+    resource_collection.values().sum()
 }

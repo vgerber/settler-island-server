@@ -21,8 +21,10 @@ pub struct PlayerSettlement {
 #[derive(Clone)]
 pub struct SettlementLocation {
     id: SettlementLocationId,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     neighbor_tiles: Vec<CubeCoordinates>,
     settlement: Option<PlayerSettlement>,
+    #[expect(dead_code, reason = "read once the rules core is redesigned")]
     seaport: Option<SeaportLocation>,
 }
 
@@ -30,16 +32,16 @@ impl SettlementLocation {
     pub fn from(neighbor_tiles: Vec<CubeCoordinates>, seaport: Option<SeaportLocation>) -> Self {
         SettlementLocation {
             id: SettlementLocation::id_from_tiles(&neighbor_tiles),
-            neighbor_tiles: neighbor_tiles,
+            neighbor_tiles,
             settlement: None,
-            seaport: seaport,
+            seaport,
         }
     }
 
-    pub fn id_from_tiles(tiles: &Vec<CubeCoordinates>) -> SettlementLocationId {
+    pub fn id_from_tiles(tiles: &[CubeCoordinates]) -> SettlementLocationId {
         let min = CubeCoordinates::min(tiles);
         let max = CubeCoordinates::max(tiles);
-        format!("{}-{}", min.to_string(), max.to_string())
+        format!("{min}-{max}")
     }
 
     pub fn get_id(&self) -> &SettlementLocationId {
@@ -95,9 +97,9 @@ impl SettlementLocation {
         }
 
         match self.settlement.as_mut() {
-            None => return Err("Cities can only built from villages".to_string()),
+            None => Err("Cities can only built from villages".to_string()),
             Some(settlement) => match settlement.get_settlement_type() {
-                SettlementType::City => return Err("Settlement is a city already".to_string()),
+                SettlementType::City => Err("Settlement is a city already".to_string()),
                 SettlementType::Village => settlement.build_city(),
             },
         }
@@ -114,7 +116,7 @@ impl SettlementLocation {
 impl PlayerSettlement {
     pub fn from(player_id: usize) -> Self {
         PlayerSettlement {
-            player_id: player_id,
+            player_id,
             settlement_type: SettlementType::Village,
         }
     }

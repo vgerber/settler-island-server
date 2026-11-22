@@ -1,14 +1,10 @@
 use std::{cmp, collections::HashMap};
 
-use log::{debug, logger, trace};
+use log::{debug, trace};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::server::{
-    message::error_codes,
-    user::UserId,
-    user_connection::{self, UserConnection},
-};
+use crate::server::{message::error_codes, user::UserId, user_connection::UserConnection};
 
 use super::game_lobby::{GameLobby, GameLobbyAccess};
 
@@ -39,7 +35,7 @@ impl LobbyBrowser {
         }
 
         let id = &Uuid::new_v4().as_simple().to_string();
-        let lobby = match GameLobby::from(
+        let lobby = GameLobby::from(
             id.clone(),
             name,
             password,
@@ -47,14 +43,10 @@ impl LobbyBrowser {
             owner.clone(),
             owner_game_state.user.as_ref().unwrap().get_id().clone(),
         )
-        .await
-        {
-            Ok(lobby) => lobby,
-            Err(err) => return Err("Failed to create lobby".to_string()),
-        };
+        .await;
 
         if self.lobbies.contains_key(id) {
-            return Err(format!("Lobby id is already taken"));
+            return Err("Lobby id is already taken".to_string());
         }
 
         let lobby_access = GameLobbyAccess::new(Mutex::new(lobby));
@@ -74,13 +66,19 @@ impl LobbyBrowser {
         &self,
         user_connection: &UserConnection,
         lobby_id: &String,
-        password: &String,
+        password: &str,
     ) -> Result<(), error_codes::ErrorCode> {
-        if let Some(_) = &user_connection.get_game_state().lock().await.lobby {
+        if user_connection
+            .get_game_state()
+            .lock()
+            .await
+            .lobby
+            .is_some()
+        {
             return Err(error_codes::ALREADY_IN_LOBBY);
         };
 
-        let found_lobby = match self.get_lobby_by_id(&lobby_id) {
+        let found_lobby = match self.get_lobby_by_id(lobby_id) {
             Some(lobby) => lobby,
             None => {
                 return Err(error_codes::LOBBY_NOT_FOUND);
@@ -89,7 +87,7 @@ impl LobbyBrowser {
 
         let mut found_lobby_locked = found_lobby.lock().await;
 
-        if !found_lobby_locked.is_password(&password) {
+        if !found_lobby_locked.is_password(password) {
             return Err(error_codes::INVALID_PASSWORD);
         }
 
@@ -110,7 +108,7 @@ impl LobbyBrowser {
         trace!("Lock lobby");
         let mut lobby = lobby.lock().await;
 
-        if let Err(err) = lobby.remove_user(user_id) {
+        if let Err(_err) = lobby.remove_user(user_id) {
             return Err(error_codes::LOBBY_INTERNAL_ERROR);
         }
 
@@ -128,16 +126,8 @@ impl LobbyBrowser {
         }
     }
 
-    pub fn close_lobby(&mut self, lobby_id: &String) -> Result<(), String> {
-        trace!("Closing lobby \"{}\"", lobby_id);
-        match self.lobbies.remove(lobby_id) {
-            None => Err(String::from("Lobby not found")),
-            Some(_) => Ok(()),
-        }
-    }
-
     pub fn get_lobby_by_id(&self, lobby_id: &String) -> Option<GameLobbyAccess> {
-        return self.lobbies.get(lobby_id).cloned();
+        self.lobbies.get(lobby_id).cloned()
     }
 
     pub fn get_lobby_ids(&self) -> Vec<&String> {
@@ -161,8 +151,8 @@ impl LobbyBrowser {
         );
 
         lobby_page_ids
-            .into_iter()
-            .filter_map(|lobby_id| self.get_lobby_by_id(&lobby_id))
+            .iter()
+            .filter_map(|lobby_id| self.get_lobby_by_id(lobby_id))
             .collect()
     }
 }

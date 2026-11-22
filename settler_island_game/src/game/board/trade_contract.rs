@@ -22,8 +22,8 @@ impl AcceptsNAnyTradeContract {
         }
 
         AcceptsNAnyTradeContract {
-            receive_count: receive_count,
-            send_count: send_count,
+            receive_count,
+            send_count,
         }
     }
 }
@@ -37,7 +37,7 @@ impl TradeContract for AcceptsNAnyTradeContract {
             return false;
         }
 
-        if receive_count % self.receive_count != 0 {
+        if !receive_count.is_multiple_of(self.receive_count) {
             return false;
         }
 
@@ -60,9 +60,9 @@ impl AcceptsNSingleResourceTradeContract {
         }
 
         AcceptsNSingleResourceTradeContract {
-            receive_count: receive_count,
-            send_count: send_count,
-            resource: resource,
+            receive_count,
+            send_count,
+            resource,
         }
     }
 }
@@ -76,7 +76,7 @@ impl TradeContract for AcceptsNSingleResourceTradeContract {
             return false;
         }
 
-        if receive_count % self.receive_count != 0 {
+        if !receive_count.is_multiple_of(self.receive_count) {
             return false;
         }
 

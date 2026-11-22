@@ -11,7 +11,7 @@ pub struct CubeCoordinates {
 
 impl CubeCoordinates {
     pub fn from(q: i32, r: i32, s: i32) -> Self {
-        CubeCoordinates { q: q, r: r, s: s }
+        CubeCoordinates { q, r, s }
     }
 
     pub fn from_rs(r: i32, s: i32) -> Self {
@@ -28,7 +28,7 @@ impl CubeCoordinates {
 
     ///
     /// # Return Order
-    /// ```
+    /// ```text
     ///  4 5
     /// 3 T 0
     ///  2 1
@@ -47,7 +47,7 @@ impl CubeCoordinates {
         .collect()
     }
 
-    pub fn min(coordinates: &Vec<CubeCoordinates>) -> CubeCoordinates {
+    pub fn min(coordinates: &[CubeCoordinates]) -> CubeCoordinates {
         if coordinates.is_empty() {
             panic!("Empty cube coordinates passed")
         }
@@ -59,7 +59,7 @@ impl CubeCoordinates {
         }
     }
 
-    pub fn max(coordinates: &Vec<CubeCoordinates>) -> CubeCoordinates {
+    pub fn max(coordinates: &[CubeCoordinates]) -> CubeCoordinates {
         if coordinates.is_empty() {
             panic!("Empty cube coordinates passed")
         }
@@ -94,8 +94,8 @@ impl Add for CubeCoordinates {
     }
 }
 
-impl ToString for CubeCoordinates {
-    fn to_string(&self) -> String {
-        format!("({},{},{})", self.q, self.r, self.s)
+impl std::fmt::Display for CubeCoordinates {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "({},{},{})", self.q, self.r, self.s)
     }
 }

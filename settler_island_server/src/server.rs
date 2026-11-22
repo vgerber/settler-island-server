@@ -1,18 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use log::{debug, info, trace};
+use log::{debug, trace};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::server::user::UserData;
 
-use self::{
-    lobby::lobby_browser::LobbyBrowser,
-    user::{ServerUser, UserId},
-    user_connection::UserConnection,
-};
+use self::{lobby::lobby_browser::LobbyBrowser, user::UserId, user_connection::UserConnection};
 
-pub mod error;
 pub mod lobby;
 pub mod message;
 pub mod user;

@@ -6,6 +6,12 @@ pub struct HexagonMap {
     tiles: HashMap<CubeCoordinates, RefCell<HexagonTile>>,
 }
 
+impl Default for HexagonMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HexagonMap {
     pub fn new() -> Self {
         HexagonMap {
@@ -32,7 +38,7 @@ impl HexagonMap {
     }
 
     /// # Return Order (Filters non existing tiles)
-    /// ```
+    /// ```text
     ///  4 5
     /// 3 T 0
     ///  2 1
@@ -41,8 +47,7 @@ impl HexagonMap {
         coordinates
             .get_neighbor_coordinates()
             .into_iter()
-            .map(|coordinates| self.get_tile(&coordinates))
-            .filter_map(|tile| tile)
+            .filter_map(|coordinates| self.get_tile(&coordinates))
             .collect()
     }
 

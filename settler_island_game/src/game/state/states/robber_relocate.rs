@@ -1,5 +1,5 @@
 use log::trace;
-use rand::{seq::SliceRandom, thread_rng, Rng};
+use rand::{seq::SliceRandom, thread_rng};
 use serde_json::Value;
 use settler_island_util_derive::HasStateId;
 
@@ -8,13 +8,19 @@ use crate::game::{
     player::{Player, PlayerId},
     state::{
         action_data::{PlaceRobberData, PLACE_ROBBER_ACTION},
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
     },
     Game,
 };
 
 #[derive(HasStateId)]
 pub struct RobberRelocate {}
+
+impl Default for RobberRelocate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl RobberRelocate {
     pub fn new() -> Self {
@@ -98,16 +104,12 @@ impl RobberRelocate {
         let player_resource_ids: Vec<&ResourcedId> = resources.keys().collect();
         loop {
             let resource = *player_resource_ids.choose(&mut thread_rng()).unwrap();
-            match resources.get(resource) {
-                Some(count) => {
-                    if *count > 0 {
-                        return Some(resource.clone());
-                    }
+            if let Some(count) = resources.get(resource) {
+                if *count > 0 {
+                    return Some(resource.clone());
                 }
-                _ => (),
             }
         }
-        None
     }
 }
 
@@ -128,5 +130,5 @@ impl GameState for RobberRelocate {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }

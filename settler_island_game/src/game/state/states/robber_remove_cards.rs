@@ -9,7 +9,7 @@ use crate::game::{
     player::{Player, PlayerId},
     state::{
         action_data::REMOVE_CARDS_ACTION,
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
     },
     Game,
 };
@@ -25,6 +25,12 @@ pub fn has_a_player_too_many_cards(game: &Game) -> bool {
 #[derive(HasStateId)]
 pub struct RobberRemoveCards {
     player_remove_counts: HashMap<PlayerId, usize>,
+}
+
+impl Default for RobberRemoveCards {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RobberRemoveCards {
@@ -52,7 +58,7 @@ impl GameState for RobberRemoveCards {
         None
     }
 
-    fn activate(&mut self, game: &Game) {
+    fn activate(&mut self, _game: &Game) {
         self.player_remove_counts.clear();
     }
 }
@@ -62,9 +68,7 @@ fn process_remove_cards(
     player_id: &PlayerId,
     action_data: Value,
 ) -> GameActionResult {
-    if let Err(err) = remove_player_cards(game, player_id, action_data) {
-        return Err(err);
-    }
+    remove_player_cards(game, player_id, action_data)?;
 
     match has_a_player_too_many_cards(game) {
         true => Ok(()),
@@ -74,9 +78,7 @@ fn process_remove_cards(
             .transition_to(game, RobberRelocate::get_id())
         {
             Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(crate::game::GameError::ActionFailed);
-            }
+            Err(_err) => Err(crate::game::GameError::ActionFailed),
         },
     }
 }

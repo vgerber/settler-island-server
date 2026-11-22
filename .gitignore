@@ -1,2 +1,8 @@
 /target
 .vscode
+target
+.build/
+.handoffs/
+.claude/
+doc/
+tools/

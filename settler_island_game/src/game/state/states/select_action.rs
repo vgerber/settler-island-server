@@ -1,7 +1,4 @@
-use std::{
-    cell::{RefCell, RefMut},
-    collections::HashMap,
-};
+use std::cell::RefMut;
 
 use log::{error, trace};
 use serde_json::Value;
@@ -26,9 +23,9 @@ use crate::game::{
         action_data::{
             PlaceRoadData, PlaceSettlementData, BUILD_ROAD_ACTION, BUILD_SETTLEMENT_ACTION,
             DRAW_DEVELOPMENT_CARD_ACTION, END_TURN_ACTION, OFFER_BANK_TRADE_ACTION,
-            OFFER_TRADE_ACTION,
+            OFFER_TRADE_ACTION, PLAY_DEVELOPMENT_CARD_ACTION,
         },
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
     },
     Game, GameError,
 };
@@ -37,6 +34,12 @@ use super::{development_card, roll_dice::RollDice, trading};
 
 #[derive(HasStateId)]
 pub struct SelectAction {}
+
+impl Default for SelectAction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SelectAction {
     pub fn new() -> Self {
@@ -59,6 +62,9 @@ impl GameState for SelectAction {
             BUILD_SETTLEMENT_ACTION => process_build_settlement(game, player_id, action.data),
             BUILD_ROAD_ACTION => process_build_road(game, player_id, action.data),
             DRAW_DEVELOPMENT_CARD_ACTION => {
+                process_draw_development_card(game, player_id, action.data)
+            }
+            PLAY_DEVELOPMENT_CARD_ACTION => {
                 development_card::process_action(game, player_id, action.data)
             }
             END_TURN_ACTION => process_end_turn(game, player_id, action.data),
@@ -74,7 +80,7 @@ impl GameState for SelectAction {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }
 
 fn process_build_road(
@@ -91,9 +97,7 @@ fn process_build_road(
     };
 
     let player = game.get_player(*player_id);
-    if let Err(err) = remove_resources(&mut player.borrow_mut(), &get_road_cost()) {
-        return Err(err);
-    }
+    remove_resources(&mut player.borrow_mut(), &get_road_cost())?;
 
     match place_road(
         game.get_board_mut().get_settlement_map_mut(),
@@ -123,12 +127,10 @@ fn process_build_settlement(
         SettlementType::City => get_city_cost(),
     };
 
-    if let Err(err) = remove_resources(
+    remove_resources(
         &mut game.get_player(*player_id).borrow_mut(),
         &resource_cost,
-    ) {
-        return Err(err);
-    }
+    )?;
 
     place_settlement(
         game.get_board_mut().get_settlement_map_mut(),
@@ -139,33 +141,27 @@ fn process_build_settlement(
 }
 
 fn process_draw_development_card(
-    game: &mut Game,
-    player_id: &PlayerId,
-    action_data: Value,
+    _game: &mut Game,
+    _player_id: &PlayerId,
+    _action_data: Value,
 ) -> GameActionResult {
     Err(GameError::ActionNotAllowed)
 }
 
-fn process_end_turn(game: &mut Game, player_id: &PlayerId, action_data: Value) -> GameActionResult {
+fn process_end_turn(
+    game: &mut Game,
+    _player_id: &PlayerId,
+    _action_data: Value,
+) -> GameActionResult {
     game.end_turn();
     match game
         .get_state_machine()
         .borrow_mut()
         .transition_to(game, RollDice::get_id())
     {
-        Err(err) => Err(GameError::ActionFailed),
+        Err(_err) => Err(GameError::ActionFailed),
         Ok(_) => Ok(()),
     }
-}
-
-fn process_trade_offer(
-    game: &mut Game,
-    player_id: &PlayerId,
-    action_data: Value,
-) -> GameActionResult {
-    // TODO create trade offer
-    // TODO transition to trading state
-    Err(GameError::ActionNotAllowed)
 }
 
 fn get_road_cost() -> ResourceCollection {
@@ -191,6 +187,7 @@ fn get_city_cost() -> ResourceCollection {
     ])
 }
 
+#[expect(dead_code, reason = "buying development cards is not implemented yet")]
 fn get_development_card_cost() -> ResourceCollection {
     ResourceCollection::from([
         (RESOURCE_ORE.to_string(), 1),
@@ -203,11 +200,11 @@ fn remove_resources(
     player: &mut RefMut<'_, Player>,
     resources: &ResourceCollection,
 ) -> GameActionResult {
-    if !player.get_resources().has_resources(&resources) {
+    if !player.get_resources().has_resources(resources) {
         return Err(GameError::NotEnoughResources);
     }
 
-    if !player.get_resources_mut().remove_resources(&resources) {
+    if !player.get_resources_mut().remove_resources(resources) {
         error!(
             "Failed to remove resources {:?} from {}",
             resources,
@@ -260,7 +257,7 @@ pub fn place_road(
         Some(settlement) => settlement,
     };
 
-    if !settlement_a.is_owner(&player_id) && !settlement_b.is_owner(&player_id) {
+    if !settlement_a.is_owner(player_id) && !settlement_b.is_owner(player_id) {
         trace!(
             "Player {} does not own a settlement on road \"{}\"",
             player_id,
@@ -303,14 +300,14 @@ fn place_settlement(
         return Err(GameError::InvalidLocation);
     }
 
-    let settlement: &mut SettlementLocation =
-        match settlement_map.get_settlement_mut(&settlement_id) {
-            Some(settlement) => settlement,
-            None => {
-                trace!("Settlement \"{}\" not found", settlement_id);
-                return Err(GameError::InvalidLocation);
-            }
-        };
+    let settlement: &mut SettlementLocation = match settlement_map.get_settlement_mut(settlement_id)
+    {
+        Some(settlement) => settlement,
+        None => {
+            trace!("Settlement \"{}\" not found", settlement_id);
+            return Err(GameError::InvalidLocation);
+        }
+    };
 
     match settlement.build_settlement(settlement_type, player_id) {
         Ok(_) => Ok(()),

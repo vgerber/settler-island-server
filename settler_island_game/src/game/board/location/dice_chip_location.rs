@@ -12,7 +12,7 @@ impl DiceChipLocation {
     pub fn from(device_value: u8, assigned_tile: CubeCoordinates) -> Self {
         DiceChipLocation {
             dice_value: device_value,
-            assigned_tile: assigned_tile,
+            assigned_tile,
         }
     }
 

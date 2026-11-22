@@ -1,5 +1,3 @@
-use std::{iter::repeat, rc::Rc, sync::Arc};
-
 use rand::{seq::SliceRandom, thread_rng};
 
 use crate::game::{
@@ -11,17 +9,13 @@ use crate::game::{
         },
         location::{
             dice_chip_location::DiceChipLocation,
-            road_location::{RoadLocation, RoadLocationId},
+            road_location::RoadLocation,
             robber_location::RobberLocation,
-            seaport_location::SeaportLocation,
             settlement_location::{SettlementLocation, SettlementLocationId},
             settlement_map::SettlementMap,
         },
         resource::base_resource::{
             ResourcedId, RESOURCE_CLAY, RESOURCE_ORE, RESOURCE_SHEEP, RESOURCE_WHEAT, RESOURCE_WOOD,
-        },
-        trade_contract::{
-            AcceptsNAnyTradeContract, AcceptsNSingleResourceTradeContract, TradeContract,
         },
         GameBoard,
     },
@@ -34,26 +28,14 @@ use crate::game::{
 
 pub fn generate_board() -> Result<GameBoard, String> {
     let board_size: i32 = 3;
-    let (mut tile_map, board_resources) = match generate_hexagon_map(board_size) {
-        Ok(values) => values,
-        Err(err) => return Err(err),
-    };
-    let dice_chips = match generate_dice_chips(&tile_map) {
-        Ok(chips) => chips,
-        Err(err) => return Err(err),
-    };
+    let (mut tile_map, board_resources) = generate_hexagon_map(board_size)?;
+    let dice_chips = generate_dice_chips(&tile_map)?;
     let robber_location = get_robber_location();
-    let mut settlement_map = match generate_settlement_map(&mut tile_map) {
-        Ok(map) => map,
-        Err(err) => return Err(err),
-    };
+    let settlement_map = generate_settlement_map(&mut tile_map)?;
     // if let Err(_) = generate_seaports(&mut settlement_map, &tile_map, board_size) {
     //     return Err(format!("Failed to generate seaports"));
     // }
-    let development_cards = match generate_development_cards() {
-        Ok(cards) => cards,
-        Err(err) => return Err(err),
-    };
+    let development_cards = generate_development_cards()?;
 
     Ok(GameBoard::from(
         tile_map,
@@ -81,7 +63,7 @@ fn generate_hexagon_map(board_size: i32) -> Result<(HexagonMap, Vec<ResourcedId>
         vec![3, 4, 3, 4, 4].into_iter().enumerate().collect();
     let mut resource_list: Vec<usize> = board_resources_counts
         .into_iter()
-        .flat_map(|(index, resource_count)| repeat(index).take(resource_count))
+        .flat_map(|(index, resource_count)| std::iter::repeat_n(index, resource_count))
         .collect::<Vec<usize>>();
     resource_list.shuffle(&mut thread_rng());
 
@@ -94,22 +76,16 @@ fn generate_hexagon_map(board_size: i32) -> Result<(HexagonMap, Vec<ResourcedId>
             }
 
             if coordinates.q == 0 && coordinates.r == 0 && coordinates.s == 0 {
-                if let Err(err) =
-                    hexagon_map.add_tile(HexagonTile::from(coordinates, TileType::FillerTile()))
-                {
-                    return Err(err);
-                }
+                hexagon_map.add_tile(HexagonTile::from(coordinates, TileType::FillerTile()))?
             } else {
                 let tile_resource = board_resources
                     [resource_list.pop().expect("Not enough resources generated")]
                 .clone();
 
-                if let Err(err) = hexagon_map.add_tile(HexagonTile::from(
+                hexagon_map.add_tile(HexagonTile::from(
                     coordinates,
                     TileType::ResourceTile(tile_resource),
-                )) {
-                    return Err(err);
-                }
+                ))?
             }
         }
     }
@@ -158,13 +134,11 @@ fn generate_settlement_map(hexagon_map: &mut HexagonMap) -> Result<SettlementMap
             let settlement = SettlementLocation::from(neighbor_tiles, None);
 
             if settlement_map.get_settlement(settlement.get_id()).is_none() {
-                if let Err(err) = settlement_map.add_settlement(settlement.clone()) {
-                    return Err(err);
-                }
+                settlement_map.add_settlement(settlement.clone())?
             }
 
             corner_settlements.push(settlement.get_id().clone());
-            tile.add_corner_settlement(settlement.get_id().clone());
+            tile.add_corner_settlement(settlement.get_id().clone())?;
         }
 
         for corner_location_index in 0..corner_settlements.len() {
@@ -177,9 +151,7 @@ fn generate_settlement_map(hexagon_map: &mut HexagonMap) -> Result<SettlementMap
             {
                 continue;
             }
-            if let Err(err) = settlement_map.add_road(road_a) {
-                return Err(err);
-            }
+            settlement_map.add_road(road_a)?
         }
     }
 
@@ -197,18 +169,18 @@ fn is_tile_in_map(coordinates: &CubeCoordinates, board_size: i32) -> bool {
 }
 
 fn generate_development_cards() -> Result<Vec<DevelopmentCard>, String> {
-    let mut card_ids: Vec<DevelopmentCard> = vec![
+    let card_ids: Vec<DevelopmentCard> = vec![
         DEVELOPMENT_CARD_KNIGHT,
         DEVELOPMENT_CARD_INVENTION,
         DEVELOPMENT_CARD_STREET_CONSTRUCTION,
         DEVELOPMENT_CARD_MONOPOLY,
         DEVELOPMENT_CARD_VICTORY_POINT,
     ];
-    let mut card_frequencies: Vec<usize> = vec![14, 2, 2, 2, 5];
+    let card_frequencies: Vec<usize> = vec![14, 2, 2, 2, 5];
     let mut cards: Vec<DevelopmentCard> = card_frequencies
         .into_iter()
         .enumerate()
-        .flat_map(|(index, frequency)| repeat(index).take(frequency))
+        .flat_map(|(index, frequency)| std::iter::repeat_n(index, frequency))
         .map(|card_index| card_ids[card_index])
         .collect();
     cards.shuffle(&mut thread_rng());

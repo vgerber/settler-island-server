@@ -1,19 +1,16 @@
-use std::cell::RefCell;
-
 use log::error;
 use settler_island_util_derive::HasStateId;
 
 use crate::game::{
     board::{
-        hexagon::hexagon_tile::{HexagonTile, TileType},
+        hexagon::hexagon_tile::TileType,
         location::settlement_location::{PlayerSettlement, SettlementType},
         resource::base_resource::ResourcedId,
-        DoubleDiceRoll,
     },
-    player::{Player, PlayerId},
+    player::PlayerId,
     state::{
         action_data::ROLL_DICE_ACTION,
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
     },
     Game, GameError,
 };
@@ -26,12 +23,18 @@ use super::{
 #[derive(HasStateId)]
 pub struct RollDice {}
 
+impl Default for RollDice {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RollDice {
     pub fn new() -> Self {
         RollDice {}
     }
 
-    fn process_roll_dice(&self, game: &mut Game, player_id: &PlayerId) -> GameActionResult {
+    fn process_roll_dice(&self, game: &mut Game, _player_id: &PlayerId) -> GameActionResult {
         let dice_roll = game.get_board_mut().roll_dice();
         match dice_roll.get_total() {
             7 => self.transition_to_robber_state(game),
@@ -53,15 +56,13 @@ impl RollDice {
 
         match transition_result {
             Ok(_) => Ok(()),
-            Err(err) => {
-                return Err(GameError::ActionFailed);
-            }
+            Err(_err) => Err(GameError::ActionFailed),
         }
     }
 
     fn add_resources(&self, game: &mut Game, dice_roll_value: &u8) -> GameActionResult {
         let board = game.get_board();
-        let tiles = board.get_tiles_by_dice_value(&dice_roll_value);
+        let tiles = board.get_tiles_by_dice_value(dice_roll_value);
         for tile in tiles {
             let tile_borrow = tile.borrow();
 
@@ -91,7 +92,7 @@ impl RollDice {
                     Some(player_settlement) => player_settlement,
                 };
 
-                self.add_settlement_resource(game, &player_settlement, resource);
+                self.add_settlement_resource(game, player_settlement, resource)?;
             }
         }
 
@@ -138,5 +139,5 @@ impl GameState for RollDice {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }

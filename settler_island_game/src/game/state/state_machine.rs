@@ -1,15 +1,11 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use log::error;
 use serde::Deserialize;
 use serde_json::Value;
 use settler_island_util::state_id::HasStateId;
 
-use crate::game::{
-    board::{self, GameBoard},
-    player::{Player, PlayerId},
-    Game, GameError,
-};
+use crate::game::{player::PlayerId, Game, GameError};
 
 use super::states::game_error::GameErrorState;
 
@@ -42,13 +38,12 @@ pub struct StateMachine {
 impl StateMachine {
     pub fn from(mut states: Vec<GameStateT>, current_state_id: String) -> Self {
         let mut states_map = GameStates::new();
-        while !states.is_empty() {
-            let state = states.pop().unwrap();
+        while let Some(state) = states.pop() {
             states_map.insert(state.get_id().to_string(), state);
         }
 
         StateMachine {
-            current_state_id: current_state_id,
+            current_state_id,
             states: states_map,
         }
     }

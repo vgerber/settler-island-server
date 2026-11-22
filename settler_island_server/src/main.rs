@@ -1,4 +1,3 @@
-#[allow(dead_code, unused)]
 mod server;
 use std::net::SocketAddr;
 
@@ -38,9 +37,7 @@ async fn handle_connection(
     connection_address: SocketAddr,
 ) -> Result<()> {
     info!("Client {connection_address} connected");
-    let websocket_stream = accept_async(connection_stream)
-        .await
-        .expect("Failed to accept client");
+    let websocket_stream = accept_async(connection_stream).await?;
 
     let connection = UserConnection::from(websocket_stream, connection_address, game_server);
     UserConnection::listen(&connection).await

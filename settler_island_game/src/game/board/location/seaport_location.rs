@@ -9,9 +9,7 @@ pub struct SeaportLocation {
 
 impl SeaportLocation {
     pub fn new(trade_contract: Arc<dyn TradeContract>) -> Self {
-        SeaportLocation {
-            trade_contract: trade_contract,
-        }
+        SeaportLocation { trade_contract }
     }
 
     pub fn get_trade_contract(&self) -> &Arc<dyn TradeContract> {

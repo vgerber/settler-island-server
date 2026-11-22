@@ -17,9 +17,7 @@ pub struct RoadLocation {
 
 impl PlayerRoad {
     pub fn from(player_id: usize) -> Self {
-        PlayerRoad {
-            player_id: player_id,
-        }
+        PlayerRoad { player_id }
     }
 
     pub fn get_player_id(&self) -> &usize {
@@ -35,8 +33,8 @@ impl RoadLocation {
         RoadLocation {
             id: RoadLocation::to_id(settlement_a_id.clone(), settlement_b_id.clone()),
             player_road: None,
-            settlement_a_id: settlement_a_id,
-            settlement_b_id: settlement_b_id,
+            settlement_a_id,
+            settlement_b_id,
         }
     }
 

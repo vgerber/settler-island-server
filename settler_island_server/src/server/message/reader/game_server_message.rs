@@ -1,15 +1,10 @@
 use async_trait::async_trait;
 use futures_util::future::join_all;
-use log::warn;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Error};
-use settler_island_game::game;
+use serde_json::Error;
 
 use crate::server::{
-    lobby::game_lobby::{GameLobbyAccess, GameLobbySummary},
-    message::error_codes,
-    user::UserData,
-    user_connection::UserConnection,
+    lobby::game_lobby::GameLobbySummary, message::error_codes, user_connection::UserConnection,
 };
 
 use super::MessageReaderProvider;
@@ -66,15 +61,12 @@ impl GameServerMessage {
                 user_result.err()
             ));
         }
-        if let Err(err) = user_connection
+        user_connection
             .get_server()
             .lock()
             .await
             .register_user(&user_result.unwrap().username, user_connection)
-            .await
-        {
-            return Err(err);
-        }
+            .await?;
 
         self.send_user(user_connection).await
     }
@@ -134,7 +126,7 @@ impl GameServerMessage {
 
         let page_message = LobbiesMessage {
             page: lobbies_request.page,
-            lobbies: lobbies,
+            lobbies,
         };
 
         let serialized_page_message = match serde_json::to_value(page_message) {
@@ -161,7 +153,7 @@ impl GameServerMessage {
             }
         };
 
-        let lobby_value = match serde_json::to_value(&GameLobbySummary::from(&lobby)) {
+        let lobby_value = match serde_json::to_value(GameLobbySummary::from(&lobby)) {
             Ok(json_value) => json_value,
             Err(err) => return Err(err.to_string()),
         };
@@ -217,21 +209,18 @@ impl GameServerMessage {
             Err(err) => return Err(format!("Failed to parse create lobby message \"{}\"", err)),
         };
 
-        if let Err(err) = user_connection
+        user_connection
             .get_server()
             .lock()
             .await
             .lobby_browser
             .create_and_own_lobby(
-                &user_connection,
+                user_connection,
                 creation_message.lobby_name,
                 creation_message.password,
                 4,
             )
-            .await
-        {
-            return Err(err);
-        }
+            .await?;
 
         self.send_lobby(user_connection).await
     }
@@ -250,13 +239,12 @@ impl MessageReaderProvider for GameServerMessage {
         json_message: &str,
     ) -> Result<(), String> {
         // unregistered
-        match command {
-            "register" => return self.register_user(&user_connection, json_message).await,
-            _ => (),
+        if command == "register" {
+            return self.register_user(user_connection, json_message).await;
         }
 
         // registered
-        if let None = user_connection.get_game_state().lock().await.user {
+        if user_connection.get_game_state().lock().await.user.is_none() {
             let _ = user_connection
                 .send_error(error_codes::NOT_REGISTERED)
                 .await;
@@ -264,11 +252,11 @@ impl MessageReaderProvider for GameServerMessage {
         }
 
         match command {
-            "get-lobbies" => return self.get_lobbies(&user_connection, json_message).await,
-            "join-lobby" => return self.join_lobby(&user_connection, json_message).await,
-            "get-user" => return self.send_user(&user_connection).await,
-            "get-lobby" => return self.send_lobby(&user_connection).await,
-            "create-lobby" => return self.create_game_lobby(&user_connection, json_message).await,
+            "get-lobbies" => return self.get_lobbies(user_connection, json_message).await,
+            "join-lobby" => return self.join_lobby(user_connection, json_message).await,
+            "get-user" => return self.send_user(user_connection).await,
+            "get-lobby" => return self.send_lobby(user_connection).await,
+            "create-lobby" => return self.create_game_lobby(user_connection, json_message).await,
             _ => (),
         }
 

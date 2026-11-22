@@ -25,10 +25,10 @@ impl TradeOffer {
         });
 
         TradeOffer {
-            creator: creator,
-            resource_offer: resource_offer,
-            resource_receive: resource_receive,
-            players_accepted: players_accepted,
+            creator,
+            resource_offer,
+            resource_receive,
+            players_accepted,
         }
     }
 }

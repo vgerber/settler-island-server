@@ -3,15 +3,11 @@ use serde_json::Value;
 use settler_island_util_derive::HasStateId;
 
 use crate::game::{
-    board::location::{
-        road_location::PlayerRoad,
-        settlement_location::{SettlementLocation, SettlementType},
-        settlement_map::SettlementMap,
-    },
-    player::{Player, PlayerId},
+    board::location::{road_location::PlayerRoad, settlement_map::SettlementMap},
+    player::PlayerId,
     state::{
         action_data::{PlaceSettlementData, BUILD_ROAD_ACTION},
-        state_machine::{GameAction, GameState, StateMachine},
+        state_machine::{GameAction, GameState},
         states::{roll_dice::RollDice, start_village_placement::StartVillagePlacement},
     },
     Game, GameError,
@@ -19,6 +15,12 @@ use crate::game::{
 
 #[derive(HasStateId, Debug)]
 pub struct StartRoadPlacement;
+
+impl Default for StartRoadPlacement {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StartRoadPlacement {
     pub fn new() -> Self {
@@ -39,22 +41,18 @@ impl StartRoadPlacement {
             }
         };
 
-        if let Err(err) = StartRoadPlacement::place_road(
+        StartRoadPlacement::place_road(
             game.get_board_mut().get_settlement_map_mut(),
             &place_road_data.settlement_id,
             player_id,
-        ) {
-            return Err(err);
-        }
+        )?;
 
         // end turn on settlement placed
         // last player can place all settlements in one round
         let has_two_settlements =
             StartRoadPlacement::get_player_settlement_count(game, player_id) >= 2;
         let is_last_player = *game.get_current_player_index() == (game.get_player_count() - 1);
-        if !is_last_player {
-            game.end_turn();
-        } else if has_two_settlements {
+        if !is_last_player || has_two_settlements {
             game.end_turn();
         }
 
@@ -62,21 +60,21 @@ impl StartRoadPlacement {
         let all_players_placed_two_settlements =
             StartRoadPlacement::all_players_have_at_least_n_settlements(game, 2);
         if all_players_placed_two_settlements {
-            if let Err(_) = game
+            if game
                 .get_state_machine()
                 .borrow_mut()
                 .transition_to(game, RollDice::get_id())
+                .is_err()
             {
                 return Err(GameError::ActionFailed);
             }
-        } else {
-            if let Err(_) = game
-                .get_state_machine()
-                .borrow_mut()
-                .transition_to(game, StartVillagePlacement::get_id())
-            {
-                return Err(GameError::ActionFailed);
-            }
+        } else if game
+            .get_state_machine()
+            .borrow_mut()
+            .transition_to(game, StartVillagePlacement::get_id())
+            .is_err()
+        {
+            return Err(GameError::ActionFailed);
         }
 
         Ok(())
@@ -160,7 +158,7 @@ impl StartRoadPlacement {
         game.get_players()
             .iter()
             .map(|player| {
-                StartRoadPlacement::get_player_settlement_count(game, &player.borrow().get_id())
+                StartRoadPlacement::get_player_settlement_count(game, player.borrow().get_id())
             })
             .all(|settlement_count| settlement_count >= expected_settlement_count)
     }
@@ -187,5 +185,5 @@ impl GameState for StartRoadPlacement {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }

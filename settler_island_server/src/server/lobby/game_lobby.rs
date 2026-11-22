@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::format, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use log::trace;
 use serde::Serialize;
@@ -11,15 +11,11 @@ use settler_island_game::game::{
             start_village_placement::StartVillagePlacement,
         },
     },
-    Game, GameError, GameSettings,
+    Game, GameSettings,
 };
 use tokio::sync::Mutex;
 
-use crate::server::{
-    error::ServerError,
-    user::{self, UserId},
-    user_connection::UserConnection,
-};
+use crate::server::{user::UserId, user_connection::UserConnection};
 
 pub type GameLobbyAccess = Arc<Mutex<GameLobby>>;
 
@@ -49,43 +45,31 @@ impl GameLobby {
         player_count: u32,
         creator: UserConnection,
         owner_id: UserId,
-    ) -> Result<Self, ServerError> {
+    ) -> Self {
         let mut users = HashMap::new();
         users.insert(owner_id.clone(), creator);
 
-        Ok(GameLobby {
-            id: id,
-            name: name,
-            password: password,
-            player_count: player_count,
-            owner_id: owner_id,
-            users: users,
+        GameLobby {
+            id,
+            name,
+            password,
+            player_count,
+            owner_id,
+            users,
             game: Mutex::new(None),
-        })
+        }
     }
 
     pub fn get_id(&self) -> &String {
-        return &self.id;
-    }
-
-    pub fn get_name(&self) -> &String {
-        return &self.name;
-    }
-
-    pub fn get_player_count(&self) -> &u32 {
-        return &self.player_count;
+        &self.id
     }
 
     pub fn get_joined_user_count(&self) -> usize {
-        return self.users.len();
-    }
-
-    pub fn has_password(&self) -> bool {
-        return !self.password.is_empty();
+        self.users.len()
     }
 
     pub fn is_password(&self, password: &str) -> bool {
-        return self.password == password;
+        self.password == password
     }
 
     pub async fn add_user(&mut self, user_connection: UserConnection) -> Result<(), String> {
@@ -99,7 +83,7 @@ impl GameLobby {
             .get_id()
             .clone();
 
-        if (self.users.contains_key(&user_id)) {
+        if self.users.contains_key(&user_id) {
             return Err(format!("\"{}\" is already in lobby", user_id));
         }
 
@@ -113,7 +97,7 @@ impl GameLobby {
         }
         self.users.remove(user_id).unwrap();
         trace!("User \"{}\" removed from lobby \"{}\"", user_id, self.id);
-        if self.users.len() == 0 || user_id != &self.owner_id {
+        if self.users.is_empty() || user_id != &self.owner_id {
             return Ok(());
         }
 
@@ -135,7 +119,7 @@ impl GameLobby {
     pub async fn start_game(
         &mut self,
         settings: GameSettings,
-        player_user_ids: Vec<UserId>,
+        _player_user_ids: Vec<UserId>,
     ) -> Result<(), String> {
         let board = match generate_board() {
             Ok(board) => board,
@@ -163,7 +147,7 @@ impl GameLobbySummary {
             id: lobby.id.clone(),
             name: lobby.name.clone(),
             player_count: lobby.player_count,
-            password_protected: lobby.password.len() > 0,
+            password_protected: !lobby.password.is_empty(),
         }
     }
 }

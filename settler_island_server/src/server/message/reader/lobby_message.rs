@@ -1,17 +1,16 @@
-use std::{collections::HashMap, fmt::format};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use futures_util::future::join_all;
 use log::trace;
 use serde_json::json;
 use settler_island_game::game::GameSettings;
-use tokio::sync::Mutex;
 
 use crate::server::{
     lobby::game_lobby::GameLobbyAccess,
     message::error_codes,
     user::{UserData, UserId},
-    user_connection::{self, UserConnection},
+    user_connection::UserConnection,
 };
 
 use super::MessageReaderProvider;
@@ -33,7 +32,7 @@ impl LobbyMessage {
         let mut game_state = user_connection.get_game_state().lock().await;
         let lobby_browser = &mut user_connection.get_server().lock().await.lobby_browser;
 
-        if let Err(err) = game_state.leave_lobby(lobby_browser).await {
+        if let Err(_err) = game_state.leave_lobby(lobby_browser).await {
             let _ = user_connection.send_error(error_codes::NOT_IN_LOBBY).await;
             return Err("Failed to leave lobby".to_string());
         }
@@ -76,8 +75,7 @@ impl LobbyMessage {
             }
         };
 
-        self.send_users(user_connection, &lobby).await;
-        Ok(())
+        self.send_users(user_connection, &lobby).await
     }
 
     pub async fn send_users(
@@ -139,25 +137,31 @@ impl MessageReaderProvider for LobbyMessage {
         &self,
         user_connection: &UserConnection,
         command: &str,
-        json_message: &str,
+        _json_message: &str,
     ) -> Result<(), String> {
         // registered
-        if let None = user_connection.get_game_state().lock().await.user {
+        if user_connection.get_game_state().lock().await.user.is_none() {
             let _ = user_connection
                 .send_error(error_codes::NOT_REGISTERED)
                 .await;
             return Err("User not registered".to_string());
         }
 
-        if let None = user_connection.get_game_state().lock().await.lobby {
+        if user_connection
+            .get_game_state()
+            .lock()
+            .await
+            .lobby
+            .is_none()
+        {
             let _ = user_connection.send_error(error_codes::NOT_IN_LOBBY).await;
             return Err("User not in lobby".to_string());
         }
 
         match command {
-            "leave" => return self.leave_lobby(&user_connection).await,
-            "start-game" => return self.start_game(&user_connection).await,
-            "get-users" => return self.get_users(&user_connection).await,
+            "leave" => return self.leave_lobby(user_connection).await,
+            "start-game" => return self.start_game(user_connection).await,
+            "get-users" => return self.get_users(user_connection).await,
             _ => (),
         }
 

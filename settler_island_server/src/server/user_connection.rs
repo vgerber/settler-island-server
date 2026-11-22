@@ -6,11 +6,7 @@ use futures_util::{
 };
 use log::{debug, error, info};
 use serde_json::{json, Error, Value};
-use settler_island_game::game;
-use tokio::{
-    net::TcpStream,
-    sync::{Mutex, MutexGuard},
-};
+use tokio::{net::TcpStream, sync::Mutex};
 use tokio_tungstenite::{
     tungstenite::{Message, Result},
     WebSocketStream,
@@ -19,17 +15,14 @@ use tokio_tungstenite::{
 use crate::server::message::reader::{lobby_message::LobbyMessage, MessageBase};
 
 use super::{
-    lobby::{
-        game_lobby::GameLobbyAccess,
-        lobby_browser::{self, LobbyBrowser},
-    },
+    lobby::{game_lobby::GameLobbyAccess, lobby_browser::LobbyBrowser},
     message::{
         broker::MessageBroker,
         error_codes::{self, ErrorCode},
         reader::game_server_message::GameServerMessage,
     },
     user::UserData,
-    GameServer, GameServerAccess,
+    GameServerAccess,
 };
 
 pub type StreamSendAccess = Arc<Mutex<SplitSink<WebSocketStream<TcpStream>, Message>>>;
@@ -50,10 +43,6 @@ pub struct UserConnection {
     game_state: UserGameStateAccess,
 }
 
-unsafe impl Send for UserConnection {}
-
-unsafe impl Sync for UserConnection {}
-
 impl UserGameState {
     pub fn new() -> Self {
         UserGameState {
@@ -71,7 +60,7 @@ impl UserGameState {
             Some(user) => user,
         };
 
-        let mut lobby = match self.lobby.take() {
+        let lobby = match self.lobby.take() {
             None => return Err(error_codes::NOT_IN_LOBBY),
             Some(lobby) => lobby,
         };
@@ -95,7 +84,7 @@ impl UserConnection {
             connection_address,
             stream_send: StreamSendAccess::new(Mutex::new(send)),
             stream_receive: StreamReceiveAccess::new(Mutex::new(receive)),
-            server: server,
+            server,
             game_state: UserGameStateAccess::new(Mutex::new(UserGameState::new())),
         }
     }
@@ -123,7 +112,7 @@ impl UserConnection {
                         continue;
                     }
                     UserConnection::read_message(
-                        &user_connection,
+                        user_connection,
                         &message_broker,
                         &message.to_string(),
                     )
@@ -164,13 +153,12 @@ impl UserConnection {
     ) {
         let connection_address = user_connection.connection_address;
         debug!("Client {} send \"{}\"", connection_address, message);
-        let message_base_result: Result<MessageBase, Error> =
-            serde_json::from_str(&message.to_string());
+        let message_base_result: Result<MessageBase, Error> = serde_json::from_str(message);
         let processing_result = match message_base_result {
             Ok(message_base) => {
                 message_broker
                     .call(
-                        &user_connection,
+                        user_connection,
                         &message_base.group,
                         &message_base.command,
                         message,

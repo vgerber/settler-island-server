@@ -1,18 +1,15 @@
-use std::{borrow::Borrow, cell::RefCell};
-
 use log::{error, trace};
 use serde_json::Value;
 use settler_island_util_derive::HasStateId;
 
 use crate::game::{
-    player::{Player, PlayerId},
+    player::PlayerId,
     state::{
         action_data::{
             CompletePlayerTradeData, TradeOfferData, ACCEPT_TRADE_ACTION, CANCEL_TRADE_ACTION,
-            COMPLETE_TRADE_ACTION, OFFER_BANK_TRADE_ACTION, OFFER_TRADE_ACTION,
-            REJECT_TRADE_ACTION,
+            COMPLETE_TRADE_ACTION, REJECT_TRADE_ACTION,
         },
-        state_machine::{GameAction, GameActionResult, GameState, StateMachine},
+        state_machine::{GameAction, GameActionResult, GameState},
     },
     trade::TradeOffer,
     Game, GameError,
@@ -20,6 +17,12 @@ use crate::game::{
 
 #[derive(HasStateId)]
 pub struct Trading {}
+
+impl Default for Trading {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Trading {
     pub fn new() -> Self {
@@ -53,7 +56,7 @@ impl GameState for Trading {
         None
     }
 
-    fn activate(&mut self, game: &Game) {}
+    fn activate(&mut self, _game: &Game) {}
 }
 
 pub fn process_trade_offer(
@@ -93,9 +96,9 @@ pub fn process_trade_offer(
 }
 
 pub fn process_bank_trade_offer(
-    game: &mut Game,
-    player_id: &PlayerId,
-    action_data: Value,
+    _game: &mut Game,
+    _player_id: &PlayerId,
+    _action_data: Value,
 ) -> Result<(), GameError> {
     error!("Bank trades are not implemented yet");
     Err(GameError::ActionFailed)
@@ -154,7 +157,8 @@ fn process_complete_trade(game: &mut Game, action_data: Value) -> Result<(), Gam
         .get_resources_mut()
         .add_resources(offer.resource_receive.clone());
 
-    Ok(game.complete_trade_offer())
+    game.complete_trade_offer();
+    Ok(())
 }
 
 fn process_cancel_trade(game: &mut Game) -> Result<(), GameError> {
@@ -170,7 +174,7 @@ fn process_cancel_trade(game: &mut Game) -> Result<(), GameError> {
 fn process_accept_trade_offer(game: &mut Game, player_id: PlayerId) -> Result<(), GameError> {
     let player = game.get_player(player_id).borrow();
     let mut opt_offer = game.get_trade_offer().borrow_mut();
-    let mut offer = match opt_offer.as_mut() {
+    let offer = match opt_offer.as_mut() {
         None => {
             trace!("No active trade offer found");
             return Err(GameError::ActionFailed);
@@ -195,7 +199,7 @@ fn process_accept_trade_offer(game: &mut Game, player_id: PlayerId) -> Result<()
 
 fn process_reject_trade_offer(game: &mut Game, player_id: PlayerId) -> Result<(), GameError> {
     let mut opt_offer = game.get_trade_offer().borrow_mut();
-    let mut offer = match opt_offer.as_mut() {
+    let offer = match opt_offer.as_mut() {
         None => {
             trace!("No active trade offer found");
             return Err(GameError::ActionFailed);

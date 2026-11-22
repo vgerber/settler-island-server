@@ -9,9 +9,7 @@ pub struct RobberLocation {
 
 impl RobberLocation {
     pub fn from(assigned_tile: CubeCoordinates) -> Self {
-        RobberLocation {
-            assigned_tile: assigned_tile,
-        }
+        RobberLocation { assigned_tile }
     }
 
     pub fn get_assigned_tile(&self) -> &CubeCoordinates {
