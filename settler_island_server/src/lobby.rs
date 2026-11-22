@@ -12,6 +12,7 @@ use tokio::time::{sleep_until, Instant};
 use tracing::{error, info};
 
 use crate::config::Config;
+use crate::metrics::Metrics;
 use crate::outbox::Outbox;
 use crate::store::{GameId, GameStore, NewGame, SeatPlayer, StoredAction, SNAPSHOT_INTERVAL};
 
@@ -132,6 +133,7 @@ struct Lobby<S> {
     bot_deadline: Instant,
     store: Arc<S>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 }
 
@@ -140,6 +142,7 @@ pub(crate) fn spawn<S: GameStore>(
     setup: LobbySetup,
     store: Arc<S>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 ) -> (LobbyHandle, LobbySummary) {
     let mut seats = vec![SeatOccupant::Open; usize::from(setup.seats)];
@@ -162,6 +165,7 @@ pub(crate) fn spawn<S: GameStore>(
         bot_deadline: Instant::now(),
         store,
         config,
+        metrics,
         notices,
     };
     lobby.spawn(Some(setup.request_id))
@@ -175,6 +179,7 @@ pub(crate) fn restore<S: GameStore>(
     record: GameRecord,
     store: Arc<S>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 ) -> Option<(LobbyHandle, LobbySummary)> {
     let away = stored.game.bot_difficulty;
@@ -216,8 +221,10 @@ pub(crate) fn restore<S: GameStore>(
         bot_deadline: Instant::now(),
         store,
         config,
+        metrics,
         notices,
     };
+    lobby.metrics.running_games.inc();
     Some(lobby.spawn(None))
 }
 
@@ -466,6 +473,7 @@ impl<S: GameStore> Lobby<S> {
             seed: settings.seed,
         });
         self.bot_deadline = Instant::now() + self.config.bot_delay;
+        self.metrics.running_games.inc();
         info!(lobby = self.id.0, game = id.0, "game started");
         self.broadcast_state(Some((user, request_id)));
         let members: Vec<UserId> = self
@@ -483,7 +491,8 @@ impl<S: GameStore> Lobby<S> {
     async fn act(&mut self, seat: usize, request_id: u32, action: Action) -> Result<(), ErrorCode> {
         let running = self.game.as_mut().ok_or(ErrorCode::NoGame)?;
         let seat = seat as Seat;
-        let events = apply_and_store(running, self.store.as_ref(), seat, action).await?;
+        let events =
+            apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await?;
         self.bot_deadline = Instant::now() + self.config.bot_delay;
         self.broadcast_update(&events, Some((seat, request_id)));
         Ok(())
@@ -520,8 +529,9 @@ impl<S: GameStore> Lobby<S> {
             return;
         }
         let action = bot.choose(&view, &legal);
-        match apply_and_store(running, self.store.as_ref(), seat, action).await {
+        match apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await {
             Ok(events) => {
+                self.metrics.bot_actions.inc();
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
                 self.broadcast_update(&events, None);
             }
@@ -699,6 +709,7 @@ impl<S: GameStore> Lobby<S> {
 async fn apply_and_store<S: GameStore>(
     running: &mut RunningGame,
     store: &S,
+    metrics: &Metrics,
     seat: Seat,
     action: Action,
 ) -> Result<Vec<Event>, ErrorCode> {
@@ -725,10 +736,12 @@ async fn apply_and_store<S: GameStore>(
         })?;
     if let Phase::Finished { winner } = next.phase() {
         info!(game = running.id.0, winner, "game finished");
+        metrics.running_games.dec();
         if let Err(error) = store.finish(running.id, *winner).await {
             error!(game = running.id.0, %error, "marking the game finished failed");
         }
     }
+    metrics.actions_applied.inc();
     running.game = next;
     running.record.push(seat, action, events.clone());
     Ok(events)

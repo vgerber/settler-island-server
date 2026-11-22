@@ -4,6 +4,7 @@ mod config;
 mod connection;
 mod identity;
 mod lobby;
+mod metrics;
 mod names;
 mod outbox;
 mod password;
@@ -30,6 +31,7 @@ pub use config::{
     Config, ConfigError, DatabaseUrl, KeycloakConfig, SessionSecret, MIN_SESSION_SECRET_BYTES,
 };
 pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
+pub use metrics::MetricsError;
 pub use postgres::PostgresStore;
 pub use store::{
     GameId, GameStore, MemoryStore, NewGame, RebuildError, SeatPlayer, Snapshot, StoreError,
@@ -37,6 +39,7 @@ pub use store::{
 };
 
 use identity::Identity;
+use metrics::Metrics;
 use registry::RegistryHandle;
 
 /// Frames above our 64 KiB limit still arrive and get an error reply; beyond this the socket is dropped.
@@ -46,6 +49,7 @@ struct AppState<I> {
     registry: RegistryHandle,
     identity: Arc<Identity<I>>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
 }
 
 // Derived `Clone` would needlessly require `I: Clone`.
@@ -55,6 +59,7 @@ impl<I> Clone for AppState<I> {
             registry: self.registry.clone(),
             identity: self.identity.clone(),
             config: self.config.clone(),
+            metrics: self.metrics.clone(),
         }
     }
 }
@@ -89,6 +94,8 @@ pub enum ServeError {
     Io(#[from] std::io::Error),
     #[error("loading the running games: {0}")]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    Metrics(#[from] MetricsError),
 }
 
 /// The app with the lobbies of every game `store` holds as running.
@@ -96,16 +103,19 @@ pub async fn router<S: GameStore, I: IdentityStore>(
     config: Config,
     store: S,
     identities: I,
-) -> Result<Router, StoreError> {
+) -> Result<Router, ServeError> {
     let running = store.load_running().await?;
     let config = Arc::new(config);
+    let metrics = Arc::new(Metrics::new()?);
     let state = AppState {
-        registry: registry::spawn(Arc::new(store), config.clone(), running),
+        registry: registry::spawn(Arc::new(store), config.clone(), metrics.clone(), running),
         identity: Arc::new(Identity::new(&config, identities)),
         config,
+        metrics,
     };
     let router = Router::new()
         .route("/api/v1/health", get(health))
+        .route("/metrics", get(metrics_page::<I>))
         .route("/api/v1/ws", get(upgrade::<I>))
         .route("/api/v1/sessions/guest", post(guest_session::<I>))
         .route("/api/v1/sessions/upgrade", post(upgrade_session::<I>))
@@ -132,6 +142,13 @@ async fn health() -> Json<Health> {
     Json(Health { status: "ok" })
 }
 
+async fn metrics_page<I>(State(state): State<AppState<I>>) -> Result<String, HttpFailure> {
+    state.metrics.render().map_err(|error| {
+        tracing::error!(%error, "rendering the metrics failed");
+        HttpFailure(ErrorCode::Internal)
+    })
+}
+
 async fn upgrade<I: IdentityStore>(
     State(state): State<AppState<I>>,
     upgrade: WebSocketUpgrade,
@@ -140,7 +157,13 @@ async fn upgrade<I: IdentityStore>(
         .max_message_size(MAX_FRAME_BYTES)
         .max_frame_size(MAX_FRAME_BYTES)
         .on_upgrade(move |socket| {
-            connection::run(socket, state.registry, state.identity, state.config)
+            connection::run(
+                socket,
+                state.registry,
+                state.identity,
+                state.config,
+                state.metrics,
+            )
         })
 }
 

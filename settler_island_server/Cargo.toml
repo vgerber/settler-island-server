@@ -24,6 +24,7 @@ sha2 = "0.10"
 jsonwebtoken = "9.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "migrate", "json", "macros"] }
+prometheus = { version = "0.14", default-features = false }
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"

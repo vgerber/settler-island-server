@@ -16,6 +16,7 @@ use tracing::{debug, error};
 use crate::config::Config;
 use crate::identity::{Identity, IdentityStore};
 use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest};
+use crate::metrics::Metrics;
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
 use crate::password;
@@ -68,6 +69,7 @@ struct Connection<I> {
     user: Option<User>,
     lobby: Option<LobbyHandle>,
     limiter: RateLimiter,
+    metrics: Arc<Metrics>,
 }
 
 /// Runs one client until it disconnects, idles out or falls behind.
@@ -76,7 +78,9 @@ pub(crate) async fn run<I: IdentityStore>(
     registry: RegistryHandle,
     identity: Arc<Identity<I>>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
 ) {
+    metrics.connections.inc();
     let (sink, stream) = socket.split();
     let (sender, receiver) = mpsc::channel(OUTBOX_CAPACITY);
     let kick = Arc::new(Notify::new());
@@ -88,6 +92,7 @@ pub(crate) async fn run<I: IdentityStore>(
         user: None,
         lobby: None,
         limiter: RateLimiter::new(config.messages_per_second, Instant::now()),
+        metrics: metrics.clone(),
     };
     connection
         .read_loop(stream, &kick, config.idle_timeout)
@@ -98,6 +103,10 @@ pub(crate) async fn run<I: IdentityStore>(
             .await;
     }
     writer.abort();
+    metrics.connections.dec();
+    if connection.user.is_some() {
+        metrics.authenticated_connections.dec();
+    }
 }
 
 async fn write_loop(
@@ -171,6 +180,7 @@ impl<I: IdentityStore> Connection<I> {
     }
 
     fn send_error(&self, request_id: Option<u32>, code: ErrorCode) {
+        self.metrics.error(&code);
         self.outbox.send(ServerMessage::Error {
             request_id,
             code,
@@ -248,6 +258,7 @@ impl<I: IdentityStore> Connection<I> {
         }
         let user = self.identity.authenticate(token).await?;
         self.user = Some(user.clone());
+        self.metrics.authenticated_connections.inc();
         self.outbox
             .send(ServerMessage::Welcome { request_id, user });
         Ok(())

@@ -7,6 +7,7 @@ use tracing::error;
 
 use crate::config::Config;
 use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup};
+use crate::metrics::Metrics;
 use crate::outbox::Outbox;
 use crate::store::{GameStore, StoredGame};
 
@@ -122,6 +123,7 @@ struct Registry<S> {
     next_id: u32,
     store: Arc<S>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 }
 
@@ -129,6 +131,7 @@ struct Registry<S> {
 pub(crate) fn spawn<S: GameStore>(
     store: Arc<S>,
     config: Arc<Config>,
+    metrics: Arc<Metrics>,
     running: Vec<StoredGame>,
 ) -> RegistryHandle {
     let (sender, commands) = mpsc::channel(COMMAND_QUEUE);
@@ -139,6 +142,7 @@ pub(crate) fn spawn<S: GameStore>(
         next_id: 0,
         store,
         config,
+        metrics,
         notices,
     };
     for stored in running {
@@ -197,6 +201,7 @@ impl<S: GameStore> Registry<S> {
             }
             LobbyNotice::Closed(id) => {
                 self.lobbies.remove(&id);
+                self.metrics.lobbies.set(self.lobbies.len() as i64);
                 self.memberships.retain(|_, lobby| *lobby != id);
             }
             LobbyNotice::Joined { lobby, user } => {
@@ -243,6 +248,7 @@ impl<S: GameStore> Registry<S> {
             record,
             self.store.clone(),
             self.config.clone(),
+            self.metrics.clone(),
             self.notices.clone(),
         );
         let Some((handle, summary)) = restored else {
@@ -260,6 +266,7 @@ impl<S: GameStore> Registry<S> {
             password_hash: None,
         };
         self.lobbies.insert(id, Listing { entry, summary });
+        self.metrics.lobbies.set(self.lobbies.len() as i64);
     }
 
     fn create(&mut self, lobby: NewLobby) -> Result<LobbyHandle, ErrorCode> {
@@ -284,6 +291,7 @@ impl<S: GameStore> Registry<S> {
             setup,
             self.store.clone(),
             self.config.clone(),
+            self.metrics.clone(),
             self.notices.clone(),
         );
         let entry = LobbyEntry {
@@ -291,6 +299,7 @@ impl<S: GameStore> Registry<S> {
             password_hash: lobby.password_hash.map(Arc::from),
         };
         self.lobbies.insert(id, Listing { entry, summary });
+        self.metrics.lobbies.set(self.lobbies.len() as i64);
         self.memberships.insert(owner, id);
         Ok(handle)
     }
