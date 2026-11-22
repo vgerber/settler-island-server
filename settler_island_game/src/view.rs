@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::board::Board;
-use crate::game::{DevelopmentCard, Game, Seat};
+use crate::game::{DevelopmentCard, Game, Seat, TradeOffer};
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
 use crate::rules::scoring;
@@ -14,11 +14,14 @@ pub struct PlayerView {
     pub phase: Phase,
     pub current: Seat,
     pub turn_number: u32,
+    pub points_to_win: u8,
     pub bank: ResourceCounts,
     pub development_cards_left: u8,
     pub longest_road: Option<Seat>,
     pub largest_army: Option<Seat>,
     pub players: Vec<PublicPlayerView>,
+    /// The open player trade while `phase` is `TradeOffered`.
+    pub trade: Option<TradeOffer>,
     /// `None` for spectators.
     pub own: Option<OwnView>,
 }
@@ -41,6 +44,8 @@ pub struct OwnView {
     pub seat: Seat,
     pub hand: ResourceCounts,
     pub development_cards: Vec<DevelopmentCard>,
+    /// Bought this turn, playable from the next turn on.
+    pub new_development_cards: Vec<DevelopmentCard>,
 }
 
 impl PlayerView {
@@ -54,7 +59,9 @@ impl PlayerView {
                 PublicPlayerView {
                     seat,
                     resource_count: player.hand.total() as u8,
-                    development_card_count: player.development_cards.len() as u8,
+                    development_card_count: (player.development_cards.len()
+                        + player.new_development_cards.len())
+                        as u8,
                     roads_left: player.roads_left,
                     settlements_left: player.settlements_left,
                     cities_left: player.cities_left,
@@ -73,6 +80,7 @@ impl PlayerView {
                 seat,
                 hand: player.hand,
                 development_cards: player.development_cards.clone(),
+                new_development_cards: player.new_development_cards.clone(),
             })
         });
 
@@ -81,11 +89,13 @@ impl PlayerView {
             phase: game.phase.clone(),
             current: game.current,
             turn_number: game.turn_number,
+            points_to_win: game.settings.points_to_win,
             bank: game.bank,
             development_cards_left: game.deck.len() as u8,
             longest_road: game.longest_road,
             largest_army: game.largest_army,
             players,
+            trade: game.trade.clone(),
             own,
         }
     }
@@ -93,6 +103,7 @@ impl PlayerView {
 
 #[cfg(test)]
 mod tests {
+    use crate::game::DevelopmentCard;
     use crate::resource::{Resource, ResourceCounts};
     use crate::rules::test_support::{after_setup, give};
 
@@ -112,5 +123,17 @@ mod tests {
             game.players[2].hand.total()
         );
         assert_eq!(spectator.players[0].points, 2);
+    }
+
+    #[test]
+    fn cards_bought_this_turn_are_counted_and_shown_to_the_owner() {
+        let mut game = after_setup(3, 14);
+        game.players[1]
+            .new_development_cards
+            .push(DevelopmentCard::Knight);
+
+        assert_eq!(game.view(None).players[1].development_card_count, 1);
+        let own = game.view(Some(1)).own.unwrap();
+        assert_eq!(own.new_development_cards, vec![DevelopmentCard::Knight]);
     }
 }
