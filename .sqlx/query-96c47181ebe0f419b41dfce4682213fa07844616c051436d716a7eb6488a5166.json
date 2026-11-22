@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE games\n             SET unattended_since = CASE WHEN $2 THEN NULL ELSE COALESCE(unattended_since, now()) END\n             WHERE id = $1 AND status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96c47181ebe0f419b41dfce4682213fa07844616c051436d716a7eb6488a5166"
+}

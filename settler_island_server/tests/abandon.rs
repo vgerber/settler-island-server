@@ -4,11 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::{start_with, test_config, Client};
-use settler_island_game::Game;
-use settler_island_protocol::{ClientMessage, Difficulty, LobbyId, ServerMessage};
+use settler_island_game::{Game, GameSettings};
+use settler_island_protocol::{
+    ClientMessage, Difficulty, LobbyId, ServerMessage, User, UserId, UserKind,
+};
 use settler_island_server::{
-    Config, GameId, GameStore, MemoryIdentityStore, MemoryStore, NewGame, StoreError, StoredAction,
-    StoredGame,
+    Config, GameId, GameStore, MemoryIdentityStore, MemoryStore, NewGame, SeatPlayer, StoreError,
+    StoredAction, StoredGame,
 };
 
 const ABANDON_AFTER: Duration = Duration::from_millis(400);
@@ -41,6 +43,10 @@ impl GameStore for SharedStore {
 
     async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
         self.0.abandon(game).await
+    }
+
+    async fn set_attended(&self, game: GameId, attended: bool) -> Result<(), StoreError> {
+        self.0.set_attended(game, attended).await
     }
 }
 
@@ -113,11 +119,55 @@ async fn rejoining_before_the_deadline_keeps_the_game() {
     drop(client);
     tokio::time::sleep(ABANDON_AFTER / 4).await;
 
+    assert!(store.load_running().await.unwrap()[0]
+        .unattended_for
+        .is_some());
+
     let (mut returning, _) = Client::authenticated(address, &session.token).await;
     let joined = returning.join(lobby, None).await;
     assert!(matches!(joined, ServerMessage::LobbyState { .. }));
+    assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
     tokio::time::sleep(ABANDON_AFTER * 3).await;
 
     assert_eq!(store.load_running().await.unwrap().len(), 1);
     assert_eq!(lobby_count(&mut returning).await, 1);
+}
+
+#[tokio::test]
+async fn time_unattended_before_a_restart_counts_toward_the_deadline() {
+    let store = SharedStore::default();
+    let human = User {
+        id: UserId("guest:ada".to_string()),
+        name: "Ada".to_string(),
+        kind: UserKind::Guest,
+    };
+    let game = NewGame {
+        settings: GameSettings {
+            seats: 3,
+            points_to_win: 10,
+            seed: 7,
+        },
+        seats: vec![
+            SeatPlayer::Human(human),
+            SeatPlayer::Bot(Difficulty::Random),
+            SeatPlayer::Bot(Difficulty::Random),
+        ],
+        lobby: LobbyId(1),
+        lobby_name: "Left before the restart".to_string(),
+        bot_difficulty: Difficulty::Random,
+    };
+    let id = store.create_game(game).await.unwrap();
+    store.set_attended(id, false).await.unwrap();
+    let abandon_after = Duration::from_secs(1);
+    tokio::time::sleep(abandon_after).await;
+
+    let config = Config {
+        abandon_after,
+        ..test_config()
+    };
+    start_with(config, store.clone(), MemoryIdentityStore::default()).await;
+    // Well before a fresh deadline would pass.
+    tokio::time::sleep(abandon_after / 3).await;
+
+    assert!(store.load_running().await.unwrap().is_empty());
 }

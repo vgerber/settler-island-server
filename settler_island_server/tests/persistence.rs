@@ -136,6 +136,36 @@ async fn postgres_abandoned_games_are_kept_but_not_restored() {
 }
 
 #[tokio::test]
+async fn postgres_unattended_time_survives_a_reload_and_is_cleared_on_return() {
+    let Some(options) = test_database("postgres_unattended_time_survives_a_reload").await else {
+        return;
+    };
+    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let id = store.create_game(new_game()).await.unwrap();
+    assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
+
+    store.set_attended(id, false).await.unwrap();
+    let mut connection = options.connect().await.unwrap();
+    sqlx::query("UPDATE games SET unattended_since = now() - interval '2 hours' WHERE id = $1")
+        .bind(i64::try_from(id.0).unwrap())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // Marking it unattended again (as a restore does) keeps the earlier time.
+    store.set_attended(id, false).await.unwrap();
+    let unattended = store.load_running().await.unwrap()[0].unattended_for;
+    assert!(unattended.is_some_and(|duration| duration >= Duration::from_secs(7200)));
+
+    store.set_attended(id, true).await.unwrap();
+    assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
+    store.abandon(id).await.unwrap();
+    assert!(matches!(
+        store.set_attended(id, false).await,
+        Err(StoreError::UnknownGame(_))
+    ));
+}
+
+#[tokio::test]
 async fn postgres_identity_links_keep_the_first_user() {
     let Some(options) = test_database("postgres_identity_links_keep_the_first_user").await else {
         return;
@@ -177,6 +207,10 @@ impl GameStore for RejectingStore {
     }
 
     async fn abandon(&self, _game: GameId) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    async fn set_attended(&self, _game: GameId, _attended: bool) -> Result<(), StoreError> {
         Ok(())
     }
 }

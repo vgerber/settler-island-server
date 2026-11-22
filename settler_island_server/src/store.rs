@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use settler_island_bot::Difficulty;
 use settler_island_game::{Action, Event, Game, GameError, GameRecord, GameSettings, Seat};
@@ -52,6 +53,8 @@ pub struct StoredGame {
     pub actions: Vec<StoredAction>,
     /// The latest snapshot, if any.
     pub snapshot: Option<Snapshot>,
+    /// How long no human has been connected; `None` while one is.
+    pub unattended_for: Option<Duration>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -133,6 +136,13 @@ pub trait GameStore: Send + Sync + 'static {
 
     /// Closes a running game nobody returned to; it is never restored.
     fn abandon(&self, game: GameId) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// Records whether a human is connected; an unattended game keeps the time it was first left alone.
+    fn set_attended(
+        &self,
+        game: GameId,
+        attended: bool,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
 }
 
 /// Keeps running games in memory; finished games are dropped.
@@ -146,6 +156,7 @@ pub struct MemoryStore {
 struct MemoryState {
     next_id: u64,
     running: BTreeMap<GameId, StoredGame>,
+    unattended_since: BTreeMap<GameId, Instant>,
 }
 
 impl MemoryStore {
@@ -161,6 +172,7 @@ impl MemoryStore {
 impl MemoryStore {
     fn drop_running(&self, game: GameId) -> Result<(), StoreError> {
         self.with_state(|state| {
+            state.unattended_since.remove(&game);
             state
                 .running
                 .remove(&game)
@@ -180,6 +192,7 @@ impl GameStore for MemoryStore {
                 game,
                 actions: Vec::new(),
                 snapshot: None,
+                unattended_for: None,
             };
             state.running.insert(id, stored);
             Ok(id)
@@ -216,7 +229,13 @@ impl GameStore for MemoryStore {
     }
 
     async fn load_running(&self) -> Result<Vec<StoredGame>, StoreError> {
-        self.with_state(|state| Ok(state.running.values().cloned().collect()))
+        self.with_state(|state| {
+            let games = state.running.values().map(|stored| StoredGame {
+                unattended_for: state.unattended_since.get(&stored.id).map(Instant::elapsed),
+                ..stored.clone()
+            });
+            Ok(games.collect())
+        })
     }
 
     async fn finish(&self, game: GameId, _winner: Seat) -> Result<(), StoreError> {
@@ -225,6 +244,23 @@ impl GameStore for MemoryStore {
 
     async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
         self.drop_running(game)
+    }
+
+    async fn set_attended(&self, game: GameId, attended: bool) -> Result<(), StoreError> {
+        self.with_state(|state| {
+            if !state.running.contains_key(&game) {
+                return Err(StoreError::UnknownGame(game));
+            }
+            if attended {
+                state.unattended_since.remove(&game);
+            } else {
+                state
+                    .unattended_since
+                    .entry(game)
+                    .or_insert_with(Instant::now);
+            }
+            Ok(())
+        })
     }
 }
 
@@ -293,6 +329,23 @@ mod tests {
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].id, second);
         assert!(store.append_action(first, action(2), None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_unattended_game_keeps_the_time_it_was_first_left_alone() {
+        let store = MemoryStore::default();
+        let id = store.create_game(new_game()).await.unwrap();
+        assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
+
+        store.set_attended(id, false).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        // A restore marks the game unattended again; that must not restart the clock.
+        store.set_attended(id, false).await.unwrap();
+        let unattended = store.load_running().await.unwrap()[0].unattended_for;
+        assert!(unattended.is_some_and(|duration| duration >= Duration::from_millis(30)));
+
+        store.set_attended(id, true).await.unwrap();
+        assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
     }
 
     #[tokio::test]

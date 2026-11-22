@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use settler_island_bot::Difficulty;
 use settler_island_game::{Action, Event, Game, GameSettings, RecordSettings, Seat};
 use settler_island_protocol::{LobbyId, User, UserId, UserKind};
@@ -125,6 +127,10 @@ impl PostgresStore {
             },
             actions,
             snapshot,
+            // A clock set back makes the difference negative; treat that as just left.
+            unattended_for: row
+                .unattended_seconds
+                .map(|seconds| Duration::from_secs(u64::try_from(seconds).unwrap_or(0))),
         })
     }
 
@@ -186,6 +192,7 @@ struct GameRow {
     bot_difficulty: Json<Difficulty>,
     settings: Json<RecordSettings>,
     seed: i64,
+    unattended_seconds: Option<i64>,
 }
 
 impl GameStore for PostgresStore {
@@ -263,7 +270,8 @@ impl GameStore for PostgresStore {
             GameRow,
             r#"SELECT id, lobby_id, lobby_name,
                       bot_difficulty AS "bot_difficulty: Json<Difficulty>",
-                      settings AS "settings: Json<RecordSettings>", seed
+                      settings AS "settings: Json<RecordSettings>", seed,
+                      EXTRACT(EPOCH FROM now() - unattended_since)::BIGINT AS "unattended_seconds?"
                FROM games WHERE status = 'running' ORDER BY id"#,
         )
         .fetch_all(&self.pool)
@@ -296,6 +304,23 @@ impl GameStore for PostgresStore {
             "UPDATE games SET status = 'abandoned', finished = now()
              WHERE id = $1 AND status = 'running'",
             database_id(game)?,
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::UnknownGame(game));
+        }
+        Ok(())
+    }
+
+    async fn set_attended(&self, game: GameId, attended: bool) -> Result<(), StoreError> {
+        let updated = sqlx::query!(
+            "UPDATE games
+             SET unattended_since = CASE WHEN $2 THEN NULL ELSE COALESCE(unattended_since, now()) END
+             WHERE id = $1 AND status = 'running'",
+            database_id(game)?,
+            attended,
         )
         .execute(&self.pool)
         .await?

@@ -9,7 +9,7 @@ use settler_island_protocol::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep_until, Instant};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::config::Config;
 use crate::metrics::Metrics;
@@ -233,7 +233,13 @@ pub(crate) fn restore<S: GameStore>(
             seed,
         }),
         bot_deadline: Instant::now(),
-        abandon_at: Some(Instant::now() + config.abandon_after),
+        // The time nobody was connected before the restart counts toward the deadline.
+        abandon_at: Some(
+            Instant::now()
+                + config
+                    .abandon_after
+                    .saturating_sub(stored.unattended_for.unwrap_or_default()),
+        ),
         store,
         config,
         metrics,
@@ -256,6 +262,10 @@ impl<S: GameStore> Lobby<S> {
         let owner = self.owner.id.clone();
         if request_id.is_some() {
             self.send_state_to(&owner, request_id);
+        }
+        // A restored game starts without humans; the store keeps the time it was first left alone.
+        if self.game_running() && self.members.is_empty() {
+            self.save_attendance().await;
         }
         // A running game keeps its lobby open for its players to come back.
         while !self.members.is_empty() || self.game_running() {
@@ -280,6 +290,26 @@ impl<S: GameStore> Lobby<S> {
     }
 
     async fn handle(&mut self, command: LobbyCommand) {
+        let attended_before = !self.members.is_empty();
+        self.dispatch(command).await;
+        if self.game_running() && attended_before == self.members.is_empty() {
+            self.save_attendance().await;
+        }
+    }
+
+    /// Stores whether a human is connected, so a restart keeps the abandon deadline.
+    async fn save_attendance(&mut self) {
+        let Some(game) = self.game.as_ref().map(|running| running.id) else {
+            return;
+        };
+        let attended = !self.members.is_empty();
+        // Losing this only moves the deadline after a restart; the game itself is unaffected.
+        if let Err(error) = self.store.set_attended(game, attended).await {
+            warn!(lobby = self.id.0, game = game.0, %error, "storing attendance failed");
+        }
+    }
+
+    async fn dispatch(&mut self, command: LobbyCommand) {
         match command {
             LobbyCommand::Join {
                 user,
