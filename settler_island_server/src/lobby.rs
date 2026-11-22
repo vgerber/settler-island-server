@@ -56,8 +56,19 @@ pub(crate) enum LobbyRequest {
 pub(crate) enum LobbyNotice {
     Updated(LobbySummary),
     Closed(LobbyId),
-    Joined { lobby: LobbyId, user: UserId },
-    Left { lobby: LobbyId, user: UserId },
+    Joined {
+        lobby: LobbyId,
+        user: UserId,
+    },
+    Left {
+        lobby: LobbyId,
+        user: UserId,
+    },
+    /// Who holds a seat in the lobby's running game; empty once the game ends.
+    Seated {
+        lobby: LobbyId,
+        users: Vec<UserId>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -474,6 +485,14 @@ impl<S: GameStore> Lobby<S> {
         });
         self.bot_deadline = Instant::now() + self.config.bot_delay;
         self.metrics.running_games.inc();
+        self.note_membership(LobbyNotice::Seated {
+            lobby: self.id,
+            users: self
+                .members
+                .iter()
+                .map(|member| member.user.id.clone())
+                .collect(),
+        });
         info!(lobby = self.id.0, game = id.0, "game started");
         self.broadcast_state(Some((user, request_id)));
         let members: Vec<UserId> = self
@@ -494,6 +513,7 @@ impl<S: GameStore> Lobby<S> {
         let events =
             apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await?;
         self.bot_deadline = Instant::now() + self.config.bot_delay;
+        self.note_game_end();
         self.broadcast_update(&events, Some((seat, request_id)));
         Ok(())
     }
@@ -533,6 +553,7 @@ impl<S: GameStore> Lobby<S> {
             Ok(events) => {
                 self.metrics.bot_actions.inc();
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
+                self.note_game_end();
                 self.broadcast_update(&events, None);
             }
             Err(ErrorCode::Internal) => self.bot_deadline = Instant::now() + STORE_RETRY,
@@ -636,6 +657,16 @@ impl<S: GameStore> Lobby<S> {
         self.game
             .as_ref()
             .is_some_and(|running| !matches!(running.game.phase(), Phase::Finished { .. }))
+    }
+
+    /// Tells the registry that nobody holds a seat any more once the game has ended.
+    fn note_game_end(&self) {
+        if self.game.is_some() && !self.game_running() {
+            self.note_membership(LobbyNotice::Seated {
+                lobby: self.id,
+                users: Vec::new(),
+            });
+        }
     }
 
     fn note_membership(&self, notice: LobbyNotice) {

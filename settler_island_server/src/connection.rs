@@ -257,10 +257,14 @@ impl<I: IdentityStore> Connection<I> {
             return Err(ErrorCode::AlreadyWelcomed);
         }
         let user = self.identity.authenticate(token).await?;
+        let running_lobby = self.registry.running_lobby(user.id.clone()).await?;
         self.user = Some(user.clone());
         self.metrics.authenticated_connections.inc();
-        self.outbox
-            .send(ServerMessage::Welcome { request_id, user });
+        self.outbox.send(ServerMessage::Welcome {
+            request_id,
+            user,
+            running_lobby,
+        });
         Ok(())
     }
 

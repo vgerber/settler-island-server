@@ -232,6 +232,7 @@ fn fixtures() -> Value {
         ServerMessage::Welcome {
             request_id: 1,
             user: owner.clone(),
+            running_lobby: Some(LobbyId(9)),
         },
         ServerMessage::Lobbies {
             request_id: 2,

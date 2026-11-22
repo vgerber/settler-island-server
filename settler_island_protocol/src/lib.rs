@@ -161,6 +161,8 @@ pub enum ServerMessage {
     Welcome {
         request_id: u32,
         user: User,
+        /// The lobby with a running game in which the user holds a seat, so a restarted client can rejoin it.
+        running_lobby: Option<LobbyId>,
     },
     Lobbies {
         request_id: u32,

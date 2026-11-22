@@ -450,3 +450,53 @@ async fn points_to_win_outside_three_to_fifteen_is_rejected() {
         client.request(leave).await;
     }
 }
+
+fn running_lobby_of(welcome: ServerMessage) -> Option<settler_island_protocol::LobbyId> {
+    let ServerMessage::Welcome { running_lobby, .. } = welcome else {
+        panic!("expected Welcome, got {welcome:?}");
+    };
+    running_lobby
+}
+
+#[tokio::test]
+async fn welcome_names_the_running_game_a_returning_player_holds_a_seat_in() {
+    let address = start(test_config()).await;
+    let session = guest_session(address, "Ada").await;
+    let mut first = Client::connect(address).await;
+    assert_eq!(
+        running_lobby_of(first.authenticate(&session.token).await),
+        None
+    );
+
+    let lobby = first.create_lobby("Table", 3, None).await;
+    for _ in 0..2 {
+        first
+            .expect_lobby(|request_id| ClientMessage::AddBot {
+                request_id,
+                difficulty: Difficulty::Random,
+            })
+            .await;
+    }
+    let mut waiting = Client::connect(address).await;
+    assert_eq!(
+        running_lobby_of(waiting.authenticate(&session.token).await),
+        None,
+        "a lobby that has not started holds no seat"
+    );
+    first
+        .request(|request_id| ClientMessage::StartGame { request_id })
+        .await;
+
+    // The same player on a fresh connection, as after a client restart.
+    let mut returning = Client::connect(address).await;
+    assert_eq!(
+        running_lobby_of(returning.authenticate(&session.token).await),
+        Some(lobby)
+    );
+    let mut stranger = Client::connect(address).await;
+    let other = guest_session(address, "Bob").await;
+    assert_eq!(
+        running_lobby_of(stranger.authenticate(&other.token).await),
+        None
+    );
+}

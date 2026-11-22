@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup};
 use crate::metrics::Metrics;
 use crate::outbox::Outbox;
-use crate::store::{GameStore, StoredGame};
+use crate::store::{GameStore, SeatPlayer, StoredGame};
 
 const COMMAND_QUEUE: usize = 256;
 
@@ -56,6 +56,11 @@ enum RegistryCommand {
         lobby: LobbyId,
         user: UserId,
     },
+    /// The lobby whose running game seats `user`, if any.
+    RunningLobby {
+        user: UserId,
+        reply: oneshot::Sender<Option<LobbyId>>,
+    },
     List {
         page: u32,
         per_page: u32,
@@ -89,6 +94,11 @@ impl RegistryHandle {
             .await;
     }
 
+    pub(crate) async fn running_lobby(&self, user: UserId) -> Result<Option<LobbyId>, ErrorCode> {
+        self.call(|reply| RegistryCommand::RunningLobby { user, reply })
+            .await
+    }
+
     pub(crate) async fn list(&self, page: u32, per_page: u32) -> Result<LobbyPage, ErrorCode> {
         self.call(|reply| RegistryCommand::List {
             page,
@@ -120,6 +130,8 @@ struct Registry<S> {
     lobbies: BTreeMap<LobbyId, Listing>,
     /// The one lobby each user belongs to, across all of the user's connections.
     memberships: HashMap<UserId, LobbyId>,
+    /// The users who hold a seat in each lobby's running game, connected or not.
+    seated: BTreeMap<LobbyId, Vec<UserId>>,
     next_id: u32,
     store: Arc<S>,
     config: Arc<Config>,
@@ -139,6 +151,7 @@ pub(crate) fn spawn<S: GameStore>(
     let mut registry = Registry {
         lobbies: BTreeMap::new(),
         memberships: HashMap::new(),
+        seated: BTreeMap::new(),
         next_id: 0,
         store,
         config,
@@ -182,6 +195,9 @@ impl<S: GameStore> Registry<S> {
                 let _ = reply.send(self.claim(lobby, user));
             }
             RegistryCommand::Release { lobby, user } => self.leave(lobby, &user),
+            RegistryCommand::RunningLobby { user, reply } => {
+                let _ = reply.send(self.running_lobby(&user));
+            }
             RegistryCommand::List {
                 page,
                 per_page,
@@ -203,12 +219,23 @@ impl<S: GameStore> Registry<S> {
                 self.lobbies.remove(&id);
                 self.metrics.lobbies.set(self.lobbies.len() as i64);
                 self.memberships.retain(|_, lobby| *lobby != id);
+                self.seated.remove(&id);
+            }
+            LobbyNotice::Seated { lobby, users } => {
+                self.seated.insert(lobby, users);
             }
             LobbyNotice::Joined { lobby, user } => {
                 self.memberships.insert(user, lobby);
             }
             LobbyNotice::Left { lobby, user } => self.leave(lobby, &user),
         }
+    }
+
+    fn running_lobby(&self, user: &UserId) -> Option<LobbyId> {
+        self.seated
+            .iter()
+            .find(|(_, users)| users.contains(user))
+            .map(|(lobby, _)| *lobby)
     }
 
     fn leave(&mut self, lobby: LobbyId, user: &UserId) {
@@ -261,6 +288,11 @@ impl<S: GameStore> Registry<S> {
         let id = stored.game.lobby;
         // New lobbies count on from the highest restored id, so ids stay unique.
         self.next_id = self.next_id.max(id.0);
+        let humans = stored.game.seats.iter().filter_map(|player| match player {
+            SeatPlayer::Human(user) => Some(user.id.clone()),
+            SeatPlayer::Bot(_) => None,
+        });
+        self.seated.insert(id, humans.collect());
         let entry = LobbyEntry {
             handle,
             password_hash: None,

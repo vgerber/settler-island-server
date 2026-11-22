@@ -2649,6 +2649,15 @@
               "minimum": 0,
               "type": "integer"
             },
+            "running_lobby": {
+              "description": "The lobby with a running game in which the user holds a seat, so a restarted client can rejoin it.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "type": {
               "const": "Welcome",
               "type": "string"

@@ -6,11 +6,14 @@ const VARIANT := "Welcome"
 
 var request_id: int = 0
 var user: SiUser = null
+## The lobby with a running game in which the user holds a seat, so a restarted client can rejoin it.
+var running_lobby: Variant = null
 
 static func from_dict(data: Variant) -> SiServerMessageWelcome:
 	var decoded := SiServerMessageWelcome.new()
 	decoded.request_id = int(data.get("request_id"))
 	decoded.user = SiUser.from_dict(data.get("user"))
+	decoded.running_lobby = (null if data.get("running_lobby") == null else int(data.get("running_lobby")))
 	return decoded
 
 func to_dict() -> Dictionary:
@@ -19,4 +22,6 @@ func to_dict() -> Dictionary:
 		"request_id": request_id,
 		"user": user.to_dict(),
 	}
+	if running_lobby != null:
+		encoded["running_lobby"] = int(running_lobby)
 	return encoded
