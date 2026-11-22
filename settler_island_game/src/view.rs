@@ -32,7 +32,7 @@ pub struct PublicPlayerView {
     pub settlements_left: u8,
     pub cities_left: u8,
     pub knights_played: u8,
-    /// Without hidden victory point cards.
+    /// Without hidden victory point cards, except in the viewer's own entry.
     pub points: u8,
 }
 
@@ -59,7 +59,11 @@ impl PlayerView {
                     settlements_left: player.settlements_left,
                     cities_left: player.cities_left,
                     knights_played: player.knights_played,
-                    points: scoring::public_points(game, seat),
+                    points: if viewer == Some(seat) {
+                        scoring::total_points(game, seat)
+                    } else {
+                        scoring::public_points(game, seat)
+                    },
                 }
             })
             .collect();
