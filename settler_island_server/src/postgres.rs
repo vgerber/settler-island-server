@@ -290,6 +290,21 @@ impl GameStore for PostgresStore {
         }
         Ok(())
     }
+
+    async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
+        let updated = sqlx::query!(
+            "UPDATE games SET status = 'abandoned', finished = now()
+             WHERE id = $1 AND status = 'running'",
+            database_id(game)?,
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if updated == 0 {
+            return Err(StoreError::UnknownGame(game));
+        }
+        Ok(())
+    }
 }
 
 impl IdentityStore for PostgresStore {

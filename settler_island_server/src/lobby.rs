@@ -142,6 +142,8 @@ struct Lobby<S> {
     members: Vec<Member>,
     game: Option<RunningGame>,
     bot_deadline: Instant,
+    /// When a running game with no connected human is closed; `None` while a human is connected.
+    abandon_at: Option<Instant>,
     store: Arc<S>,
     config: Arc<Config>,
     metrics: Arc<Metrics>,
@@ -174,6 +176,7 @@ pub(crate) fn spawn<S: GameStore>(
         }],
         game: None,
         bot_deadline: Instant::now(),
+        abandon_at: None,
         store,
         config,
         metrics,
@@ -230,6 +233,7 @@ pub(crate) fn restore<S: GameStore>(
             seed,
         }),
         bot_deadline: Instant::now(),
+        abandon_at: Some(Instant::now() + config.abandon_after),
         store,
         config,
         metrics,
@@ -256,12 +260,18 @@ impl<S: GameStore> Lobby<S> {
         // A running game keeps its lobby open for its players to come back.
         while !self.members.is_empty() || self.game_running() {
             let bot_due = self.bot_seat_to_move().is_some();
+            let abandon_at = self.abandon_at.filter(|_| self.game_running());
             tokio::select! {
                 command = commands.recv() => {
                     let Some(command) = command else { break };
                     self.handle(command).await;
                 }
                 () = sleep_until(self.bot_deadline), if bot_due => self.play_bot().await,
+                () = sleep_until(abandon_at.unwrap_or_else(Instant::now)), if abandon_at.is_some() => {
+                    if self.abandon().await {
+                        break;
+                    }
+                }
             }
         }
         info!(lobby = self.id.0, "lobby closed");
@@ -313,6 +323,7 @@ impl<S: GameStore> Lobby<S> {
         {
             // The same user on a new connection: the newest connection takes over.
             member.outbox = outbox;
+            self.abandon_at = None;
             self.note_membership(LobbyNotice::Joined {
                 lobby: self.id,
                 user: user.id.clone(),
@@ -333,6 +344,7 @@ impl<S: GameStore> Lobby<S> {
         }
         let user_id = user.id.clone();
         self.members.push(Member { user, outbox });
+        self.abandon_at = None;
         self.note_membership(LobbyNotice::Joined {
             lobby: self.id,
             user: user_id.clone(),
@@ -351,6 +363,9 @@ impl<S: GameStore> Lobby<S> {
             return;
         };
         let member = self.members.remove(index);
+        if self.members.is_empty() {
+            self.abandon_at = Some(Instant::now() + self.config.abandon_after);
+        }
         self.note_membership(LobbyNotice::Left {
             lobby: self.id,
             user: user.clone(),
@@ -529,6 +544,21 @@ impl<S: GameStore> Lobby<S> {
             .pending_seats()
             .into_iter()
             .find(|seat| running.bots[usize::from(*seat)].is_some())
+    }
+
+    /// Closes the game in the store; `false` when that failed and the lobby must stay open for a retry.
+    async fn abandon(&mut self) -> bool {
+        let Some(game) = self.game.as_ref().map(|running| running.id) else {
+            return true;
+        };
+        if let Err(error) = self.store.abandon(game).await {
+            error!(lobby = self.id.0, game = game.0, %error, "abandoning the game failed, retrying");
+            self.abandon_at = Some(Instant::now() + STORE_RETRY);
+            return false;
+        }
+        self.metrics.running_games.dec();
+        info!(lobby = self.id.0, game = game.0, "game abandoned");
+        true
     }
 
     async fn play_bot(&mut self) {

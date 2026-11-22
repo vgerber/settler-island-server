@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE games SET status = 'abandoned', finished = now()\n             WHERE id = $1 AND status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1fa398a4e67877446320589f53a48dbf30a1f563b4f0d44ae93b5ca6e136268f"
+}

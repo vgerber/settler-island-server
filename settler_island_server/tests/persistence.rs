@@ -12,6 +12,7 @@ use settler_island_server::{
     Config, GameId, GameStore, IdentityStore, MemoryIdentityStore, NewGame, PostgresStore,
     SeatPlayer, StoreError, StoredAction, StoredGame, SNAPSHOT_INTERVAL,
 };
+use sqlx::ConnectOptions;
 use tokio::runtime::Runtime;
 
 const SEED: u64 = 23;
@@ -103,6 +104,38 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
 }
 
 #[tokio::test]
+async fn postgres_abandoned_games_are_kept_but_not_restored() {
+    let Some(options) = test_database("postgres_abandoned_games_are_kept_but_not_restored").await
+    else {
+        return;
+    };
+    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let abandoned = store.create_game(new_game()).await.unwrap();
+    let running = store.create_game(new_game()).await.unwrap();
+
+    store.abandon(abandoned).await.unwrap();
+
+    let restored = store.load_running().await.unwrap();
+    assert_eq!(restored.len(), 1);
+    assert_eq!(restored[0].id, running);
+    let mut connection = options.connect().await.unwrap();
+    let status: String = sqlx::query_scalar("SELECT status FROM games WHERE id = $1")
+        .bind(i64::try_from(abandoned.0).unwrap())
+        .fetch_one(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(status, "abandoned");
+    assert!(matches!(
+        store.abandon(abandoned).await,
+        Err(StoreError::UnknownGame(_))
+    ));
+    assert!(matches!(
+        store.finish(abandoned, 0).await,
+        Err(StoreError::UnknownGame(_))
+    ));
+}
+
+#[tokio::test]
 async fn postgres_identity_links_keep_the_first_user() {
     let Some(options) = test_database("postgres_identity_links_keep_the_first_user").await else {
         return;
@@ -140,6 +173,10 @@ impl GameStore for RejectingStore {
     }
 
     async fn finish(&self, _game: GameId, _winner: Seat) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    async fn abandon(&self, _game: GameId) -> Result<(), StoreError> {
         Ok(())
     }
 }

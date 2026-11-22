@@ -130,6 +130,9 @@ pub trait GameStore: Send + Sync + 'static {
         game: GameId,
         winner: Seat,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// Closes a running game nobody returned to; it is never restored.
+    fn abandon(&self, game: GameId) -> impl Future<Output = Result<(), StoreError>> + Send;
 }
 
 /// Keeps running games in memory; finished games are dropped.
@@ -152,6 +155,18 @@ impl MemoryStore {
     ) -> Result<T, StoreError> {
         let mut state = self.state.lock().map_err(|_| StoreError::Poisoned)?;
         change(&mut state)
+    }
+}
+
+impl MemoryStore {
+    fn drop_running(&self, game: GameId) -> Result<(), StoreError> {
+        self.with_state(|state| {
+            state
+                .running
+                .remove(&game)
+                .map(|_| ())
+                .ok_or(StoreError::UnknownGame(game))
+        })
     }
 }
 
@@ -205,13 +220,11 @@ impl GameStore for MemoryStore {
     }
 
     async fn finish(&self, game: GameId, _winner: Seat) -> Result<(), StoreError> {
-        self.with_state(|state| {
-            state
-                .running
-                .remove(&game)
-                .map(|_| ())
-                .ok_or(StoreError::UnknownGame(game))
-        })
+        self.drop_running(game)
+    }
+
+    async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
+        self.drop_running(game)
     }
 }
 

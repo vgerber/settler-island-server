@@ -6,6 +6,7 @@ use std::time::Duration;
 const DEFAULT_BIND: &str = "127.0.0.1:8253";
 const DEFAULT_BOT_DELAY_MILLISECONDS: u64 = 600;
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const DEFAULT_ABANDON_AFTER_HOURS: u64 = 168;
 const DEFAULT_MESSAGES_PER_SECOND: u32 = 20;
 const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
 const DEFAULT_SESSION_BURST: u32 = 5;
@@ -20,6 +21,8 @@ pub struct Config {
     /// A connection that sends nothing (not even a ping) for this long is closed.
     pub idle_timeout: Duration,
     pub messages_per_second: u32,
+    /// A running game whose lobby had no connected human for this long is closed and never restored.
+    pub abandon_after: Duration,
     /// Sustained rate of `/api/v1/sessions/*` requests per client address.
     pub session_requests_per_minute: u32,
     /// Session requests a client address may send at once before the rate applies.
@@ -106,6 +109,7 @@ impl Config {
             bot_delay: Duration::from_millis(DEFAULT_BOT_DELAY_MILLISECONDS),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             messages_per_second: DEFAULT_MESSAGES_PER_SECOND,
+            abandon_after: Duration::from_secs(DEFAULT_ABANDON_AFTER_HOURS * 3600),
             session_requests_per_minute: DEFAULT_SESSION_REQUESTS_PER_MINUTE,
             session_burst: DEFAULT_SESSION_BURST,
             trust_forwarded_for: false,
@@ -136,8 +140,13 @@ impl Config {
         )?;
         let session_burst = parse_env("SETTLER_SESSION_BURST", &DEFAULT_SESSION_BURST.to_string())?;
         let trust_forwarded_for = parse_env("SETTLER_TRUST_FORWARDED_FOR", "false")?;
+        let abandon_after_hours: u64 = parse_env(
+            "SETTLER_ABANDON_AFTER_HOURS",
+            &DEFAULT_ABANDON_AFTER_HOURS.to_string(),
+        )?;
         Ok(Config {
             bind,
+            abandon_after: Duration::from_secs(abandon_after_hours.saturating_mul(3600)),
             session_requests_per_minute,
             session_burst,
             trust_forwarded_for,
