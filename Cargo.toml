@@ -10,3 +10,9 @@ members = [
 
 [profile.dev.package.argon2]
 opt-level = 3
+
+# Test RSA key generation is unbearably slow unoptimised.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.rsa]
+opt-level = 3

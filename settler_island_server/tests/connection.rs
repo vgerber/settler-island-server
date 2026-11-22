@@ -40,7 +40,7 @@ async fn forged_and_oversized_messages_get_errors_and_the_connection_stays_usabl
     let bad_action = error_after_raw(&mut client, bad_action).await;
     assert_eq!(bad_action, (Some(10), ErrorCode::InvalidMessage));
     let oversized = format!(
-        r#"{{"type":"Hello","request_id":11,"name":"{}"}}"#,
+        r#"{{"type":"Authenticate","request_id":11,"token":"{}"}}"#,
         "x".repeat(70 * 1024)
     );
     let oversized = error_after_raw(&mut client, oversized).await;

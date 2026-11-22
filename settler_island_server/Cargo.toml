@@ -18,6 +18,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 argon2 = { version = "0.5", features = ["std"] }
 rand = { version = "0.9", default-features = false, features = ["std", "thread_rng"] }
 uuid = { version = "1.18", features = ["v4"] }
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
+jsonwebtoken = "9.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
+rsa = "0.9"

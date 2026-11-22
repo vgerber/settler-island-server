@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use settler_island_protocol::{
-    ClientMessage, ErrorCode, LobbyDetails, LobbyId, ServerMessage, User,
+    ClientMessage, ErrorCode, GuestSession, GuestSessionRequest, LobbyDetails, LobbyId,
+    ServerMessage, User,
 };
-use settler_island_server::{serve, Config, MemoryStore};
+use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
@@ -15,11 +16,13 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 /// Long enough for a debug build under load, short enough that a deadlock fails the test.
 pub const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
+pub const TEST_SESSION_SECRET: &[u8; 32] = b"settler-island-test-secret-32-by";
+
 pub fn test_config() -> Config {
     Config {
         bind: SocketAddr::from(([127, 0, 0, 1], 0)),
         bot_delay: Duration::ZERO,
-        ..Config::default()
+        ..Config::new(SessionSecret::new(TEST_SESSION_SECRET.to_vec()).unwrap())
     }
 }
 
@@ -30,9 +33,27 @@ pub async fn start(config: Config) -> SocketAddr {
         listener,
         config,
         MemoryStore::default(),
+        MemoryIdentityStore::default(),
         std::future::pending(),
     ));
     address
+}
+
+pub async fn guest_session(address: SocketAddr, name: &str) -> GuestSession {
+    let request = GuestSessionRequest {
+        name: name.to_string(),
+    };
+    reqwest::Client::new()
+        .post(format!("http://{address}/api/v1/sessions/guest"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
 }
 
 pub struct Client {
@@ -63,16 +84,25 @@ impl Client {
         }
     }
 
+    /// A new guest session on a new connection.
     pub async fn welcomed(address: SocketAddr, name: &str) -> (Client, User) {
+        let session = guest_session(address, name).await;
+        Client::authenticated(address, &session.token).await
+    }
+
+    pub async fn authenticated(address: SocketAddr, token: &str) -> (Client, User) {
         let mut client = Client::connect(address).await;
-        let name = name.to_string();
-        let reply = client
-            .request(|request_id| ClientMessage::Hello { request_id, name })
-            .await;
+        let reply = client.authenticate(token).await;
         let ServerMessage::Welcome { user, .. } = reply else {
             panic!("expected Welcome, got {reply:?}");
         };
         (client, user)
+    }
+
+    pub async fn authenticate(&mut self, token: &str) -> ServerMessage {
+        let token = token.to_string();
+        self.request(|request_id| ClientMessage::Authenticate { request_id, token })
+            .await
     }
 
     pub async fn send(&mut self, build: impl FnOnce(u32) -> ClientMessage) -> u32 {

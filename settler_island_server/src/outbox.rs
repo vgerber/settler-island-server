@@ -20,6 +20,10 @@ impl Outbox {
         Outbox { sender, kick }
     }
 
+    pub(crate) fn same_connection(&self, other: &Outbox) -> bool {
+        self.sender.same_channel(&other.sender)
+    }
+
     /// Never waits: a client that cannot keep up is disconnected instead of stalling the sender.
     pub(crate) fn send(&self, message: ServerMessage) {
         match self.sender.try_send(message) {

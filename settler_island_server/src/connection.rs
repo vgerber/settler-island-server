@@ -8,13 +8,15 @@ use serde::Deserialize;
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, ServerMessage, User, UserId, DEFAULT_POINTS_TO_WIN,
     MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MAX_SEATS,
-    MAX_USER_NAME_CHARS, MIN_POINTS_TO_WIN, MIN_SEATS,
+    MIN_POINTS_TO_WIN, MIN_SEATS,
 };
 use tokio::sync::{mpsc, Notify};
 use tracing::{debug, error};
 
 use crate::config::Config;
+use crate::identity::{Identity, IdentityStore};
 use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest};
+use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
 use crate::password;
 use crate::registry::{NewLobby, RegistryHandle};
@@ -59,16 +61,22 @@ struct RequestIdProbe {
     request_id: u32,
 }
 
-struct Connection {
+struct Connection<I> {
     outbox: Outbox,
     registry: RegistryHandle,
+    identity: Arc<Identity<I>>,
     user: Option<User>,
     lobby: Option<LobbyHandle>,
     limiter: RateLimiter,
 }
 
 /// Runs one client until it disconnects, idles out or falls behind.
-pub(crate) async fn run(socket: WebSocket, registry: RegistryHandle, config: Arc<Config>) {
+pub(crate) async fn run<I: IdentityStore>(
+    socket: WebSocket,
+    registry: RegistryHandle,
+    identity: Arc<Identity<I>>,
+    config: Arc<Config>,
+) {
     let (sink, stream) = socket.split();
     let (sender, receiver) = mpsc::channel(OUTBOX_CAPACITY);
     let kick = Arc::new(Notify::new());
@@ -76,6 +84,7 @@ pub(crate) async fn run(socket: WebSocket, registry: RegistryHandle, config: Arc
     let mut connection = Connection {
         outbox: Outbox::new(sender, kick.clone()),
         registry,
+        identity,
         user: None,
         lobby: None,
         limiter: RateLimiter::new(config.messages_per_second, Instant::now()),
@@ -84,7 +93,9 @@ pub(crate) async fn run(socket: WebSocket, registry: RegistryHandle, config: Arc
         .read_loop(stream, &kick, config.idle_timeout)
         .await;
     if let (Some(lobby), Some(user)) = (connection.lobby.take(), &connection.user) {
-        lobby.leave(user.id.clone()).await;
+        lobby
+            .leave(user.id.clone(), connection.outbox.clone())
+            .await;
     }
     writer.abort();
 }
@@ -107,7 +118,7 @@ async fn write_loop(
     }
 }
 
-impl Connection {
+impl<I: IdentityStore> Connection<I> {
     async fn read_loop(
         &mut self,
         mut stream: SplitStream<WebSocket>,
@@ -168,12 +179,12 @@ impl Connection {
     }
 
     async fn dispatch(&mut self, message: ClientMessage) -> Result<(), ErrorCode> {
-        if let ClientMessage::Hello { request_id, name } = message {
-            return self.hello(request_id, &name);
+        if let ClientMessage::Authenticate { request_id, token } = message {
+            return self.authenticate(request_id, &token).await;
         }
         let user = self.user.clone().ok_or(ErrorCode::NotWelcomed)?;
         match message {
-            ClientMessage::Hello { .. } => Err(ErrorCode::AlreadyWelcomed),
+            ClientMessage::Authenticate { .. } => Err(ErrorCode::AlreadyWelcomed),
             ClientMessage::ListLobbies {
                 request_id,
                 page,
@@ -238,15 +249,11 @@ impl Connection {
         }
     }
 
-    fn hello(&mut self, request_id: u32, name: &str) -> Result<(), ErrorCode> {
+    async fn authenticate(&mut self, request_id: u32, token: &str) -> Result<(), ErrorCode> {
         if self.user.is_some() {
             return Err(ErrorCode::AlreadyWelcomed);
         }
-        let name = clean_name(name, MAX_USER_NAME_CHARS).ok_or(ErrorCode::InvalidName)?;
-        let user = User {
-            id: UserId(uuid::Uuid::new_v4().to_string()),
-            name,
-        };
+        let user = self.identity.authenticate(token).await?;
         self.user = Some(user.clone());
         self.outbox
             .send(ServerMessage::Welcome { request_id, user });
@@ -347,6 +354,7 @@ impl Connection {
         lobby
             .call(|reply| LobbyCommand::Leave {
                 user,
+                outbox: self.outbox.clone(),
                 reply: Some(reply),
             })
             .await?;
@@ -386,14 +394,6 @@ async fn hash_password(password: String) -> Result<String, ErrorCode> {
     })
 }
 
-/// Trims and accepts 1 to `max_chars` characters without control characters.
-fn clean_name(name: &str, max_chars: usize) -> Option<String> {
-    let trimmed = name.trim();
-    let length = trimmed.chars().count();
-    let printable = !trimmed.chars().any(char::is_control);
-    (printable && (1..=max_chars).contains(&length)).then(|| trimmed.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,15 +406,5 @@ mod tests {
         assert!((0..3).all(|_| limiter.allow(start)));
         assert!(!limiter.allow(start + Duration::from_millis(999)));
         assert!(limiter.allow(start + Duration::from_secs(1)));
-    }
-
-    #[test]
-    fn names_are_trimmed_and_bounded_in_characters_not_bytes() {
-        assert_eq!(clean_name("  Ada ", 24), Some("Ada".to_string()));
-        assert_eq!(clean_name("   ", 24), None);
-        assert_eq!(clean_name("", 24), None);
-        assert_eq!(clean_name("bad\nname", 24), None);
-        assert_eq!(clean_name(&"ä".repeat(24), 24), Some("ä".repeat(24)));
-        assert_eq!(clean_name(&"a".repeat(25), 24), None);
     }
 }

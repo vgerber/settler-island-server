@@ -26,8 +26,10 @@ pub(crate) enum LobbyCommand {
         request_id: u32,
         reply: Reply,
     },
+    /// Ignored unless `outbox` is the member's current connection, so a replaced connection cannot evict its successor.
     Leave {
         user: UserId,
+        outbox: Outbox,
         reply: Option<Reply>,
     },
     Request {
@@ -73,8 +75,12 @@ impl LobbyHandle {
     }
 
     /// Fire and forget, for connections that are going away.
-    pub(crate) async fn leave(&self, user: UserId) {
-        let command = LobbyCommand::Leave { user, reply: None };
+    pub(crate) async fn leave(&self, user: UserId, outbox: Outbox) {
+        let command = LobbyCommand::Leave {
+            user,
+            outbox,
+            reply: None,
+        };
         // A closed lobby has nobody left to leave.
         let _ = self.sender.send(command).await;
     }
@@ -192,8 +198,12 @@ impl<S: GameStore> Lobby<S> {
                 // The connection may have closed while waiting.
                 let _ = reply.send(result);
             }
-            LobbyCommand::Leave { user, reply } => {
-                self.leave(&user);
+            LobbyCommand::Leave {
+                user,
+                outbox,
+                reply,
+            } => {
+                self.leave(&user, &outbox);
                 if let Some(reply) = reply {
                     // The connection may have closed while waiting.
                     let _ = reply.send(Ok(()));
@@ -213,8 +223,16 @@ impl<S: GameStore> Lobby<S> {
     }
 
     fn join(&mut self, user: User, outbox: Outbox, request_id: u32) -> Result<(), ErrorCode> {
-        if self.member(&user.id).is_some() {
-            return Err(ErrorCode::AlreadyInLobby);
+        if let Some(member) = self
+            .members
+            .iter_mut()
+            .find(|member| member.user.id == user.id)
+        {
+            // The same user on a new connection: the newest connection takes over.
+            member.outbox = outbox;
+            self.send_state_to(&user.id, Some(request_id));
+            self.send_game_started(&user.id, Some(request_id));
+            return Ok(());
         }
         let seat = match &self.game {
             Some(_) => self
@@ -233,11 +251,11 @@ impl<S: GameStore> Lobby<S> {
         Ok(())
     }
 
-    fn leave(&mut self, user: &UserId) {
+    fn leave(&mut self, user: &UserId, outbox: &Outbox) {
         let Some(index) = self
             .members
             .iter()
-            .position(|member| member.user.id == *user)
+            .position(|member| member.user.id == *user && member.outbox.same_connection(outbox))
         else {
             return;
         };

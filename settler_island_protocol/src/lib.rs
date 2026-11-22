@@ -29,20 +29,62 @@ pub struct UserId(pub String);
 #[serde(transparent)]
 pub struct LobbyId(pub u32);
 
+/// How a user signed in; an upgraded guest keeps its id and becomes an `Account`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum UserKind {
+    Guest,
+    Account,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct User {
     pub id: UserId,
     pub name: String,
+    pub kind: UserKind,
+}
+
+/// Body of `POST /api/v1/sessions/guest`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GuestSessionRequest {
+    pub name: String,
+}
+
+/// Reply to `POST /api/v1/sessions/guest`; `token` is what `Authenticate` expects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GuestSession {
+    pub token: String,
+    pub user: User,
+}
+
+/// Body of `POST /api/v1/sessions/upgrade`: later logins with the account map to the guest's user id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UpgradeRequest {
+    pub guest_token: String,
+    /// A Keycloak access token.
+    pub account_token: String,
+}
+
+/// Reply to `POST /api/v1/sessions/upgrade`: the user as later account logins see it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Upgraded {
+    pub user: User,
+}
+
+/// Body of every failed HTTP request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HttpError {
+    pub code: ErrorCode,
+    pub message: String,
 }
 
 /// Every request carries a `request_id` that the direct reply (or error) echoes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
-    /// Guest login without a token; must be the first message.
-    Hello {
+    /// Must be the first message; `token` is a guest session token or a Keycloak access token.
+    Authenticate {
         request_id: u32,
-        name: String,
+        token: String,
     },
     /// `page` starts at 0; `per_page` is 1 to `MAX_LOBBIES_PER_PAGE`.
     ListLobbies {
@@ -97,7 +139,7 @@ pub enum ClientMessage {
 impl ClientMessage {
     pub fn request_id(&self) -> u32 {
         match self {
-            ClientMessage::Hello { request_id, .. }
+            ClientMessage::Authenticate { request_id, .. }
             | ClientMessage::ListLobbies { request_id, .. }
             | ClientMessage::CreateLobby { request_id, .. }
             | ClientMessage::JoinLobby { request_id, .. }
@@ -209,6 +251,9 @@ pub enum ErrorCode {
     RateLimited,
     NotWelcomed,
     AlreadyWelcomed,
+    InvalidToken,
+    AccountsDisabled,
+    AccountAlreadyLinked,
     InvalidName,
     InvalidLobbyName,
     InvalidSeatCount,
@@ -234,8 +279,11 @@ impl ErrorCode {
             ErrorCode::InvalidMessage => "the message is not a valid client message",
             ErrorCode::MessageTooLarge => "the message is larger than 64 KiB",
             ErrorCode::RateLimited => "too many messages, slow down",
-            ErrorCode::NotWelcomed => "send Hello first",
-            ErrorCode::AlreadyWelcomed => "Hello was already sent",
+            ErrorCode::NotWelcomed => "send Authenticate first",
+            ErrorCode::AlreadyWelcomed => "Authenticate was already sent",
+            ErrorCode::InvalidToken => "the token is invalid or expired",
+            ErrorCode::AccountsDisabled => "this server does not accept accounts",
+            ErrorCode::AccountAlreadyLinked => "the account is already linked to another user",
             ErrorCode::InvalidName => "the name must have 1 to 24 visible characters",
             ErrorCode::InvalidLobbyName => "the lobby name must have 1 to 40 visible characters",
             ErrorCode::InvalidSeatCount => "a lobby has 3 or 4 seats",
@@ -334,6 +382,7 @@ mod tests {
                 user: User {
                     id: UserId("u1".to_string()),
                     name: "Ada".to_string(),
+                    kind: UserKind::Guest,
                 },
             },
             SeatOccupant::Bot {

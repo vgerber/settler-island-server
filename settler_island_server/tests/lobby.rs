@@ -327,7 +327,7 @@ async fn listing_pages_through_open_lobbies_and_drops_empty_ones() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn requests_need_hello_first_and_valid_names() {
+async fn requests_need_authenticate_first_and_valid_names() {
     let address = start(test_config()).await;
     let mut client = Client::connect(address).await;
 
@@ -337,20 +337,23 @@ async fn requests_need_hello_first_and_valid_names() {
         per_page: 10,
     };
     assert_eq!(client.expect_error(list).await, ErrorCode::NotWelcomed);
-    let blank = |request_id| ClientMessage::Hello {
-        request_id,
-        name: "   ".to_string(),
+    let authenticate = |token: &str| {
+        let token = token.to_string();
+        move |request_id| ClientMessage::Authenticate { request_id, token }
     };
-    assert_eq!(client.expect_error(blank).await, ErrorCode::InvalidName);
-    let hello = |request_id| ClientMessage::Hello {
-        request_id,
-        name: "Ada".to_string(),
-    };
+    assert_eq!(
+        client.expect_error(authenticate("guest.not.signed")).await,
+        ErrorCode::InvalidToken
+    );
+    let token = common::guest_session(address, "Ada").await.token;
     assert!(matches!(
-        client.request(hello).await,
+        client.authenticate(&token).await,
         ServerMessage::Welcome { .. }
     ));
-    assert_eq!(client.expect_error(hello).await, ErrorCode::AlreadyWelcomed);
+    assert_eq!(
+        client.expect_error(authenticate(&token)).await,
+        ErrorCode::AlreadyWelcomed
+    );
     let long_lobby = |request_id| ClientMessage::CreateLobby {
         request_id,
         name: "x".repeat(41),

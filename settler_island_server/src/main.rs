@@ -1,4 +1,4 @@
-use settler_island_server::{serve, Config, MemoryStore};
+use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore};
 use tokio::net::TcpListener;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -31,7 +31,14 @@ async fn run() -> Result<(), StartError> {
     let config = Config::from_env()?;
     let listener = TcpListener::bind(config.bind).await?;
     info!(address = %listener.local_addr()?, "listening");
-    serve(listener, config, MemoryStore::default(), shutdown_signal()).await?;
+    serve(
+        listener,
+        config,
+        MemoryStore::default(),
+        MemoryIdentityStore::default(),
+        shutdown_signal(),
+    )
+    .await?;
     info!("shut down");
     Ok(())
 }
