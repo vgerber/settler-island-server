@@ -8,7 +8,11 @@ use settler_island_protocol::{
     ClientMessage, ErrorCode, GuestSession, GuestSessionRequest, LobbyDetails, LobbyId,
     ServerMessage, User,
 };
-use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
+use settler_island_server::{
+    Config, GameStore, IdentityStore, MemoryIdentityStore, MemoryStore, SessionSecret,
+};
+use sqlx::postgres::PgConnectOptions;
+use sqlx::{ConnectOptions, Executor};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
@@ -27,16 +31,44 @@ pub fn test_config() -> Config {
 }
 
 pub async fn start(config: Config) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(serve(
-        listener,
+    start_with(
         config,
         MemoryStore::default(),
         MemoryIdentityStore::default(),
-        std::future::pending(),
-    ));
+    )
+    .await
+}
+
+/// Serves on the current runtime until it is dropped; the stores' running games are restored first.
+pub async fn start_with(
+    config: Config,
+    store: impl GameStore,
+    identities: impl IdentityStore,
+) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = settler_island_server::router(config, store, identities)
+        .await
+        .unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     address
+}
+
+/// A fresh, empty database on the server in `SETTLER_TEST_DATABASE_URL`, so tests run in parallel;
+/// `None` (after a skip notice) when the variable is unset.
+pub async fn test_database(test: &str) -> Option<PgConnectOptions> {
+    let Ok(url) = std::env::var("SETTLER_TEST_DATABASE_URL") else {
+        eprintln!("skipping {test}: SETTLER_TEST_DATABASE_URL is unset");
+        return None;
+    };
+    let options: PgConnectOptions = url.parse().unwrap();
+    let name = format!("settler_test_{}", uuid::Uuid::new_v4().simple());
+    let mut admin = options.connect().await.unwrap();
+    admin
+        .execute(format!("CREATE DATABASE {name}").as_str())
+        .await
+        .unwrap();
+    Some(options.database(&name))
 }
 
 pub async fn guest_session(address: SocketAddr, name: &str) -> GuestSession {

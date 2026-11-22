@@ -6,9 +6,9 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, ServerMessage, User, UserId, DEFAULT_POINTS_TO_WIN,
-    MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MAX_SEATS,
-    MIN_POINTS_TO_WIN, MIN_SEATS,
+    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
+    DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES,
+    MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
 };
 use tokio::sync::{mpsc, Notify};
 use tracing::{debug, error};
@@ -19,7 +19,7 @@ use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest};
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
 use crate::password;
-use crate::registry::{NewLobby, RegistryHandle};
+use crate::registry::{LobbyEntry, NewLobby, RegistryHandle};
 
 /// The unvalidated settings of a `CreateLobby` request.
 struct LobbyOptions {
@@ -210,14 +210,7 @@ impl<I: IdentityStore> Connection<I> {
                 request_id,
                 lobby,
                 password,
-            } => {
-                let entry = self
-                    .registry
-                    .find(lobby)
-                    .await?
-                    .ok_or(ErrorCode::LobbyNotFound)?;
-                self.join(user, request_id, entry, password).await
-            }
+            } => self.join(user, request_id, lobby, password).await,
             ClientMessage::LeaveLobby { request_id } => self.leave(user.id, request_id).await,
             ClientMessage::AddBot {
                 request_id,
@@ -315,12 +308,28 @@ impl<I: IdentityStore> Connection<I> {
         &mut self,
         user: User,
         request_id: u32,
-        entry: crate::registry::LobbyEntry,
+        lobby: LobbyId,
         password: Option<String>,
     ) -> Result<(), ErrorCode> {
         if self.lobby.is_some() {
             return Err(ErrorCode::AlreadyInLobby);
         }
+        let claim = self.registry.claim(lobby, user.id.clone()).await?;
+        let user_id = user.id.clone();
+        let result = self.enter(user, request_id, claim.entry, password).await;
+        if result.is_err() && claim.claimed {
+            self.registry.release(lobby, user_id).await;
+        }
+        result
+    }
+
+    async fn enter(
+        &mut self,
+        user: User,
+        request_id: u32,
+        entry: LobbyEntry,
+        password: Option<String>,
+    ) -> Result<(), ErrorCode> {
         if let Some(hash) = entry.password_hash {
             let password = password.unwrap_or_default();
             let matches = tokio::task::spawn_blocking(move || password::verify(&hash, &password))

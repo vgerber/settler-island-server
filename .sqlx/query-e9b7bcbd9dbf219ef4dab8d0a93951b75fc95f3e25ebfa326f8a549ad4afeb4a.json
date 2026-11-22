@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO game_seats (game, seat, bot_difficulty) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9b7bcbd9dbf219ef4dab8d0a93951b75fc95f3e25ebfa326f8a549ad4afeb4a"
+}

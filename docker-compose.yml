@@ -1,6 +1,10 @@
 name: settler-island-server
 
-# Local services for development. Nothing here starts by default; opt in per profile.
+# Local services for development.
+#
+# Postgres (no profile, starts with `docker compose up -d db`):
+#   DATABASE_URL=postgres://settler:settler@127.0.0.1:6436/settler_island
+# Tests that need it read SETTLER_TEST_DATABASE_URL (same URL; each test creates its own database).
 #
 # Keycloak with the settler-island realm (keycloak/realm-local.json, test user `ada` / `settler`):
 #   docker compose --profile auth up -d keycloak
@@ -9,6 +13,17 @@ name: settler-island-server
 #   SETTLER_KEYCLOAK_AUDIENCE=settler-island-server
 # A realm import only applies to a fresh container: after editing the realm, `docker compose --profile auth down`.
 services:
+  db:
+    image: postgres:17
+    container_name: settler-island-db
+    environment:
+      POSTGRES_USER: settler
+      POSTGRES_PASSWORD: settler
+      POSTGRES_DB: settler_island
+    ports:
+      - "127.0.0.1:6436:5432"
+    volumes:
+      - settler-island-db:/var/lib/postgresql/data
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     container_name: settler-island-keycloak
@@ -22,3 +37,6 @@ services:
       - "127.0.0.1:8086:8080"
     volumes:
       - ./keycloak/realm-local.json:/opt/keycloak/data/import/realm-local.json:ro
+
+volumes:
+  settler-island-db:

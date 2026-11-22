@@ -23,6 +23,18 @@ pub struct Config {
     pub session_secret: SessionSecret,
     /// `None` accepts guests only.
     pub keycloak: Option<KeycloakConfig>,
+    /// `None` keeps games and identity links in memory only.
+    pub database_url: Option<DatabaseUrl>,
+}
+
+/// A Postgres connection URL; never printed, it may carry a password.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DatabaseUrl(pub String);
+
+impl fmt::Debug for DatabaseUrl {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DatabaseUrl(..)")
+    }
 }
 
 /// Signs guest session tokens; never printed.
@@ -89,11 +101,12 @@ impl Config {
             seed: None,
             session_secret,
             keycloak: None,
+            database_url: None,
         }
     }
 
-    /// Reads `SETTLER_BIND`, `SETTLER_BOT_DELAY_MILLISECONDS`, `SETTLER_SESSION_SECRET` (required) and
-    /// `SETTLER_KEYCLOAK_ISSUER` plus `SETTLER_KEYCLOAK_AUDIENCE`; everything else keeps its default.
+    /// Reads `SETTLER_BIND`, `SETTLER_BOT_DELAY_MILLISECONDS`, `SETTLER_SESSION_SECRET` (required),
+    /// `SETTLER_KEYCLOAK_ISSUER` plus `SETTLER_KEYCLOAK_AUDIENCE` and `DATABASE_URL`; everything else keeps its default.
     pub fn from_env() -> Result<Config, ConfigError> {
         let secret = std::env::var("SETTLER_SESSION_SECRET")
             .map_err(|_| ConfigError::Missing("SETTLER_SESSION_SECRET"))?;
@@ -110,6 +123,7 @@ impl Config {
             bind,
             bot_delay: Duration::from_millis(bot_delay_milliseconds),
             keycloak,
+            database_url: std::env::var("DATABASE_URL").ok().map(DatabaseUrl),
             ..Config::new(SessionSecret::new(secret)?)
         })
     }

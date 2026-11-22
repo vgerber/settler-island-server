@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE games SET status = 'finished', finished = now(), winner = $2\n             WHERE id = $1 AND status = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ccac8b831ff4bc54f9949acdb9d17ba23858fb4d54754d990ee46a6b2c93045"
+}

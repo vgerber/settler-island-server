@@ -1,6 +1,6 @@
 mod common;
 
-use common::{start, test_config, Client};
+use common::{guest_session, start, test_config, Client};
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerMessage,
 };
@@ -282,6 +282,33 @@ async fn a_user_is_in_at_most_one_lobby() {
         panic!("joining a second lobby must fail");
     };
     assert_eq!(code, ErrorCode::AlreadyInLobby);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_user_on_two_connections_is_still_in_at_most_one_lobby() {
+    let address = start(test_config()).await;
+    let session = guest_session(address, "Twin").await;
+    let (mut first, _) = Client::authenticated(address, &session.token).await;
+    let (mut second, _) = Client::authenticated(address, &session.token).await;
+    let (mut other, _) = Client::welcomed(address, "Other").await;
+    let elsewhere = other.create_lobby("Elsewhere", 3, None).await;
+    let mine = first.create_lobby("Mine", 3, None).await;
+
+    let code = second.expect_error(create_with(None, None)).await;
+    assert_eq!(code, ErrorCode::AlreadyInLobby);
+    let ServerMessage::Error { code, .. } = second.join(elsewhere, None).await else {
+        panic!("joining a second lobby from another connection must fail");
+    };
+    assert_eq!(code, ErrorCode::AlreadyInLobby);
+
+    // The user's own lobby on the second connection is a takeover, not a second lobby.
+    let joined = second.join(mine, None).await;
+    assert!(matches!(joined, ServerMessage::LobbyState { .. }));
+    second
+        .request(|request_id| ClientMessage::LeaveLobby { request_id })
+        .await;
+    let fresh = second.expect_lobby(create_with(None, None)).await;
+    assert_ne!(fresh.id, mine);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

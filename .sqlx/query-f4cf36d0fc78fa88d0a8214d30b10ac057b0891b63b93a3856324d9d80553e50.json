@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT seat.bot_difficulty AS \"bot_difficulty: Json<Difficulty>\",\n                      users.id AS \"user_id?\", users.name AS \"user_name?\", users.kind AS \"user_kind?\"\n               FROM game_seats seat LEFT JOIN users ON users.id = seat.user_id\n               WHERE seat.game = $1 ORDER BY seat.seat",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bot_difficulty: Json<Difficulty>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_kind?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f4cf36d0fc78fa88d0a8214d30b10ac057b0891b63b93a3856324d9d80553e50"
+}

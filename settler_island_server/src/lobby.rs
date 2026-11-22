@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use settler_island_bot::{create_bot, Bot, Difficulty};
 use settler_island_game::{Action, Event, Game, GameRecord, GameSettings, Phase, Seat};
+
+use crate::store::StoredGame;
 use settler_island_protocol::{
     ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage, User, UserId,
 };
@@ -11,7 +13,7 @@ use tracing::{error, info};
 
 use crate::config::Config;
 use crate::outbox::Outbox;
-use crate::store::{GameId, GameStore, NewGame, SeatPlayer, StoredAction};
+use crate::store::{GameId, GameStore, NewGame, SeatPlayer, StoredAction, SNAPSHOT_INTERVAL};
 
 const COMMAND_QUEUE: usize = 64;
 /// Stands in for a player who leaves a running game.
@@ -53,6 +55,8 @@ pub(crate) enum LobbyRequest {
 pub(crate) enum LobbyNotice {
     Updated(LobbySummary),
     Closed(LobbyId),
+    Joined { lobby: LobbyId, user: UserId },
+    Left { lobby: LobbyId, user: UserId },
 }
 
 #[derive(Debug, Clone)]
@@ -160,18 +164,79 @@ pub(crate) fn spawn<S: GameStore>(
         config,
         notices,
     };
-    let summary = lobby.summary();
-    let (sender, receiver) = mpsc::channel(COMMAND_QUEUE);
-    tokio::spawn(lobby.run(receiver, setup.request_id));
-    (LobbyHandle { sender }, summary)
+    lobby.spawn(Some(setup.request_id))
+}
+
+/// Recreates the lobby of a game that was running when the server stopped: every human seat waits for its
+/// player under a bot, which only moves once a human is back.
+pub(crate) fn restore<S: GameStore>(
+    stored: &StoredGame,
+    game: Game,
+    record: GameRecord,
+    store: Arc<S>,
+    config: Arc<Config>,
+    notices: mpsc::UnboundedSender<LobbyNotice>,
+) -> Option<(LobbyHandle, LobbySummary)> {
+    let away = stored.game.bot_difficulty;
+    let seed = stored.game.settings.seed;
+    let mut seats = Vec::with_capacity(stored.game.seats.len());
+    let mut bots = Vec::with_capacity(stored.game.seats.len());
+    for (seat, player) in stored.game.seats.iter().enumerate() {
+        let (difficulty, reserved_for) = match player {
+            SeatPlayer::Human(user) => (away, Some(user.clone())),
+            SeatPlayer::Bot(difficulty) => (*difficulty, None),
+        };
+        bots.push(Some(create_bot(difficulty, bot_seed(seed, seat))));
+        seats.push(SeatOccupant::Bot {
+            difficulty,
+            reserved_for,
+        });
+    }
+    let owner = stored.game.seats.iter().find_map(|player| match player {
+        SeatPlayer::Human(user) => Some(user.clone()),
+        SeatPlayer::Bot(_) => None,
+    })?;
+    let lobby = Lobby {
+        id: stored.game.lobby,
+        name: stored.game.lobby_name.clone(),
+        owner,
+        has_password: false,
+        seats,
+        points_to_win: stored.game.settings.points_to_win,
+        bot_difficulty: away,
+        members: Vec::new(),
+        game: Some(RunningGame {
+            id: stored.id,
+            game,
+            record,
+            bots,
+            stalled: false,
+            seed,
+        }),
+        bot_deadline: Instant::now(),
+        store,
+        config,
+        notices,
+    };
+    Some(lobby.spawn(None))
 }
 
 impl<S: GameStore> Lobby<S> {
-    async fn run(mut self, mut commands: mpsc::Receiver<LobbyCommand>, request_id: u32) {
+    fn spawn(self, request_id: Option<u32>) -> (LobbyHandle, LobbySummary) {
+        let summary = self.summary();
+        let (sender, receiver) = mpsc::channel(COMMAND_QUEUE);
+        tokio::spawn(self.run(receiver, request_id));
+        (LobbyHandle { sender }, summary)
+    }
+
+    async fn run(mut self, mut commands: mpsc::Receiver<LobbyCommand>, request_id: Option<u32>) {
         info!(lobby = self.id.0, "lobby opened");
         let owner = self.owner.id.clone();
-        self.send_state_to(&owner, Some(request_id));
-        while !self.members.is_empty() {
+        if request_id.is_some() {
+            self.send_state_to(&owner, request_id);
+        }
+        // A running game keeps its lobby open for its players to come back.
+        while !self.members.is_empty() || self.game_running() {
             let bot_due = self.bot_seat_to_move().is_some();
             tokio::select! {
                 command = commands.recv() => {
@@ -230,6 +295,10 @@ impl<S: GameStore> Lobby<S> {
         {
             // The same user on a new connection: the newest connection takes over.
             member.outbox = outbox;
+            self.note_membership(LobbyNotice::Joined {
+                lobby: self.id,
+                user: user.id.clone(),
+            });
             self.send_state_to(&user.id, Some(request_id));
             self.send_game_started(&user.id, Some(request_id));
             return Ok(());
@@ -246,6 +315,10 @@ impl<S: GameStore> Lobby<S> {
         }
         let user_id = user.id.clone();
         self.members.push(Member { user, outbox });
+        self.note_membership(LobbyNotice::Joined {
+            lobby: self.id,
+            user: user_id.clone(),
+        });
         self.broadcast_state(Some((&user_id, request_id)));
         self.send_game_started(&user_id, Some(request_id));
         Ok(())
@@ -260,6 +333,10 @@ impl<S: GameStore> Lobby<S> {
             return;
         };
         let member = self.members.remove(index);
+        self.note_membership(LobbyNotice::Left {
+            lobby: self.id,
+            user: user.clone(),
+        });
         let Some(seat) = self.seat_of(user) else {
             return;
         };
@@ -361,6 +438,9 @@ impl<S: GameStore> Lobby<S> {
                 .iter()
                 .map(|occupant| seat_player(occupant, self.bot_difficulty))
                 .collect(),
+            lobby: self.id,
+            lobby_name: self.name.clone(),
+            bot_difficulty: self.bot_difficulty,
         };
         let id = self.store.create_game(new_game).await.map_err(|error| {
             error!(lobby = self.id.0, %error, "storing the new game failed");
@@ -409,7 +489,11 @@ impl<S: GameStore> Lobby<S> {
         Ok(())
     }
 
+    /// Bots wait while no human is connected, so a restored or abandoned game does not play itself out.
     fn bot_seat_to_move(&self) -> Option<Seat> {
+        if self.members.is_empty() {
+            return None;
+        }
         let running = self.game.as_ref().filter(|running| !running.stalled)?;
         running
             .game
@@ -538,6 +622,17 @@ impl<S: GameStore> Lobby<S> {
         });
     }
 
+    fn game_running(&self) -> bool {
+        self.game
+            .as_ref()
+            .is_some_and(|running| !matches!(running.game.phase(), Phase::Finished { .. }))
+    }
+
+    fn note_membership(&self, notice: LobbyNotice) {
+        // The registry is gone only during shutdown.
+        let _ = self.notices.send(notice);
+    }
+
     fn member(&self, user: &UserId) -> Option<&Member> {
         self.members.iter().find(|member| member.user.id == *user)
     }
@@ -611,14 +706,18 @@ async fn apply_and_store<S: GameStore>(
     let events = next
         .apply(seat, action.clone())
         .map_err(|error| ErrorCode::Game { error })?;
+    let index = running.record.entries.len() as u32;
+    let snapshot = (index + 1)
+        .is_multiple_of(SNAPSHOT_INTERVAL)
+        .then(|| next.clone());
     let stored = StoredAction {
-        index: running.record.entries.len() as u32,
+        index,
         seat,
         action: action.clone(),
         events: events.clone(),
     };
     store
-        .append_action(running.id, stored)
+        .append_action(running.id, stored, snapshot)
         .await
         .map_err(|error| {
             error!(game = running.id.0, %error, "storing an action failed");
@@ -637,7 +736,7 @@ async fn apply_and_store<S: GameStore>(
 
 fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
     match occupant {
-        SeatOccupant::Human { user } => SeatPlayer::Human(user.id.clone()),
+        SeatOccupant::Human { user } => SeatPlayer::Human(user.clone()),
         SeatOccupant::Bot { difficulty, .. } => SeatPlayer::Bot(*difficulty),
         // Start requires every seat filled.
         SeatOccupant::Open => SeatPlayer::Bot(fallback),

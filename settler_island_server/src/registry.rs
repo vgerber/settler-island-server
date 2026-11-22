@@ -1,13 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use settler_island_protocol::{Difficulty, ErrorCode, LobbyId, LobbySummary, User};
+use settler_island_protocol::{Difficulty, ErrorCode, LobbyId, LobbySummary, User, UserId};
 use tokio::sync::{mpsc, oneshot};
+use tracing::error;
 
 use crate::config::Config;
 use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup};
 use crate::outbox::Outbox;
-use crate::store::GameStore;
+use crate::store::{GameStore, StoredGame};
 
 const COMMAND_QUEUE: usize = 256;
 
@@ -28,6 +29,12 @@ pub(crate) struct LobbyEntry {
     pub password_hash: Option<Arc<str>>,
 }
 
+/// A lobby a user may join; `claimed` when this join made it the user's lobby, so a failed join releases it.
+pub(crate) struct Claim {
+    pub entry: LobbyEntry,
+    pub claimed: bool,
+}
+
 pub(crate) struct LobbyPage {
     pub total: u32,
     pub lobbies: Vec<LobbySummary>,
@@ -36,11 +43,17 @@ pub(crate) struct LobbyPage {
 enum RegistryCommand {
     Create {
         lobby: NewLobby,
-        reply: oneshot::Sender<LobbyHandle>,
+        reply: oneshot::Sender<Result<LobbyHandle, ErrorCode>>,
     },
-    Find {
+    /// Finds a lobby for `user` to join, refusing while the user belongs to another one.
+    Claim {
         lobby: LobbyId,
-        reply: oneshot::Sender<Option<LobbyEntry>>,
+        user: UserId,
+        reply: oneshot::Sender<Result<Claim, ErrorCode>>,
+    },
+    Release {
+        lobby: LobbyId,
+        user: UserId,
     },
     List {
         page: u32,
@@ -58,12 +71,21 @@ pub(crate) struct RegistryHandle {
 impl RegistryHandle {
     pub(crate) async fn create(&self, lobby: NewLobby) -> Result<LobbyHandle, ErrorCode> {
         self.call(|reply| RegistryCommand::Create { lobby, reply })
-            .await
+            .await?
     }
 
-    pub(crate) async fn find(&self, lobby: LobbyId) -> Result<Option<LobbyEntry>, ErrorCode> {
-        self.call(|reply| RegistryCommand::Find { lobby, reply })
-            .await
+    pub(crate) async fn claim(&self, lobby: LobbyId, user: UserId) -> Result<Claim, ErrorCode> {
+        self.call(|reply| RegistryCommand::Claim { lobby, user, reply })
+            .await?
+    }
+
+    /// Undoes a claim whose join failed.
+    pub(crate) async fn release(&self, lobby: LobbyId, user: UserId) {
+        // Only fails during shutdown, when memberships no longer matter.
+        let _ = self
+            .sender
+            .send(RegistryCommand::Release { lobby, user })
+            .await;
     }
 
     pub(crate) async fn list(&self, page: u32, per_page: u32) -> Result<LobbyPage, ErrorCode> {
@@ -95,22 +117,33 @@ struct Listing {
 
 struct Registry<S> {
     lobbies: BTreeMap<LobbyId, Listing>,
+    /// The one lobby each user belongs to, across all of the user's connections.
+    memberships: HashMap<UserId, LobbyId>,
     next_id: u32,
     store: Arc<S>,
     config: Arc<Config>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 }
 
-pub(crate) fn spawn<S: GameStore>(store: Arc<S>, config: Arc<Config>) -> RegistryHandle {
+/// Starts the registry with the lobbies of the games that were running when the server stopped.
+pub(crate) fn spawn<S: GameStore>(
+    store: Arc<S>,
+    config: Arc<Config>,
+    running: Vec<StoredGame>,
+) -> RegistryHandle {
     let (sender, commands) = mpsc::channel(COMMAND_QUEUE);
     let (notices, notice_receiver) = mpsc::unbounded_channel();
-    let registry = Registry {
+    let mut registry = Registry {
         lobbies: BTreeMap::new(),
+        memberships: HashMap::new(),
         next_id: 0,
         store,
         config,
         notices,
     };
+    for stored in running {
+        registry.restore(&stored);
+    }
     tokio::spawn(registry.run(commands, notice_receiver));
     RegistryHandle { sender }
 }
@@ -123,11 +156,13 @@ impl<S: GameStore> Registry<S> {
     ) {
         loop {
             tokio::select! {
+                // Notices first: a membership change a lobby reported must count before the next request.
+                biased;
+                Some(notice) = notices.recv() => self.note(notice),
                 command = commands.recv() => match command {
                     Some(command) => self.handle(command),
                     None => break,
                 },
-                Some(notice) = notices.recv() => self.note(notice),
             }
         }
     }
@@ -139,13 +174,10 @@ impl<S: GameStore> Registry<S> {
                 let handle = self.create(lobby);
                 let _ = reply.send(handle);
             }
-            RegistryCommand::Find { lobby, reply } => {
-                let entry = self
-                    .lobbies
-                    .get(&lobby)
-                    .map(|listing| listing.entry.clone());
-                let _ = reply.send(entry);
+            RegistryCommand::Claim { lobby, user, reply } => {
+                let _ = reply.send(self.claim(lobby, user));
             }
+            RegistryCommand::Release { lobby, user } => self.leave(lobby, &user),
             RegistryCommand::List {
                 page,
                 per_page,
@@ -165,13 +197,78 @@ impl<S: GameStore> Registry<S> {
             }
             LobbyNotice::Closed(id) => {
                 self.lobbies.remove(&id);
+                self.memberships.retain(|_, lobby| *lobby != id);
             }
+            LobbyNotice::Joined { lobby, user } => {
+                self.memberships.insert(user, lobby);
+            }
+            LobbyNotice::Left { lobby, user } => self.leave(lobby, &user),
         }
     }
 
-    fn create(&mut self, lobby: NewLobby) -> LobbyHandle {
+    fn leave(&mut self, lobby: LobbyId, user: &UserId) {
+        if self.memberships.get(user) == Some(&lobby) {
+            self.memberships.remove(user);
+        }
+    }
+
+    fn claim(&mut self, lobby: LobbyId, user: UserId) -> Result<Claim, ErrorCode> {
+        let claimed = match self.memberships.get(&user) {
+            Some(current) if *current != lobby => return Err(ErrorCode::AlreadyInLobby),
+            Some(_) => false,
+            None => true,
+        };
+        let entry = self
+            .lobbies
+            .get(&lobby)
+            .map(|listing| listing.entry.clone())
+            .ok_or(ErrorCode::LobbyNotFound)?;
+        if claimed {
+            self.memberships.insert(user, lobby);
+        }
+        Ok(Claim { entry, claimed })
+    }
+
+    fn restore(&mut self, stored: &StoredGame) {
+        let (game, record) = match stored.rebuild() {
+            Ok(rebuilt) => rebuilt,
+            Err(error) => {
+                error!(game = stored.id.0, %error, "a stored game does not replay, it stays unrestored");
+                return;
+            }
+        };
+        let restored = lobby::restore(
+            stored,
+            game,
+            record,
+            self.store.clone(),
+            self.config.clone(),
+            self.notices.clone(),
+        );
+        let Some((handle, summary)) = restored else {
+            error!(
+                game = stored.id.0,
+                "a stored game has no human seat, it stays unrestored"
+            );
+            return;
+        };
+        let id = stored.game.lobby;
+        // New lobbies count on from the highest restored id, so ids stay unique.
+        self.next_id = self.next_id.max(id.0);
+        let entry = LobbyEntry {
+            handle,
+            password_hash: None,
+        };
+        self.lobbies.insert(id, Listing { entry, summary });
+    }
+
+    fn create(&mut self, lobby: NewLobby) -> Result<LobbyHandle, ErrorCode> {
+        if self.memberships.contains_key(&lobby.owner.id) {
+            return Err(ErrorCode::AlreadyInLobby);
+        }
         self.next_id += 1;
         let id = LobbyId(self.next_id);
+        let owner = lobby.owner.id.clone();
         let setup = LobbySetup {
             id,
             name: lobby.name,
@@ -194,7 +291,8 @@ impl<S: GameStore> Registry<S> {
             password_hash: lobby.password_hash.map(Arc::from),
         };
         self.lobbies.insert(id, Listing { entry, summary });
-        handle
+        self.memberships.insert(owner, id);
+        Ok(handle)
     }
 
     fn page(&self, page: u32, per_page: u32) -> LobbyPage {

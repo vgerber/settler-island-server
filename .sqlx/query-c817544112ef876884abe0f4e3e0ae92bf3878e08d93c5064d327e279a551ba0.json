@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT index, seat, action AS \"action: Json<Action>\", events AS \"events: Json<Vec<Event>>\"\n               FROM game_actions WHERE game = $1 ORDER BY index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "seat",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "action: Json<Action>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "events: Json<Vec<Event>>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c817544112ef876884abe0f4e3e0ae92bf3878e08d93c5064d327e279a551ba0"
+}

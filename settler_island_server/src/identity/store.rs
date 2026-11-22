@@ -8,6 +8,8 @@ use settler_island_protocol::UserId;
 pub enum IdentityStoreError {
     #[error("the identity store lock is poisoned")]
     Poisoned,
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
 /// Maps Keycloak subjects to the user ids of upgraded guests.

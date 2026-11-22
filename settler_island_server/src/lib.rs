@@ -7,6 +7,7 @@ mod lobby;
 mod names;
 mod outbox;
 mod password;
+mod postgres;
 mod registry;
 mod store;
 
@@ -25,10 +26,14 @@ use settler_island_protocol::{
 };
 use tokio::net::TcpListener;
 
-pub use config::{Config, ConfigError, KeycloakConfig, SessionSecret, MIN_SESSION_SECRET_BYTES};
+pub use config::{
+    Config, ConfigError, DatabaseUrl, KeycloakConfig, SessionSecret, MIN_SESSION_SECRET_BYTES,
+};
 pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
+pub use postgres::PostgresStore;
 pub use store::{
-    GameId, GameStore, MemoryStore, NewGame, SeatPlayer, StoreError, StoredAction, StoredGame,
+    GameId, GameStore, MemoryStore, NewGame, RebuildError, SeatPlayer, Snapshot, StoreError,
+    StoredAction, StoredGame, SNAPSHOT_INTERVAL,
 };
 
 use identity::Identity;
@@ -78,19 +83,34 @@ struct Health {
     status: &'static str,
 }
 
-pub fn router<S: GameStore, I: IdentityStore>(config: Config, store: S, identities: I) -> Router {
+#[derive(Debug, thiserror::Error)]
+pub enum ServeError {
+    #[error("network: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("loading the running games: {0}")]
+    Store(#[from] StoreError),
+}
+
+/// The app with the lobbies of every game `store` holds as running.
+pub async fn router<S: GameStore, I: IdentityStore>(
+    config: Config,
+    store: S,
+    identities: I,
+) -> Result<Router, StoreError> {
+    let running = store.load_running().await?;
     let config = Arc::new(config);
     let state = AppState {
-        registry: registry::spawn(Arc::new(store), config.clone()),
+        registry: registry::spawn(Arc::new(store), config.clone(), running),
         identity: Arc::new(Identity::new(&config, identities)),
         config,
     };
-    Router::new()
+    let router = Router::new()
         .route("/api/v1/health", get(health))
         .route("/api/v1/ws", get(upgrade::<I>))
         .route("/api/v1/sessions/guest", post(guest_session::<I>))
         .route("/api/v1/sessions/upgrade", post(upgrade_session::<I>))
-        .with_state(state)
+        .with_state(state);
+    Ok(router)
 }
 
 /// Serves until `shutdown` completes.
@@ -100,10 +120,12 @@ pub async fn serve<S: GameStore, I: IdentityStore>(
     store: S,
     identities: I,
     shutdown: impl Future<Output = ()> + Send + 'static,
-) -> std::io::Result<()> {
-    axum::serve(listener, router(config, store, identities))
+) -> Result<(), ServeError> {
+    let router = router(config, store, identities).await?;
+    axum::serve(listener, router)
         .with_graceful_shutdown(shutdown)
-        .await
+        .await?;
+    Ok(())
 }
 
 async fn health() -> Json<Health> {

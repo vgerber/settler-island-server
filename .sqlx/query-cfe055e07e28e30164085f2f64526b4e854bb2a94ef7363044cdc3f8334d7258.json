@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users (id, kind, name) VALUES ($1, $2, $3)\n                     ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cfe055e07e28e30164085f2f64526b4e854bb2a94ef7363044cdc3f8334d7258"
+}

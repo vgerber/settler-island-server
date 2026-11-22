@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, lobby_id, lobby_name,\n                      bot_difficulty AS \"bot_difficulty: Json<Difficulty>\",\n                      settings AS \"settings: Json<RecordSettings>\", seed\n               FROM games WHERE status = 'running' ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "lobby_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "lobby_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "bot_difficulty: Json<Difficulty>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "settings: Json<RecordSettings>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "seed",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3d924b3e6a130b5c0acb9fa5369f42ff7c00d5a8b1eef8a1e229fa1662e15ffe"
+}

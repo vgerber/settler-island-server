@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT index, state AS \"state: Json<Game>\" FROM game_snapshots\n               WHERE game = $1 ORDER BY index DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "state: Json<Game>",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b1cc437e288015083bb9ea50a7c2849c6405100c762401f80f89bd713762845b"
+}

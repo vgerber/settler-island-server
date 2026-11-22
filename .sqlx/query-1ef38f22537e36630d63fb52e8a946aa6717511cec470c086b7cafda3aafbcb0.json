@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT COALESCE(MAX(index) + 1, 0) FROM game_actions WHERE game = games.id) AS \"next!\"\n               FROM games WHERE id = $1 AND status = 'running'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1ef38f22537e36630d63fb52e8a946aa6717511cec470c086b7cafda3aafbcb0"
+}

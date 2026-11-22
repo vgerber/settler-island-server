@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO identity_links (keycloak_sub, user_id) VALUES ($1, $2)\n             ON CONFLICT (keycloak_sub) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "352026a9990b85aea6d1394b9c5f11bc5c71a9cdbd23bdc17dab66d18cf23f31"
+}

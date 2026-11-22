@@ -3,22 +3,30 @@ use std::future::Future;
 use std::sync::Mutex;
 
 use settler_island_bot::Difficulty;
-use settler_island_game::{Action, Event, GameSettings, Seat};
-use settler_island_protocol::UserId;
+use settler_island_game::{Action, Event, Game, GameError, GameRecord, GameSettings, Seat};
+use settler_island_protocol::{LobbyId, User};
+
+/// A snapshot every this many actions bounds the replay work of a restart.
+pub const SNAPSHOT_INTERVAL: u32 = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GameId(pub u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeatPlayer {
-    Human(UserId),
+    Human(User),
     Bot(Difficulty),
 }
 
+/// A game as it starts, plus what a restart needs to recreate its lobby.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewGame {
     pub settings: GameSettings,
     pub seats: Vec<SeatPlayer>,
+    pub lobby: LobbyId,
+    pub lobby_name: String,
+    /// Plays for humans who are away.
+    pub bot_difficulty: Difficulty,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,11 +37,61 @@ pub struct StoredAction {
     pub events: Vec<Event>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The game state after the first `actions` actions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Snapshot {
+    pub actions: u32,
+    pub state: Game,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct StoredGame {
     pub id: GameId,
     pub game: NewGame,
+    /// Every action so far, in order.
     pub actions: Vec<StoredAction>,
+    /// The latest snapshot, if any.
+    pub snapshot: Option<Snapshot>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RebuildError {
+    #[error(transparent)]
+    Game(#[from] GameError),
+    #[error("replaying action {0} produced other events than stored")]
+    Diverged(u32),
+    #[error("the snapshot covers {snapshot} actions but only {stored} are stored")]
+    SnapshotBeyondLog { snapshot: u32, stored: u32 },
+}
+
+impl StoredGame {
+    /// The live game (latest snapshot plus the later actions) and its full record.
+    pub fn rebuild(&self) -> Result<(Game, GameRecord), RebuildError> {
+        let initial = Game::new(self.game.settings.clone())?;
+        // The record starts from the empty board, not the snapshot's.
+        let mut record = GameRecord::new(&initial);
+        let (mut game, replay_from) = match &self.snapshot {
+            Some(snapshot) => (snapshot.state.clone(), snapshot.actions),
+            None => (initial, 0),
+        };
+        let stored = self.actions.len() as u32;
+        if replay_from > stored {
+            return Err(RebuildError::SnapshotBeyondLog {
+                snapshot: replay_from,
+                stored,
+            });
+        }
+        for stored in &self.actions {
+            if stored.index >= replay_from {
+                let events = game.apply(stored.seat, stored.action.clone())?;
+                if events != stored.events {
+                    return Err(RebuildError::Diverged(stored.index));
+                }
+            }
+            record.push(stored.seat, stored.action.clone(), stored.events.clone());
+        }
+        Ok((game, record))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +102,12 @@ pub enum StoreError {
     OutOfOrder { expected: u32, got: u32 },
     #[error("the store lock is poisoned")]
     Poisoned,
+    #[error("database: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("database migration: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+    #[error("game {game:?} has a stored {field} out of range")]
+    Corrupt { game: GameId, field: &'static str },
 }
 
 /// Durable game log: a lobby writes each action here before anyone sees its events.
@@ -51,10 +115,12 @@ pub trait GameStore: Send + Sync + 'static {
     fn create_game(&self, game: NewGame)
         -> impl Future<Output = Result<GameId, StoreError>> + Send;
 
+    /// Stores `action`, plus `snapshot` (the state after it) when given, in one step.
     fn append_action(
         &self,
         game: GameId,
         action: StoredAction,
+        snapshot: Option<Game>,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
     fn load_running(&self) -> impl Future<Output = Result<Vec<StoredGame>, StoreError>> + Send;
@@ -98,13 +164,19 @@ impl GameStore for MemoryStore {
                 id,
                 game,
                 actions: Vec::new(),
+                snapshot: None,
             };
             state.running.insert(id, stored);
             Ok(id)
         })
     }
 
-    async fn append_action(&self, game: GameId, action: StoredAction) -> Result<(), StoreError> {
+    async fn append_action(
+        &self,
+        game: GameId,
+        action: StoredAction,
+        snapshot: Option<Game>,
+    ) -> Result<(), StoreError> {
         self.with_state(|state| {
             let stored = state
                 .running
@@ -115,6 +187,12 @@ impl GameStore for MemoryStore {
                 return Err(StoreError::OutOfOrder {
                     expected,
                     got: action.index,
+                });
+            }
+            if let Some(state) = snapshot {
+                stored.snapshot = Some(Snapshot {
+                    actions: action.index + 1,
+                    state,
                 });
             }
             stored.actions.push(action);
@@ -139,6 +217,8 @@ impl GameStore for MemoryStore {
 
 #[cfg(test)]
 mod tests {
+    use settler_island_protocol::{UserId, UserKind};
+
     use super::*;
 
     fn new_game() -> NewGame {
@@ -149,10 +229,17 @@ mod tests {
                 seed: 5,
             },
             seats: vec![
-                SeatPlayer::Human(UserId("a".to_string())),
+                SeatPlayer::Human(User {
+                    id: UserId("a".to_string()),
+                    name: "Ada".to_string(),
+                    kind: UserKind::Guest,
+                }),
                 SeatPlayer::Bot(Difficulty::Random),
                 SeatPlayer::Bot(Difficulty::Random),
             ],
+            lobby: LobbyId(4),
+            lobby_name: "Table".to_string(),
+            bot_difficulty: Difficulty::Heuristic,
         }
     }
 
@@ -172,9 +259,9 @@ mod tests {
         let second = store.create_game(new_game()).await.unwrap();
         assert_ne!(first, second);
 
-        store.append_action(first, action(0)).await.unwrap();
-        store.append_action(first, action(1)).await.unwrap();
-        let gap = store.append_action(first, action(3)).await;
+        store.append_action(first, action(0), None).await.unwrap();
+        store.append_action(first, action(1), None).await.unwrap();
+        let gap = store.append_action(first, action(3), None).await;
         assert!(matches!(
             gap,
             Err(StoreError::OutOfOrder {
@@ -192,6 +279,40 @@ mod tests {
         let running = store.load_running().await.unwrap();
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].id, second);
-        assert!(store.append_action(first, action(2)).await.is_err());
+        assert!(store.append_action(first, action(2), None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn rebuilding_from_snapshot_and_tail_equals_the_live_game() {
+        let store = MemoryStore::default();
+        let id = store.create_game(new_game()).await.unwrap();
+        let mut live = Game::new(new_game().settings).unwrap();
+        let mut record = GameRecord::new(&live);
+        let count = 2 * SNAPSHOT_INTERVAL + 7;
+        for index in 0..count {
+            let seat = live.pending_seats()[0];
+            let action = live.legal_actions(seat).pop().unwrap();
+            let events = live.apply(seat, action.clone()).unwrap();
+            record.push(seat, action.clone(), events.clone());
+            let snapshot = (index + 1)
+                .is_multiple_of(SNAPSHOT_INTERVAL)
+                .then(|| live.clone());
+            let stored = StoredAction {
+                index,
+                seat,
+                action,
+                events,
+            };
+            store.append_action(id, stored, snapshot).await.unwrap();
+        }
+
+        let stored = store.load_running().await.unwrap().remove(0);
+        assert_eq!(
+            stored.snapshot.as_ref().map(|snapshot| snapshot.actions),
+            Some(2 * SNAPSHOT_INTERVAL)
+        );
+        let (game, rebuilt_record) = stored.rebuild().unwrap();
+        assert_eq!(game, live);
+        assert_eq!(rebuilt_record, record);
     }
 }
