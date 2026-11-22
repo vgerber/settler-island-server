@@ -84,6 +84,8 @@ pub struct Game {
     #[schemars(skip)]
     pub(crate) rng: ChaCha8Rng,
     pub(crate) turn_number: u32,
+    /// Whether the current seat rolled this turn; a knight before the roll returns to `Phase::Roll`.
+    pub(crate) dice_rolled: bool,
     pub(crate) trade: Option<TradeOffer>,
     pub(crate) longest_road: Option<Seat>,
     pub(crate) largest_army: Option<Seat>,
@@ -124,6 +126,7 @@ impl Game {
             deck,
             rng,
             turn_number: 0,
+            dice_rolled: false,
             trade: None,
             longest_road: None,
             largest_army: None,
@@ -270,6 +273,14 @@ impl Game {
         }
     }
 
+    /// The phase a robber or card interruption returns to: `Main` after the roll, `Roll` before it.
+    pub(crate) fn turn_phase(&self) -> Phase {
+        if self.dice_rolled {
+            return Phase::Main;
+        }
+        Phase::Roll
+    }
+
     /// Hands the turn to `seat` (if it changes) and enters `phase`.
     pub(crate) fn pass_to(&mut self, seat: Seat, phase: Phase) -> Vec<Event> {
         let mut events = Vec::new();
@@ -391,10 +402,6 @@ mod tests {
                 receive: Resource::Ore,
             },
             Action::AcceptTrade,
-            Action::BuyDevelopmentCard,
-            Action::PlayMonopoly {
-                resource: Resource::Sheep,
-            },
         ] {
             assert_eq!(game.apply(0, action), Err(GameError::NotImplemented));
         }

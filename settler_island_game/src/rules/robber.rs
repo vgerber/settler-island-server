@@ -24,7 +24,7 @@ pub(crate) fn move_robber(
     let next = if then_steal && !victims(game, seat, tile).is_empty() {
         Phase::Steal { tile }
     } else {
-        Phase::Main
+        game.turn_phase()
     };
     Ok(vec![Event::RobberMoved { seat, tile }, game.enter(next)])
 }
@@ -117,7 +117,7 @@ pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Eve
             victim,
             resource: Some(resource),
         },
-        game.enter(Phase::Main),
+        game.enter(game.turn_phase()),
     ])
 }
 
@@ -466,6 +466,22 @@ mod tests {
             .unwrap();
         game.apply(0, Action::MoveRobber { tile: lonely }).unwrap();
         assert_eq!(game.phase, Phase::Main);
+    }
+
+    #[test]
+    fn knight_before_the_roll_returns_to_the_roll() {
+        let (mut game, tile) = robber_game(3);
+        game.dice_rolled = false;
+        give(&mut game, 1, cards([0, 0, 0, 0, 1]));
+        game.apply(0, Action::MoveRobber { tile }).unwrap();
+        let victim = game.legal_actions(0)[0].clone();
+        game.apply(0, victim).unwrap();
+        assert_eq!(game.phase, Phase::Roll);
+
+        let (mut game, tile) = robber_game(3);
+        game.dice_rolled = false;
+        game.apply(0, Action::MoveRobber { tile }).unwrap();
+        assert_eq!(game.phase, Phase::Roll);
     }
 
     #[test]

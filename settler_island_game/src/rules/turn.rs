@@ -14,6 +14,7 @@ pub(crate) fn roll_dice(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameE
         return Err(GameError::WrongPhase);
     }
 
+    game.dice_rolled = true;
     let first: u8 = game.rng.random_range(1..=6);
     let second: u8 = game.rng.random_range(1..=6);
     let mut events = vec![Event::DiceRolled {
@@ -37,6 +38,7 @@ pub(crate) fn end_turn(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameEr
     }
 
     development::on_turn_end(game, seat);
+    game.dice_rolled = false;
     let next = (seat + 1) % game.settings.seats;
     game.turn_number += 1;
     Ok(game.pass_to(next, Phase::Roll))
