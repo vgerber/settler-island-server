@@ -1,0 +1,24 @@
+name: settler-island-server
+
+# Local services for development. Nothing here starts by default; opt in per profile.
+#
+# Keycloak with the settler-island realm (keycloak/realm-local.json, test user `ada` / `settler`):
+#   docker compose --profile auth up -d keycloak
+# then run the server with
+#   SETTLER_KEYCLOAK_ISSUER=http://127.0.0.1:8086/realms/settler-island
+#   SETTLER_KEYCLOAK_AUDIENCE=settler-island-server
+# A realm import only applies to a fresh container: after editing the realm, `docker compose --profile auth down`.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: settler-island-keycloak
+    profiles: ["auth"]
+    command: ["start-dev", "--import-realm", "--hostname=http://127.0.0.1:8086"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8086:8080"
+    volumes:
+      - ./keycloak/realm-local.json:/opt/keycloak/data/import/realm-local.json:ro

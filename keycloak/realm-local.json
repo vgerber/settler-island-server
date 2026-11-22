@@ -1,0 +1,55 @@
+{
+  "realm": "settler-island",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 1800,
+  "ssoSessionIdleTimeout": 2592000,
+  "offlineSessionIdleTimeout": 2592000,
+  "clients": [
+    {
+      "clientId": "settler-island-godot",
+      "name": "Settler Island Godot client",
+      "description": "Public OIDC client for the Godot game (authorization code with PKCE, loopback redirect, no secret).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-settler-island-server",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "settler-island-server",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "ada",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ada@example.test",
+      "firstName": "Ada",
+      "lastName": "Local",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "settler", "temporary": false }]
+    }
+  ]
+}
