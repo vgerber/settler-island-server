@@ -395,10 +395,6 @@ mod tests {
             Action::PlayMonopoly {
                 resource: Resource::Sheep,
             },
-            Action::Steal { victim: 1 },
-            Action::Discard {
-                resources: ResourceCounts::default(),
-            },
         ] {
             assert_eq!(game.apply(0, action), Err(GameError::NotImplemented));
         }
