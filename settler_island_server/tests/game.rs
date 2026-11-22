@@ -45,7 +45,6 @@ async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
     let Phase::Finished { winner } = finished.view.phase else {
         panic!("the last update must show the finished game");
     };
-    assert!(finished.view.players[usize::from(winner)].points >= POINTS_TO_WIN);
     assert_eq!(finished.view.own.map(|own| own.seat), Some(finished.seat));
     let settings = GameSettings {
         seats: 4,
@@ -54,6 +53,9 @@ async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
     };
     let replayed = replay(settings, &finished.actions).expect("the record replays");
     assert_eq!(replayed.phase(), &Phase::Finished { winner });
+    // The human's view hides other seats' victory point cards, so check the winner's own total.
+    let winner_view = replayed.view(Some(winner));
+    assert!(winner_view.players[usize::from(winner)].points >= POINTS_TO_WIN);
 }
 
 /// Plays one game with the random bot logic for the human; `None` when it runs too long.
