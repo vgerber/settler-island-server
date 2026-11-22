@@ -7,3 +7,6 @@ members = [
     "settler_island_protocol",
     "settler_island_server",
 ]
+
+[profile.dev.package.argon2]
+opt-level = 3
