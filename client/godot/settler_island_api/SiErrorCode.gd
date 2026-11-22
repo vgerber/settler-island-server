@@ -16,6 +16,12 @@ static func from_dict(data: Variant) -> SiErrorCode:
 				return SiErrorCodeNotWelcomed.from_dict(data)
 			"AlreadyWelcomed":
 				return SiErrorCodeAlreadyWelcomed.from_dict(data)
+			"InvalidToken":
+				return SiErrorCodeInvalidToken.from_dict(data)
+			"AccountsDisabled":
+				return SiErrorCodeAccountsDisabled.from_dict(data)
+			"AccountAlreadyLinked":
+				return SiErrorCodeAccountAlreadyLinked.from_dict(data)
 			"InvalidName":
 				return SiErrorCodeInvalidName.from_dict(data)
 			"InvalidLobbyName":

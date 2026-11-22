@@ -1,12 +1,15 @@
 extends SceneTree
-## Plays against a real server through `SiClient`: logs in, opens a lobby with three bots, starts
+## Plays against a real server through `SiClient`: gets a guest token over HTTP, authenticates, opens a lobby with three bots, starts
 ## the game and always picks the first legal action until enough game updates arrived.
-## Usage: godot --headless --path <project> -s live_game.gd -- ws://127.0.0.1:<port>/api/v1/ws
+## Usage: godot --headless --path <project> -s live_game.gd -- http://127.0.0.1:<port>
 
 const TIMEOUT_MILLISECONDS := 30000
 const UPDATES_WANTED := 5
 
 var _client := SiClient.new()
+var _session := SiGuestSession.new()
+var _base_url := ""
+var _token := ""
 var _deadline := 0
 var _pending_request := 0
 var _updates := 0
@@ -30,7 +33,18 @@ func _init() -> void:
 	_client.game_started_received.connect(_on_game_started)
 	_client.game_update_received.connect(_on_game_update)
 	_client.error_received.connect(_on_error)
-	var error := _client.connect_to_url(arguments[0])
+	_base_url = arguments[0]
+	root.add_child.call_deferred(_session)
+	_session.succeeded.connect(_on_session)
+	_session.failed.connect(func(reason: String): _finish(1, "LIVE_FAILED %s" % reason))
+	# The session node enters the tree deferred, so start the request after that.
+	_session.request.call_deferred(_base_url, "Godot")
+
+
+func _on_session(token: String, user: SiUser) -> void:
+	print("guest session for %s (%s)" % [user.name, user.kind])
+	_token = token
+	var error := _client.connect_to_url(_base_url.replace("http://", "ws://") + "/api/v1/ws")
 	if error != OK:
 		_finish(1, "LIVE_FAILED connect_to_url returned %d" % error)
 
@@ -53,7 +67,7 @@ func _finish(code: int, line: String) -> void:
 
 
 func _on_connected() -> void:
-	_pending_request = _client.send_hello("Godot")
+	_pending_request = _client.send_authenticate(_token)
 
 
 func _on_disconnected(code: int, reason: String) -> void:

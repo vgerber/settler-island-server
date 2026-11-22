@@ -7,8 +7,8 @@ extends RefCounted
 static func from_dict(data: Variant) -> SiClientMessage:
 	if data is Dictionary:
 		match data.get("type"):
-			"Hello":
-				return SiClientMessageHello.from_dict(data)
+			"Authenticate":
+				return SiClientMessageAuthenticate.from_dict(data)
 			"ListLobbies":
 				return SiClientMessageListLobbies.from_dict(data)
 			"CreateLobby":

@@ -78,10 +78,10 @@ func send_message(message: SiClientMessage) -> int:
 	_socket.send_text(JSON.stringify(message.to_dict()))
 	return _last_request_id
 
-## Guest login without a token; must be the first message.
-func send_hello(name_value: String) -> int:
-	var message := SiClientMessageHello.new()
-	message.name = name_value
+## Must be the first message; `token` is a guest session token or a Keycloak access token.
+func send_authenticate(token: String) -> int:
+	var message := SiClientMessageAuthenticate.new()
+	message.token = token
 	return send_message(message)
 
 ## `page` starts at 0; `per_page` is 1 to `MAX_LOBBIES_PER_PAGE`.

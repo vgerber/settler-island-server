@@ -427,25 +427,25 @@
       "description": "Every request carries a `request_id` that the direct reply (or error) echoes.",
       "oneOf": [
         {
-          "description": "Guest login without a token; must be the first message.",
+          "description": "Must be the first message; `token` is a guest session token or a Keycloak access token.",
           "properties": {
-            "name": {
-              "type": "string"
-            },
             "request_id": {
               "format": "uint32",
               "minimum": 0,
               "type": "integer"
             },
+            "token": {
+              "type": "string"
+            },
             "type": {
-              "const": "Hello",
+              "const": "Authenticate",
               "type": "string"
             }
           },
           "required": [
             "type",
             "request_id",
-            "name"
+            "token"
           ],
           "type": "object"
         },
@@ -873,6 +873,42 @@
           "properties": {
             "type": {
               "const": "AlreadyWelcomed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "InvalidToken",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "AccountsDisabled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "AccountAlreadyLinked",
               "type": "string"
             }
           },
@@ -2944,15 +2980,27 @@
         "id": {
           "type": "string"
         },
+        "kind": {
+          "$ref": "#/$defs/UserKind"
+        },
         "name": {
           "type": "string"
         }
       },
       "required": [
         "id",
-        "name"
+        "name",
+        "kind"
       ],
       "type": "object"
+    },
+    "UserKind": {
+      "description": "How a user signed in; an upgraded guest keeps its id and becomes an `Account`.",
+      "enum": [
+        "Guest",
+        "Account"
+      ],
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

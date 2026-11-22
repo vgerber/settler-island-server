@@ -13,9 +13,9 @@ use settler_island_client_generator::{default_client_directory, API_DIRECTORY};
 use settler_island_game::{replay, GameError, GameSettings};
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage,
-    User, UserId,
+    User, UserId, UserKind,
 };
-use settler_island_server::{serve, Config, MemoryStore};
+use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
 const DEFAULT_GODOT: &str = "/home/vincent/Software/godot/godot";
 const GODOT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -47,6 +47,7 @@ fn prepare_project(name: &str) -> PathBuf {
     let client = default_client_directory();
     copy_files(&client.join("godot_tests"), &project);
     copy_files(&client.join(API_DIRECTORY), &api);
+    copy_files(&client.join("godot"), &project);
     root
 }
 
@@ -119,6 +120,7 @@ fn user(id: &str, name: &str) -> User {
     User {
         id: UserId(id.to_string()),
         name: name.to_string(),
+        kind: UserKind::Guest,
     }
 }
 
@@ -155,9 +157,9 @@ fn fixtures() -> Value {
     let owner = user("u1", "Ada");
 
     let mut client = vec![
-        ClientMessage::Hello {
+        ClientMessage::Authenticate {
             request_id: 1,
-            name: "Ada".to_string(),
+            token: "token".to_string(),
         },
         ClientMessage::ListLobbies {
             request_id: 2,
@@ -322,12 +324,13 @@ fn generated_client_plays_against_a_real_server() {
         let address = listener.local_addr().unwrap();
         let config = Config {
             bot_delay: Duration::ZERO,
-            ..Config::default()
+            ..Config::new(SessionSecret::new(vec![7; 32]).unwrap())
         };
         tokio::spawn(serve(
             listener,
             config,
             MemoryStore::default(),
+            MemoryIdentityStore::default(),
             std::future::pending(),
         ));
         address
@@ -337,7 +340,7 @@ fn generated_client_plays_against_a_real_server() {
         &godot,
         "live-game",
         "live_game.gd",
-        &format!("ws://{address}/api/v1/ws"),
+        &format!("http://{address}"),
     );
 
     assert!(output.contains("LIVE_OK"), "{output}");

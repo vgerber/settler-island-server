@@ -4,16 +4,19 @@ extends RefCounted
 
 var id: String = ""
 var name: String = ""
+var kind: String = ""
 
 static func from_dict(data: Dictionary) -> SiUser:
 	var decoded := SiUser.new()
 	decoded.id = str(data.get("id"))
 	decoded.name = str(data.get("name"))
+	decoded.kind = str(data.get("kind"))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
 		"id": id,
 		"name": name,
+		"kind": kind,
 	}
 	return encoded

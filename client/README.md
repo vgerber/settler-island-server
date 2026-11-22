@@ -4,6 +4,7 @@ Generated from the protocol types in `settler_island_protocol`; never edit these
 
 - `schema.json`: JSON Schema of `ClientMessage` and `ServerMessage` (definitions under `$defs`).
 - `godot/settler_island_api/`: Godot 4 GDScript, one `Si<Type>.gd` per schema type, plus the `SiClient` node.
+- `godot/SiGuestSession.gd`: hand-written (not generated) helper for `POST /api/v1/sessions/guest`; copy it next to the API folder.
 - `godot_tests/`: headless test project used by `settler_island_client_generator/tests/godot.rs`.
 
 ## Regenerate
@@ -35,14 +36,26 @@ ln -s /path/to/settler-island-server/client/godot/settler_island_api /path/to/ga
 
 ## Example
 
+The generated client covers only the WebSocket. A guest first gets a token over HTTP with `SiGuestSession`
+(`POST /api/v1/sessions/guest {name}` -> `{token, user}`), then sends `Authenticate` as the first message:
+
 ```gdscript
 extends Node
 
 var client := SiClient.new()
+var session := SiGuestSession.new()
+var token := ""
 
 func _ready() -> void:
 	add_child(client)
-	client.connected.connect(func(): client.send_hello("Ada"))
+	add_child(session)
+	session.succeeded.connect(_on_session)
+	session.failed.connect(func(reason): push_warning(reason))
+	session.request("http://127.0.0.1:8080", "Ada")
+
+func _on_session(new_token: String, _user: SiUser) -> void:
+	token = new_token
+	client.connected.connect(func(): client.send_authenticate(token))
 	client.welcome_received.connect(_on_welcome)
 	client.game_update_received.connect(_on_game_update)
 	client.error_received.connect(func(message): push_warning(message.message))
