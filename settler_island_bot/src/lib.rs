@@ -1,4 +1,5 @@
 mod harness;
+mod heuristic;
 mod random;
 
 use schemars::JsonSchema;
@@ -21,7 +22,8 @@ pub enum Difficulty {
 
 pub fn create_bot(difficulty: Difficulty, seed: u64) -> Box<dyn Bot> {
     match difficulty {
-        // The heuristic bot arrives with step 2e.
-        Difficulty::Random | Difficulty::Heuristic => Box::new(random::RandomBot::new(seed)),
+        Difficulty::Random => Box::new(random::RandomBot::new(seed)),
+        // Deterministic, so the seed is not needed.
+        Difficulty::Heuristic => Box::new(heuristic::HeuristicBot::new()),
     }
 }
