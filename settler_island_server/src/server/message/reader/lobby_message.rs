@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hasher};
 
 use async_trait::async_trait;
 use futures_util::future::join_all;
 use log::trace;
 use serde_json::json;
-use settler_island_game::game::GameSettings;
+use settler_island_game::GameSettings;
 
 use crate::server::{
     lobby::game_lobby::GameLobbyAccess,
@@ -56,7 +57,14 @@ impl LobbyMessage {
         if let Err(err) = lobby
             .lock()
             .await
-            .start_game(GameSettings { players: 2 }, vec![])
+            .start_game(
+                GameSettings {
+                    seats: 3,
+                    points_to_win: 10,
+                    seed: random_seed(),
+                },
+                vec![],
+            )
             .await
         {
             return Err(format!("User could not start game \"{}\"", err));
@@ -167,4 +175,11 @@ impl MessageReaderProvider for LobbyMessage {
 
         Err(format!("Command \"{}\" not found", command))
     }
+}
+
+/// A fresh seed per game from the standard library's randomly keyed hasher; step 3a moves seeding to the game task.
+fn random_seed() -> u64 {
+    std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
 }

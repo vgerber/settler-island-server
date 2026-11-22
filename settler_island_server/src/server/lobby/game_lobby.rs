@@ -2,17 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use log::trace;
 use serde::Serialize;
-use settler_island_game::game::{
-    board::generator::base_board_generator::generate_board,
-    state::{
-        state_machine::{GameStateT, StateMachine},
-        states::{
-            start_road_placement::StartRoadPlacement,
-            start_village_placement::StartVillagePlacement,
-        },
-    },
-    Game, GameSettings,
-};
+use settler_island_game::{Game, GameSettings};
 use tokio::sync::Mutex;
 
 use crate::server::{user::UserId, user_connection::UserConnection};
@@ -121,22 +111,9 @@ impl GameLobby {
         settings: GameSettings,
         _player_user_ids: Vec<UserId>,
     ) -> Result<(), String> {
-        let board = match generate_board() {
-            Ok(board) => board,
-            Err(err) => return Err(format!("Failed to generated board \"{}\"", err)),
-        };
-        let states: Vec<GameStateT> = vec![
-            Box::new(StartVillagePlacement::new()),
-            Box::new(StartRoadPlacement::new()),
-        ];
-        let start_state_id = states[0].get_id().to_string();
-
-        let state_machine = StateMachine::from(states, start_state_id);
-
-        self.game
-            .lock()
-            .await
-            .replace(Game::from(board, settings, state_machine));
+        let game =
+            Game::new(settings).map_err(|error| format!("Failed to start game \"{}\"", error))?;
+        self.game.lock().await.replace(game);
         Ok(())
     }
 }
