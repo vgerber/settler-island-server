@@ -26,6 +26,9 @@ pub fn test_config() -> Config {
     Config {
         bind: SocketAddr::from(([127, 0, 0, 1], 0)),
         bot_delay: Duration::ZERO,
+        // Tests open many sessions from one address; the limiter has its own test.
+        session_burst: 10_000,
+        session_requests_per_minute: 600_000,
         ..Config::new(SessionSecret::new(TEST_SESSION_SECRET.to_vec()).unwrap())
     }
 }
@@ -50,7 +53,14 @@ pub async fn start_with(
     let router = settler_island_server::router(config, store, identities)
         .await
         .unwrap();
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
     address
 }
 

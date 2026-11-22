@@ -7,6 +7,8 @@ const DEFAULT_BIND: &str = "127.0.0.1:8253";
 const DEFAULT_BOT_DELAY_MILLISECONDS: u64 = 600;
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_MESSAGES_PER_SECOND: u32 = 20;
+const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
+const DEFAULT_SESSION_BURST: u32 = 5;
 /// HMAC-SHA256 gains nothing from longer keys, and shorter ones are guessable.
 pub const MIN_SESSION_SECRET_BYTES: usize = 32;
 
@@ -18,6 +20,12 @@ pub struct Config {
     /// A connection that sends nothing (not even a ping) for this long is closed.
     pub idle_timeout: Duration,
     pub messages_per_second: u32,
+    /// Sustained rate of `/api/v1/sessions/*` requests per client address.
+    pub session_requests_per_minute: u32,
+    /// Session requests a client address may send at once before the rate applies.
+    pub session_burst: u32,
+    /// Take the client address from `X-Forwarded-For` (set only behind a proxy that overwrites it).
+    pub trust_forwarded_for: bool,
     /// Fixed game seed for tests and reproductions; `None` draws a random seed per game.
     pub seed: Option<u64>,
     pub session_secret: SessionSecret,
@@ -98,6 +106,9 @@ impl Config {
             bot_delay: Duration::from_millis(DEFAULT_BOT_DELAY_MILLISECONDS),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             messages_per_second: DEFAULT_MESSAGES_PER_SECOND,
+            session_requests_per_minute: DEFAULT_SESSION_REQUESTS_PER_MINUTE,
+            session_burst: DEFAULT_SESSION_BURST,
+            trust_forwarded_for: false,
             seed: None,
             session_secret,
             keycloak: None,
@@ -119,8 +130,17 @@ impl Config {
             std::env::var("SETTLER_KEYCLOAK_ISSUER").ok(),
             std::env::var("SETTLER_KEYCLOAK_AUDIENCE").ok(),
         )?;
+        let session_requests_per_minute = parse_env(
+            "SETTLER_SESSION_REQUESTS_PER_MINUTE",
+            &DEFAULT_SESSION_REQUESTS_PER_MINUTE.to_string(),
+        )?;
+        let session_burst = parse_env("SETTLER_SESSION_BURST", &DEFAULT_SESSION_BURST.to_string())?;
+        let trust_forwarded_for = parse_env("SETTLER_TRUST_FORWARDED_FOR", "false")?;
         Ok(Config {
             bind,
+            session_requests_per_minute,
+            session_burst,
+            trust_forwarded_for,
             bot_delay: Duration::from_millis(bot_delay_milliseconds),
             keycloak,
             database_url: std::env::var("DATABASE_URL").ok().map(DatabaseUrl),
