@@ -906,6 +906,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "settler_island_bot"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "schemars",
+ "serde",
+ "settler_island_game",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "settler_island_game"
 version = "0.1.0"
 dependencies = [
