@@ -32,7 +32,8 @@ use settler_island_protocol::{
 use tokio::net::TcpListener;
 
 pub use config::{
-    Config, ConfigError, DatabaseUrl, KeycloakConfig, SessionSecret, MIN_SESSION_SECRET_BYTES,
+    Config, ConfigError, DatabaseUrl, KeycloakConfig, LogFormat, SessionSecret,
+    MIN_SESSION_SECRET_BYTES,
 };
 pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
 pub use metrics::MetricsError;

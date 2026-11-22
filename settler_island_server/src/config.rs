@@ -3,9 +3,9 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
-const DEFAULT_BIND: &str = "127.0.0.1:8253";
 const DEFAULT_BOT_DELAY_MILLISECONDS: u64 = 600;
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const DEFAULT_LOG_FILTER: &str = "info";
 const DEFAULT_ABANDON_AFTER_HOURS: u64 = 168;
 const DEFAULT_MESSAGES_PER_SECOND: u32 = 20;
 const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
@@ -36,6 +36,27 @@ pub struct Config {
     pub keycloak: Option<KeycloakConfig>,
     /// `None` keeps games and identity links in memory only.
     pub database_url: Option<DatabaseUrl>,
+    /// A `tracing` filter directive such as `info` or `settler_island_server=debug`.
+    pub log_filter: String,
+    pub log_format: LogFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    Text,
+    Json,
+}
+
+impl FromStr for LogFormat {
+    type Err = ();
+
+    fn from_str(text: &str) -> Result<LogFormat, ()> {
+        match text {
+            "text" => Ok(LogFormat::Text),
+            "json" => Ok(LogFormat::Json),
+            _ => Err(()),
+        }
+    }
 }
 
 /// A Postgres connection URL; never printed, it may carry a password.
@@ -113,6 +134,8 @@ impl Config {
             session_requests_per_minute: DEFAULT_SESSION_REQUESTS_PER_MINUTE,
             session_burst: DEFAULT_SESSION_BURST,
             trust_forwarded_for: false,
+            log_filter: DEFAULT_LOG_FILTER.to_string(),
+            log_format: LogFormat::Text,
             seed: None,
             session_secret,
             keycloak: None,
@@ -120,41 +143,79 @@ impl Config {
         }
     }
 
-    /// Reads `SETTLER_BIND`, `SETTLER_BOT_DELAY_MILLISECONDS`, `SETTLER_SESSION_SECRET` (required),
-    /// `SETTLER_KEYCLOAK_ISSUER` plus `SETTLER_KEYCLOAK_AUDIENCE` and `DATABASE_URL`; everything else keeps its default.
+    /// Reads the configuration from the process environment; `.env.example` lists every variable.
     pub fn from_env() -> Result<Config, ConfigError> {
-        let secret = std::env::var("SETTLER_SESSION_SECRET")
-            .map_err(|_| ConfigError::Missing("SETTLER_SESSION_SECRET"))?;
-        let bind = parse_env("SETTLER_BIND", DEFAULT_BIND)?;
-        let bot_delay_milliseconds: u64 = parse_env(
+        Config::from_vars(|name| std::env::var(name).ok())
+    }
+
+    /// `lookup` returns a variable's value; unset and empty both count as absent, so a blank line in an env file
+    /// keeps the default.
+    pub fn from_vars(lookup: impl Fn(&str) -> Option<String>) -> Result<Config, ConfigError> {
+        let vars = Vars { lookup: &lookup };
+        let secret = vars
+            .text("SETTLER_SESSION_SECRET")
+            .ok_or(ConfigError::Missing("SETTLER_SESSION_SECRET"))?;
+        let defaults = Config::new(SessionSecret::new(secret)?);
+        let abandon_after_hours: u64 =
+            vars.number("SETTLER_ABANDON_AFTER_HOURS", DEFAULT_ABANDON_AFTER_HOURS)?;
+        let bot_delay_milliseconds: u64 = vars.parsed(
             "SETTLER_BOT_DELAY_MILLISECONDS",
-            &DEFAULT_BOT_DELAY_MILLISECONDS.to_string(),
-        )?;
-        let keycloak = keycloak_from(
-            std::env::var("SETTLER_KEYCLOAK_ISSUER").ok(),
-            std::env::var("SETTLER_KEYCLOAK_AUDIENCE").ok(),
-        )?;
-        let session_requests_per_minute = parse_env(
-            "SETTLER_SESSION_REQUESTS_PER_MINUTE",
-            &DEFAULT_SESSION_REQUESTS_PER_MINUTE.to_string(),
-        )?;
-        let session_burst = parse_env("SETTLER_SESSION_BURST", &DEFAULT_SESSION_BURST.to_string())?;
-        let trust_forwarded_for = parse_env("SETTLER_TRUST_FORWARDED_FOR", "false")?;
-        let abandon_after_hours: u64 = parse_env(
-            "SETTLER_ABANDON_AFTER_HOURS",
-            &DEFAULT_ABANDON_AFTER_HOURS.to_string(),
+            DEFAULT_BOT_DELAY_MILLISECONDS,
         )?;
         Ok(Config {
-            bind,
-            abandon_after: Duration::from_secs(abandon_after_hours.saturating_mul(3600)),
-            session_requests_per_minute,
-            session_burst,
-            trust_forwarded_for,
+            bind: vars.parsed("SETTLER_BIND", defaults.bind)?,
             bot_delay: Duration::from_millis(bot_delay_milliseconds),
-            keycloak,
-            database_url: std::env::var("DATABASE_URL").ok().map(DatabaseUrl),
-            ..Config::new(SessionSecret::new(secret)?)
+            abandon_after: Duration::from_secs(abandon_after_hours.saturating_mul(3600)),
+            session_requests_per_minute: vars.number(
+                "SETTLER_SESSION_REQUESTS_PER_MINUTE",
+                DEFAULT_SESSION_REQUESTS_PER_MINUTE,
+            )?,
+            session_burst: vars.number("SETTLER_SESSION_BURST", DEFAULT_SESSION_BURST)?,
+            trust_forwarded_for: vars.parsed("SETTLER_TRUST_FORWARDED_FOR", false)?,
+            keycloak: keycloak_from(
+                vars.text("SETTLER_KEYCLOAK_ISSUER"),
+                vars.text("SETTLER_KEYCLOAK_AUDIENCE"),
+            )?,
+            database_url: vars.text("DATABASE_URL").map(DatabaseUrl),
+            log_filter: vars.text("RUST_LOG").unwrap_or(defaults.log_filter),
+            log_format: vars.parsed("SETTLER_LOG_FORMAT", LogFormat::Text)?,
+            ..defaults
         })
+    }
+}
+
+struct Vars<'a> {
+    lookup: &'a dyn Fn(&str) -> Option<String>,
+}
+
+impl Vars<'_> {
+    fn text(&self, name: &str) -> Option<String> {
+        (self.lookup)(name).filter(|value| !value.is_empty())
+    }
+
+    fn parsed<T: FromStr>(&self, name: &'static str, default: T) -> Result<T, ConfigError> {
+        let Some(value) = self.text(name) else {
+            return Ok(default);
+        };
+        value
+            .parse()
+            .map_err(|_| ConfigError::Invalid { name, value })
+    }
+
+    /// A count that must be above zero: a zero rate or burst would refuse every request.
+    fn number<T: FromStr + Default + PartialEq>(
+        &self,
+        name: &'static str,
+        default: T,
+    ) -> Result<T, ConfigError> {
+        let number = self.parsed(name, default)?;
+        if number == T::default() {
+            return Err(ConfigError::Invalid {
+                name,
+                value: "0".to_string(),
+            });
+        }
+        Ok(number)
     }
 }
 
@@ -169,13 +230,6 @@ fn keycloak_from(
     }
 }
 
-fn parse_env<T: FromStr>(name: &'static str, default: &str) -> Result<T, ConfigError> {
-    let value = std::env::var(name).unwrap_or_else(|_| default.to_string());
-    value
-        .parse()
-        .map_err(|_| ConfigError::Invalid { name, value })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +241,114 @@ mod tests {
             Err(ConfigError::SessionSecretTooShort)
         ));
         assert!(SessionSecret::new(vec![7; 32]).is_ok());
+    }
+
+    fn load(pairs: &[(&str, &str)]) -> Result<Config, ConfigError> {
+        let vars: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        Config::from_vars(|name| {
+            vars.iter()
+                .rev()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+        })
+    }
+
+    const SECRET: (&str, &str) = ("SETTLER_SESSION_SECRET", "0123456789abcdef0123456789abcdef");
+
+    #[test]
+    fn only_the_session_secret_is_required_and_the_rest_defaults() {
+        let config = load(&[SECRET]).unwrap();
+
+        assert_eq!(config.bind, "127.0.0.1:8253".parse().unwrap());
+        assert_eq!(config.abandon_after, Duration::from_secs(168 * 3600));
+        assert_eq!(config.session_burst, 5);
+        assert_eq!(config.log_format, LogFormat::Text);
+        assert_eq!(config.database_url, None);
+        assert!(
+            matches!(load(&[]), Err(ConfigError::Missing(name)) if name == "SETTLER_SESSION_SECRET")
+        );
+    }
+
+    #[test]
+    fn every_variable_is_read_and_blank_ones_keep_the_default() {
+        let config = load(&[
+            SECRET,
+            ("SETTLER_BIND", "0.0.0.0:9000"),
+            ("DATABASE_URL", "postgres://u:p@db/x"),
+            ("SETTLER_KEYCLOAK_ISSUER", "http://kc/realms/r"),
+            ("SETTLER_KEYCLOAK_AUDIENCE", "game"),
+            ("SETTLER_BOT_DELAY_MILLISECONDS", "50"),
+            ("SETTLER_ABANDON_AFTER_HOURS", "2"),
+            ("SETTLER_SESSION_REQUESTS_PER_MINUTE", "30"),
+            ("SETTLER_SESSION_BURST", "9"),
+            ("SETTLER_TRUST_FORWARDED_FOR", "true"),
+            ("RUST_LOG", "debug"),
+            ("SETTLER_LOG_FORMAT", "json"),
+        ])
+        .unwrap();
+
+        assert_eq!(config.bind.port(), 9000);
+        assert_eq!(config.bot_delay, Duration::from_millis(50));
+        assert_eq!(config.abandon_after, Duration::from_secs(7200));
+        assert_eq!(
+            (config.session_requests_per_minute, config.session_burst),
+            (30, 9)
+        );
+        assert!(config.trust_forwarded_for);
+        assert_eq!(
+            config.keycloak.map(|keycloak| keycloak.audience),
+            Some("game".to_string())
+        );
+        assert!(config.database_url.is_some());
+        assert_eq!(
+            (config.log_filter.as_str(), config.log_format),
+            ("debug", LogFormat::Json)
+        );
+        let blank = load(&[SECRET, ("SETTLER_BIND", "")]).unwrap();
+        assert_eq!(blank.bind.port(), 8253);
+    }
+
+    #[test]
+    fn the_example_env_file_loads_and_documents_the_defaults() {
+        let example = include_str!("../../.env.example");
+        let pairs: Vec<(&str, &str)> = example
+            .lines()
+            .filter(|line| !line.starts_with('#') && line.contains('='))
+            .filter_map(|line| line.split_once('='))
+            .collect();
+
+        let config = load(&pairs).unwrap();
+
+        let defaults = Config::new(SessionSecret::new(vec![0; 32]).unwrap());
+        assert_eq!(config.bind, defaults.bind);
+        assert_eq!(config.bot_delay, defaults.bot_delay);
+        assert_eq!(config.abandon_after, defaults.abandon_after);
+        assert_eq!(
+            config.session_requests_per_minute,
+            defaults.session_requests_per_minute
+        );
+        assert_eq!(config.session_burst, defaults.session_burst);
+        assert_eq!(config.keycloak, None);
+    }
+
+    #[test]
+    fn invalid_values_name_the_variable() {
+        for (name, value) in [
+            ("SETTLER_BIND", "nowhere"),
+            ("SETTLER_ABANDON_AFTER_HOURS", "soon"),
+            ("SETTLER_SESSION_BURST", "0"),
+            ("SETTLER_LOG_FORMAT", "xml"),
+            ("SETTLER_TRUST_FORWARDED_FOR", "maybe"),
+        ] {
+            let error = load(&[SECRET, (name, value)]).unwrap_err();
+            assert!(
+                matches!(&error, ConfigError::Invalid { name: reported, .. } if *reported == name),
+                "{name}: {error}"
+            );
+        }
     }
 
     #[test]

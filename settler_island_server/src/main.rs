@@ -1,5 +1,6 @@
 use settler_island_server::{
-    serve, Config, MemoryIdentityStore, MemoryStore, PostgresStore, ServeError, StoreError,
+    serve, Config, LogFormat, MemoryIdentityStore, MemoryStore, PostgresStore, ServeError,
+    StoreError,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -7,12 +8,19 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-    match run().await {
+    // Logging is not up yet when the configuration is bad, so this one goes to stderr.
+    let config = match Config::from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("invalid configuration: {error} (see .env.example)");
+            return std::process::ExitCode::from(2);
+        }
+    };
+    if let Err(error) = init_logging(&config) {
+        eprintln!("invalid configuration: RUST_LOG is not a valid filter: {error}");
+        return std::process::ExitCode::from(2);
+    }
+    match run(config).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             error!(%error, "server stopped");
@@ -21,10 +29,18 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
+fn init_logging(config: &Config) -> Result<(), tracing_subscriber::filter::ParseError> {
+    let filter = EnvFilter::try_new(&config.log_filter)?;
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    match config.log_format {
+        LogFormat::Json => builder.json().init(),
+        LogFormat::Text => builder.init(),
+    }
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 enum StartError {
-    #[error(transparent)]
-    Config(#[from] settler_island_server::ConfigError),
     #[error("network: {0}")]
     Io(#[from] std::io::Error),
     #[error("DATABASE_URL is not a valid Postgres URL: {0}")]
@@ -35,8 +51,7 @@ enum StartError {
     Serve(#[from] ServeError),
 }
 
-async fn run() -> Result<(), StartError> {
-    let config = Config::from_env()?;
+async fn run(config: Config) -> Result<(), StartError> {
     let listener = TcpListener::bind(config.bind).await?;
     info!(address = %listener.local_addr()?, "listening");
     match config.database_url.clone() {
