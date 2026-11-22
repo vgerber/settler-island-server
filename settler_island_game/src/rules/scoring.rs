@@ -16,8 +16,17 @@ pub(crate) fn public_points(game: &Game, seat: Seat) -> u8 {
         .sum()
 }
 
+/// Runs after every accepted action: awards (step 2c) and the win check for the seat whose turn it is.
+pub(crate) fn after_action(game: &mut Game) -> Vec<Event> {
+    if matches!(game.phase, Phase::Finished { .. }) {
+        return Vec::new();
+    }
+    let seat = game.current;
+    check_winner(game, seat)
+}
+
 /// Ends the game when `seat` reached the target during its own turn.
-pub(crate) fn check_winner(game: &mut Game, seat: Seat) -> Vec<Event> {
+fn check_winner(game: &mut Game, seat: Seat) -> Vec<Event> {
     let points = public_points(game, seat);
     if points < game.settings.points_to_win {
         return Vec::new();

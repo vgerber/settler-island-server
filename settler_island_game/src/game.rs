@@ -10,7 +10,7 @@ use crate::error::GameError;
 use crate::event::Event;
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
-use crate::rules::{building, development, robber, setup, trade, turn};
+use crate::rules::{building, development, robber, scoring, setup, trade, turn};
 use crate::view::PlayerView;
 
 /// Player index `0..seats`.
@@ -55,6 +55,9 @@ pub struct PlayerState {
     pub settlements_left: u8,
     pub cities_left: u8,
     pub development_cards: Vec<DevelopmentCard>,
+    /// Bought this turn: not playable until the next turn (step 2b moves them into `development_cards`).
+    pub new_development_cards: Vec<DevelopmentCard>,
+    pub played_development_card_this_turn: bool,
     pub knights_played: u8,
 }
 
@@ -106,6 +109,8 @@ impl Game {
             settlements_left: SETTLEMENTS_PER_PLAYER,
             cities_left: CITIES_PER_PLAYER,
             development_cards: Vec::new(),
+            new_development_cards: Vec::new(),
+            played_development_card_this_turn: false,
             knights_played: 0,
         };
 
@@ -130,28 +135,38 @@ impl Game {
         if matches!(self.phase, Phase::Finished { .. }) {
             return Err(GameError::GameFinished);
         }
-        match action {
+        let mut events = match action {
             Action::PlaceSettlement { corner } => setup::place_settlement(self, seat, corner),
             Action::PlaceRoad { edge } => setup::place_road(self, seat, edge),
             Action::RollDice => turn::roll_dice(self, seat),
             Action::EndTurn => turn::end_turn(self, seat),
+            Action::BuildRoad { edge } if matches!(self.phase, Phase::RoadBuilding { .. }) => {
+                development::build_free_road(self, seat, edge)
+            }
             Action::BuildRoad { edge } => building::build_road(self, seat, edge),
             Action::BuildSettlement { corner } => building::build_settlement(self, seat, corner),
             Action::BuildCity { corner } => building::build_city(self, seat, corner),
             Action::MoveRobber { tile } => robber::move_robber(self, seat, tile),
-            Action::Steal { .. } | Action::Discard { .. } => robber::not_implemented(),
-            Action::BankTrade { .. }
-            | Action::OfferTrade { .. }
-            | Action::AcceptTrade
-            | Action::RejectTrade
-            | Action::ConfirmTrade { .. }
-            | Action::CancelTrade => trade::not_implemented(),
-            Action::BuyDevelopmentCard
-            | Action::PlayKnight
-            | Action::PlayRoadBuilding
-            | Action::PlayYearOfPlenty { .. }
-            | Action::PlayMonopoly { .. } => development::not_implemented(),
-        }
+            Action::Steal { victim } => robber::steal(self, seat, victim),
+            Action::Discard { resources } => robber::discard(self, seat, resources),
+            Action::BankTrade { give, receive } => trade::bank_trade(self, seat, give, receive),
+            Action::OfferTrade { give, receive, to } => {
+                trade::offer_trade(self, seat, give, receive, to)
+            }
+            Action::AcceptTrade => trade::answer_trade(self, seat, true),
+            Action::RejectTrade => trade::answer_trade(self, seat, false),
+            Action::ConfirmTrade { with } => trade::confirm_trade(self, seat, with),
+            Action::CancelTrade => trade::cancel_trade(self, seat),
+            Action::BuyDevelopmentCard => development::buy(self, seat),
+            Action::PlayKnight => development::play_knight(self, seat),
+            Action::PlayRoadBuilding => development::play_road_building(self, seat),
+            Action::PlayYearOfPlenty { first, second } => {
+                development::play_year_of_plenty(self, seat, first, second)
+            }
+            Action::PlayMonopoly { resource } => development::play_monopoly(self, seat, resource),
+        }?;
+        events.extend(scoring::after_action(self));
+        Ok(events)
     }
 
     /// Every listed action is accepted by `apply`. Leaves out `OfferTrade`, whose choices are open-ended.
@@ -162,18 +177,24 @@ impl Game {
         match &self.phase {
             Phase::SetupSettlement { .. } => setup::legal_settlements(self, seat),
             Phase::SetupRoad { .. } => setup::legal_roads(self, seat),
-            Phase::Roll => vec![Action::RollDice],
+            Phase::Roll => {
+                let mut actions = vec![Action::RollDice];
+                actions.extend(development::legal_before_roll(self, seat));
+                actions
+            }
             Phase::Main => {
                 let mut actions = building::legal_builds(self, seat);
+                actions.extend(trade::legal_main(self, seat));
+                actions.extend(development::legal_main(self, seat));
                 actions.push(Action::EndTurn);
                 actions
             }
             Phase::MoveRobber { .. } => robber::legal_moves(self, seat),
-            Phase::Discard { .. }
-            | Phase::Steal { .. }
-            | Phase::RoadBuilding { .. }
-            | Phase::TradeOffered
-            | Phase::Finished { .. } => Vec::new(),
+            Phase::Discard { .. } => robber::legal_discards(self, seat),
+            Phase::Steal { .. } => robber::legal_steals(self, seat),
+            Phase::RoadBuilding { .. } => development::legal_free_roads(self, seat),
+            Phase::TradeOffered => trade::legal_answers(self, seat),
+            Phase::Finished { .. } => Vec::new(),
         }
     }
 

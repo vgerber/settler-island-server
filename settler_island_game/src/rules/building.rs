@@ -5,7 +5,6 @@ use crate::event::Event;
 use crate::game::{Game, Seat};
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
-use crate::rules::scoring;
 
 /// Clay, Wood.
 pub(crate) const ROAD_COST: ResourceCounts = ResourceCounts::new([1, 1, 0, 0, 0]);
@@ -33,7 +32,6 @@ pub(crate) fn build_settlement(
     check_settlement(game, seat, corner)?;
     let mut events = vec![game.pay_to_bank(seat, SETTLEMENT_COST)];
     events.push(place_settlement(game, seat, corner));
-    events.extend(scoring::check_winner(game, seat));
     Ok(events)
 }
 
@@ -56,7 +54,6 @@ pub(crate) fn build_city(
         player.settlements_left += 1;
     }
     events.push(Event::CityBuilt { seat, corner });
-    events.extend(scoring::check_winner(game, seat));
     Ok(events)
 }
 

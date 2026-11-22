@@ -4,6 +4,7 @@ use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Seat};
 use crate::phase::Phase;
+use crate::resource::ResourceCounts;
 
 /// Moves the robber to another tile. Stealing after it arrives in step 2d; until then the turn continues in `Main`.
 pub(crate) fn move_robber(
@@ -27,9 +28,33 @@ pub(crate) fn legal_moves(game: &Game, seat: Seat) -> Vec<Action> {
         .collect()
 }
 
-/// Discard and steal arrive in step 2d.
-pub(crate) fn not_implemented() -> Result<Vec<Event>, GameError> {
+/// A rolled 7. Step 2d inserts the discard phase before the robber moves.
+pub(crate) fn on_seven(game: &mut Game, _seat: Seat) -> Vec<Event> {
+    vec![game.enter(Phase::MoveRobber { then_steal: true })]
+}
+
+/// Step 2d.
+pub(crate) fn discard(
+    _game: &mut Game,
+    _seat: Seat,
+    _resources: ResourceCounts,
+) -> Result<Vec<Event>, GameError> {
     Err(GameError::NotImplemented)
+}
+
+/// Step 2d.
+pub(crate) fn steal(_game: &mut Game, _seat: Seat, _victim: Seat) -> Result<Vec<Event>, GameError> {
+    Err(GameError::NotImplemented)
+}
+
+/// Step 2d.
+pub(crate) fn legal_discards(_game: &Game, _seat: Seat) -> Vec<Action> {
+    Vec::new()
+}
+
+/// Step 2d.
+pub(crate) fn legal_steals(_game: &Game, _seat: Seat) -> Vec<Action> {
+    Vec::new()
 }
 
 fn check_move(game: &Game, seat: Seat, tile: TileId) -> Result<(), GameError> {

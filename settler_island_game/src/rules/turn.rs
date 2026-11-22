@@ -4,7 +4,7 @@ use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Seat};
 use crate::phase::Phase;
-use crate::rules::production;
+use crate::rules::{development, production, robber};
 
 const ROBBER_NUMBER: u8 = 7;
 
@@ -22,7 +22,7 @@ pub(crate) fn roll_dice(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameE
         second,
     }];
     if first + second == ROBBER_NUMBER {
-        events.push(game.enter(Phase::MoveRobber { then_steal: true }));
+        events.extend(robber::on_seven(game, seat));
         return Ok(events);
     }
     events.extend(production::produce(game, first + second));
@@ -36,6 +36,7 @@ pub(crate) fn end_turn(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameEr
         return Err(GameError::WrongPhase);
     }
 
+    development::on_turn_end(game, seat);
     let next = (seat + 1) % game.settings.seats;
     game.turn_number += 1;
     Ok(game.pass_to(next, Phase::Roll))
