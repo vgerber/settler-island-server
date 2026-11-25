@@ -2,19 +2,8 @@ class_name HudText
 extends RefCounted
 ## Names, colours and readable lines for the HUD: resources, cards, phases and every `SiEvent`.
 
-const SEAT_COLORS: Array[Color] = [
-	Color(0.85, 0.24, 0.2),
-	Color(0.22, 0.47, 0.86),
-	Color(0.95, 0.6, 0.15),
-	Color(0.92, 0.92, 0.9),
-]
-const RESOURCE_COLORS: Array[Color] = [
-	Color(0.72, 0.36, 0.22),
-	Color(0.2, 0.48, 0.22),
-	Color(0.58, 0.78, 0.36),
-	Color(0.9, 0.75, 0.27),
-	Color(0.52, 0.56, 0.62),
-]
+const SEAT_COLORS: Array[Color] = Palette.SEAT_COLORS
+const RESOURCE_COLORS: Array[Color] = Palette.RESOURCE_COLORS
 const CARD_NAMES := {
 	"Knight": "Knight",
 	"RoadBuilding": "Road building",
