@@ -8,9 +8,6 @@ signal leave_requested
 
 const COLUMN_WIDTH := 380.0
 const BAR_HEIGHT := 200.0
-const BANK_RATE := 4
-const GENERIC_PORT_RATE := 3
-const SPECIFIC_PORT_RATE := 2
 const COSTS := "Road: Clay + Wood    Settlement: Clay + Wood + Sheep + Wheat    City: 2 Wheat + 3 Ore    Development card: Sheep + Wheat + Ore"
 
 var state: GameState = null
@@ -315,8 +312,7 @@ func _act_first(script: Script) -> void:
 func _send_offer(action: SiActionOfferTrade) -> void:
 	if not _can_offer_trade():
 		return
-	# `GameState.act` only sends listed actions and offers are never listed.
-	state.client.send_act(action)
+	state.offer_trade(action)
 
 
 func _open_steal(steals: Array[SiAction]) -> void:
@@ -404,17 +400,6 @@ func _matches(action: SiAction, filter: Dictionary) -> bool:
 	return true
 
 
-## Display only: the server prices the trade; this mirrors its port rule to show the amount.
+## The server's rate for `resource` from the own view (4, or 3 and 2 with ports).
 func _bank_rate(resource: String) -> int:
-	var board := state.view.board
-	var rate := BANK_RATE
-	for corner in mini(board.corners.size(), board.buildings.size()):
-		var building: SiBuilding = board.buildings[corner]
-		if building == null or building.seat != state.seat:
-			continue
-		var port := board.corners[corner].port
-		if port is SiPortGeneric:
-			rate = mini(rate, GENERIC_PORT_RATE)
-		elif port is SiPortSpecific and (port as SiPortSpecific).value == resource:
-			rate = mini(rate, SPECIFIC_PORT_RATE)
-	return rate
+	return state.view.own.bank_rates[SiResource.VALUES.find(resource)]

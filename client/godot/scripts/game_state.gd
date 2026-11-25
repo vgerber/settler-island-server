@@ -37,6 +37,17 @@ func act(action: SiAction) -> void:
 	if not legal_actions.has(action):
 		push_warning("GameState: ignoring an action that is not among the legal ones")
 		return
+	_send(action)
+
+
+## Offers are never among the legal actions (their contents are free); the server validates them.
+func offer_trade(action: SiActionOfferTrade) -> void:
+	if not legal_of(SiActionEndTurn).is_empty():
+		_send(action)
+
+
+## Until the server answers, no further action may be sent from the now stale legal actions.
+func _send(action: SiAction) -> void:
 	_awaiting_act = client.send_act(action)
 	legal_actions = []
 	changed.emit([] as Array[SiEvent])
