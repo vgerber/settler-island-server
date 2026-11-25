@@ -1,0 +1,166 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/screens/lobby_browser_screen.gd" id="1_screen"]
+
+[node name="LobbyBrowserScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_screen")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 48
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 48
+theme_override_constants/margin_bottom = 32
+
+[node name="Rows" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Header" type="HBoxContainer" parent="Margin/Rows"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Margin/Rows/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 28
+text = "Lobbies"
+
+[node name="UserLabel" type="Label" parent="Margin/Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Columns" type="HBoxContainer" parent="Margin/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 24
+
+[node name="ListPanel" type="PanelContainer" parent="Margin/Rows/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ListMargin" type="MarginContainer" parent="Margin/Rows/Columns/ListPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="ListRows" type="VBoxContainer" parent="Margin/Rows/Columns/ListPanel/ListMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LobbyList" type="ItemList" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="JoinRow" type="HBoxContainer" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RefreshButton" type="Button" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows/JoinRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Refresh"
+
+[node name="JoinPasswordEdit" type="LineEdit" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows/JoinRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Password (if the lobby has one)"
+secret = true
+
+[node name="JoinButton" type="Button" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows/JoinRow"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "Join"
+
+[node name="CreatePanel" type="PanelContainer" parent="Margin/Rows/Columns"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+
+[node name="CreateMargin" type="MarginContainer" parent="Margin/Rows/Columns/CreatePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="CreateRows" type="VBoxContainer" parent="Margin/Rows/Columns/CreatePanel/CreateMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="CreateTitle" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "New lobby"
+
+[node name="LobbyNameEdit" type="LineEdit" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Lobby name"
+max_length = 40
+
+[node name="Options" type="GridContainer" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="SeatsLabel" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+layout_mode = 2
+text = "Seats"
+
+[node name="SeatsOption" type="OptionButton" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PointsLabel" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+layout_mode = 2
+text = "Points to win"
+
+[node name="PointsSpin" type="SpinBox" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 3.0
+max_value = 15.0
+value = 10.0
+
+[node name="DifficultyLabel" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+layout_mode = 2
+text = "Bots"
+
+[node name="DifficultyOption" type="OptionButton" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CreatePasswordEdit" type="LineEdit" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Password (optional)"
+secret = true
+
+[node name="CreateButton" type="Button" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Create"
+
+[node name="RefreshTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 5.0
+autostart = true

@@ -1,5 +1,5 @@
-//! Runs the generated GDScript client in a headless Godot: a JSON round trip of sample messages and
-//! a short game against a real server. Skipped with a notice when no Godot binary is found; the
+//! Runs the generated GDScript client in a headless Godot: a JSON round trip of sample messages, a
+//! short game against a real server, and the game project in `client/godot` playing a full game. Skipped with a notice when no Godot binary is found; the
 //! binary is `$SETTLER_GODOT` or the default install path below.
 
 use std::fs::{self, File};
@@ -19,6 +19,8 @@ use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, Ses
 
 const DEFAULT_GODOT: &str = "/home/vincent/Software/godot/godot";
 const GODOT_TIMEOUT: Duration = Duration::from_secs(120);
+/// The one hand-written script of `client/godot` the API test project needs.
+const GUEST_SESSION: &str = "SiGuestSession.gd";
 
 fn godot_binary() -> Option<PathBuf> {
     let path = std::env::var_os("SETTLER_GODOT")
@@ -34,24 +36,49 @@ fn godot_binary() -> Option<PathBuf> {
     None
 }
 
-/// A fresh copy of `client/godot_tests` with the generated API, plus a private Godot home.
-fn prepare_project(name: &str) -> PathBuf {
+/// An empty test directory with a private Godot home; the project goes into `project/`.
+fn fresh_root(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("godot-{name}"));
     if root.exists() {
         fs::remove_dir_all(&root).unwrap();
     }
-    let project = root.join("project");
-    let api = project.join("settler_island_api");
-    fs::create_dir_all(&api).unwrap();
     fs::create_dir_all(root.join("home")).unwrap();
-    let client = default_client_directory();
-    copy_files(&client.join("godot_tests"), &project);
-    copy_files(&client.join(API_DIRECTORY), &api);
-    copy_files(&client.join("godot"), &project);
     root
 }
 
-fn copy_files(from: &Path, to: &Path) {
+/// A fresh copy of `client/godot_tests` with the generated API and the guest session helper, but
+/// none of the game project in `client/godot`.
+fn prepare_test_project(name: &str) -> PathBuf {
+    let root = fresh_root(name);
+    let project = root.join("project");
+    let api = project.join("settler_island_api");
+    fs::create_dir_all(&api).unwrap();
+    let client = default_client_directory();
+    copy_sources(&client.join("godot_tests"), &project);
+    copy_sources(&client.join(API_DIRECTORY), &api);
+    fs::copy(
+        client.join("godot").join(GUEST_SESSION),
+        project.join(GUEST_SESSION),
+    )
+    .unwrap();
+    root
+}
+
+/// A fresh copy of the game project `client/godot` plus one script from `client/godot_tests`.
+fn prepare_game_project(name: &str, script: &str) -> PathBuf {
+    let root = fresh_root(name);
+    let project = root.join("project");
+    let client = default_client_directory();
+    copy_tree(&client.join("godot"), &project);
+    fs::copy(
+        client.join("godot_tests").join(script),
+        project.join(script),
+    )
+    .unwrap();
+    root
+}
+
+fn copy_sources(from: &Path, to: &Path) {
     for entry in fs::read_dir(from).unwrap() {
         let path = entry.unwrap().path();
         let is_source = path
@@ -60,6 +87,23 @@ fn copy_files(from: &Path, to: &Path) {
         if is_source {
             fs::copy(&path, to.join(path.file_name().unwrap())).unwrap();
         }
+    }
+}
+
+/// Copies a Godot project without the editor cache `.godot/`, which belongs to the checkout.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap();
+        if name == ".godot" {
+            continue;
+        }
+        if path.is_dir() {
+            copy_tree(&path, &to.join(name));
+            continue;
+        }
+        fs::copy(&path, to.join(name)).unwrap();
     }
 }
 
@@ -110,10 +154,9 @@ fn run_godot(godot: &Path, root: &Path, arguments: &[&str]) -> String {
 }
 
 /// Imports the project so Godot knows the `class_name`s, then runs one test script.
-fn run_script(godot: &Path, name: &str, script: &str, argument: &str) -> String {
-    let root = prepare_project(name);
-    run_godot(godot, &root, &["--import"]);
-    run_godot(godot, &root, &["-s", script, "--", argument])
+fn run_script(godot: &Path, root: &Path, script: &str, argument: &str) -> String {
+    run_godot(godot, root, &["--import"]);
+    run_godot(godot, root, &["-s", script, "--", argument])
 }
 
 fn user(id: &str, name: &str) -> User {
@@ -306,7 +349,7 @@ fn generated_classes_round_trip_every_message() {
 
     let output = run_script(
         &godot,
-        "round-trip",
+        &prepare_test_project("round-trip"),
         "round_trip.gd",
         fixtures_path.to_str().unwrap(),
     );
@@ -314,12 +357,8 @@ fn generated_classes_round_trip_every_message() {
     assert!(output.contains("ROUND_TRIP_OK"), "{output}");
 }
 
-#[test]
-fn generated_client_plays_against_a_real_server() {
-    let Some(godot) = godot_binary() else {
-        return;
-    };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+/// A server with instant bots on an ephemeral port, running on `runtime` until the test ends.
+fn start_server(runtime: &tokio::runtime::Runtime) -> String {
     let address = runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -336,13 +375,41 @@ fn generated_client_plays_against_a_real_server() {
         ));
         address
     });
+    format!("http://{address}")
+}
+
+#[test]
+fn generated_client_plays_against_a_real_server() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime);
 
     let output = run_script(
         &godot,
-        "live-game",
+        &prepare_test_project("live-game"),
         "live_game.gd",
-        &format!("http://{address}"),
+        &server,
     );
 
     assert!(output.contains("LIVE_OK"), "{output}");
+}
+
+#[test]
+fn game_client_plays_a_full_game_and_rejoins_it() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime);
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("full-game", "full_game.gd"),
+        "full_game.gd",
+        &server,
+    );
+
+    assert!(output.contains("FULL_GAME_OK"), "{output}");
 }

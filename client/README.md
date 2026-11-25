@@ -1,11 +1,36 @@
 # Settler Island Godot client
 
-Generated from the protocol types in `settler_island_protocol`; never edit these files by hand.
+`schema.json` and `godot/settler_island_api/` are generated from the protocol types in `settler_island_protocol`;
+never edit them by hand. The rest of `godot/` is the hand-written game project (Godot 4.7, typed GDScript).
 
 - `schema.json`: JSON Schema of `ClientMessage` and `ServerMessage` (definitions under `$defs`).
 - `godot/settler_island_api/`: Godot 4 GDScript, one `Si<Type>.gd` per schema type, plus the `SiClient` node.
 - `godot/SiGuestSession.gd`: hand-written (not generated) helper for `POST /api/v1/sessions/guest`; copy it next to the API folder.
-- `godot_tests/`: headless test project used by `settler_island_client_generator/tests/godot.rs`.
+- `godot/project.godot`, `godot/scenes/`, `godot/scripts/`: the game (see below).
+- `godot/tools/screenshot.gd`: walks the screens against a running server and saves a PNG of each.
+- `godot_tests/`: headless test scripts used by `settler_island_client_generator/tests/godot.rs`.
+
+## Game project
+
+`godot/` is the desktop client; `scenes/main.tscn` swaps four screens (`connect`, `lobby_browser`, `lobby_room`,
+`game`) on what the server sends.
+
+- `scripts/net.gd`, autoload `Net`: the one `SiClient`, guest login, `online`/`failed` signals. The guest token is
+  kept in `user://session.cfg`, so a restarted client logs in as the same guest and rejoins its running game.
+- `scripts/game_state.gd`, `GameState`: the latest view and legal actions of the own seat; `act` sends one of them.
+  The game screen owns it and hands it to `Board` (`scripts/board/`) and `Hud` (`scripts/hud/`) via `bind`.
+- The server's legal actions drive the UI: a button exists only for a legal action and sends that very action.
+
+Run a local server (in-memory store) and the client:
+
+```sh
+SETTLER_BIND=127.0.0.1:8253 SETTLER_SESSION_SECRET=<32+ bytes> cargo run -p settler_island_server
+~/Software/godot/godot --path client/godot
+~/Software/godot/godot --path client/godot -s tools/screenshot.gd -- http://127.0.0.1:8253 "$PWD/.build"
+```
+
+The test project copies only `SiGuestSession.gd` from `godot/`; the full-game test copies all of `godot/` (without
+`.godot/`) and plays a game through `Net` and `GameState`, reconnecting midway.
 
 ## Regenerate
 
