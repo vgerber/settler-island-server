@@ -15,10 +15,14 @@ script = ExtResource("1_screen")
 
 [node name="Board" type="Control" parent="."]
 unique_name_in_owner = true
+clip_contents = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_top = 56.0
+offset_right = -380.0
+offset_bottom = -200.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("2_board")

@@ -1,5 +1,6 @@
 //! Runs the generated GDScript client in a headless Godot: a JSON round trip of sample messages, a
-//! short game against a real server, and the game project in `client/godot` playing a full game. Skipped with a notice when no Godot binary is found; the
+//! short game against a real server, the game project in `client/godot` playing a full game, and its
+//! board placing corners and sending the clicked action. Skipped with a notice when no Godot binary is found; the
 //! binary is `$SETTLER_GODOT` or the default install path below.
 
 use std::fs::{self, File};
@@ -10,7 +11,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use settler_island_bot::{create_bot, play_game, Difficulty};
 use settler_island_client_generator::{default_client_directory, API_DIRECTORY};
-use settler_island_game::{replay, GameError, GameSettings};
+use settler_island_game::{replay, Action, Game, GameError, GameSettings, Port};
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage,
     User, UserId, UserKind,
@@ -412,4 +413,75 @@ fn game_client_plays_a_full_game_and_rejoins_it() {
     );
 
     assert!(output.contains("FULL_GAME_OK"), "{output}");
+}
+
+/// `GameStarted` for `seat` at the current state of `game`.
+fn game_started(game: &Game, seat: u8) -> Value {
+    to_json(&ServerMessage::GameStarted {
+        request_id: None,
+        seat,
+        view: game.view(Some(seat)),
+        legal_actions: game.legal_actions(seat),
+    })
+}
+
+/// Two generic ports one free edge apart: four generic corners in a row along the coast.
+fn has_adjacent_generic_ports(game: &Game) -> bool {
+    let board = game.board();
+    let is_generic = |corner| board.corner(corner).unwrap().port == Some(Port::Generic);
+    let generic_edges = board
+        .edges()
+        .iter()
+        .filter(|edge| edge.corners.iter().all(|corner| is_generic(*corner)))
+        .count();
+    generic_edges > 4
+}
+
+/// A fresh game in its setup phase on a board with adjacent generic ports, and a late bot game where
+/// the robber is about to move, so the board shows roads, settlements, cities and robber targets.
+fn board_fixtures() -> Value {
+    let settings = GameSettings {
+        seats: 4,
+        points_to_win: 10,
+        seed: 23,
+    };
+    let setup = (0..)
+        .map(|seed| Game::new(GameSettings { seed, ..settings.clone() }).unwrap())
+        .find(has_adjacent_generic_ports)
+        .unwrap();
+    let bots = (0..4).map(|seat| create_bot(Difficulty::Heuristic, seat)).collect();
+    let outcome = play_game(settings.clone(), bots, 3000).unwrap();
+    let actions: Vec<_> = outcome
+        .record
+        .entries
+        .iter()
+        .map(|entry| (entry.seat, entry.action.clone()))
+        .collect();
+    let last_robber_move = actions
+        .iter()
+        .rposition(|(_, action)| matches!(action, Action::MoveRobber { .. }))
+        .unwrap();
+    let middle = replay(settings, &actions[..last_robber_move]).unwrap();
+    json!({
+        "setup": game_started(&setup, setup.pending_seats()[0]),
+        "middle": game_started(&middle, actions[last_robber_move].0),
+    })
+}
+
+#[test]
+fn board_places_shared_corners_once_and_sends_the_clicked_action() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-board-fixtures.json");
+    fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("board", "board_test.gd"),
+        "board_test.gd",
+        fixtures_path.to_str().unwrap(),
+    );
+
+    assert!(output.contains("BOARD_OK"), "{output}");
 }
