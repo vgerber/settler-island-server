@@ -8,6 +8,8 @@ never edit them by hand. The rest of `godot/` is the hand-written game project (
 - `godot/SiGuestSession.gd`: hand-written (not generated) helper for `POST /api/v1/sessions/guest`; copy it next to the API folder.
 - `godot/project.godot`, `godot/scenes/`, `godot/scripts/`: the game (see below).
 - `godot/tools/screenshot.gd`: walks the screens against a running server and saves a PNG of each.
+- `godot/tools/board_screenshot.gd`: renders the game screen for the board fixtures that the Godot board test
+  writes to `target/tmp/godot-board-fixtures.json` and saves a PNG of each.
 - `godot_tests/`: headless test scripts used by `settler_island_client_generator/tests/godot.rs`.
 
 ## Game project
