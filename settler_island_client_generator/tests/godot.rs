@@ -446,10 +446,18 @@ fn board_fixtures() -> Value {
         seed: 23,
     };
     let setup = (0..)
-        .map(|seed| Game::new(GameSettings { seed, ..settings.clone() }).unwrap())
+        .map(|seed| {
+            Game::new(GameSettings {
+                seed,
+                ..settings.clone()
+            })
+            .unwrap()
+        })
         .find(has_adjacent_generic_ports)
         .unwrap();
-    let bots = (0..4).map(|seat| create_bot(Difficulty::Heuristic, seat)).collect();
+    let bots = (0..4)
+        .map(|seat| create_bot(Difficulty::Heuristic, seat))
+        .collect();
     let outcome = play_game(settings.clone(), bots, 3000).unwrap();
     let actions: Vec<_> = outcome
         .record
