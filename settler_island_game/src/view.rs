@@ -5,7 +5,7 @@ use crate::board::Board;
 use crate::game::{DevelopmentCard, Game, Seat, TradeOffer};
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
-use crate::rules::scoring;
+use crate::rules::{scoring, trade};
 
 /// What one seat (or a spectator) may see of a game.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -46,6 +46,8 @@ pub struct OwnView {
     pub development_cards: Vec<DevelopmentCard>,
     /// Bought this turn, playable from the next turn on.
     pub new_development_cards: Vec<DevelopmentCard>,
+    /// Cards given to the bank for one card, per resource (4, or 3 and 2 with ports).
+    pub bank_rates: ResourceCounts,
 }
 
 impl PlayerView {
@@ -81,6 +83,7 @@ impl PlayerView {
                 hand: player.hand,
                 development_cards: player.development_cards.clone(),
                 new_development_cards: player.new_development_cards.clone(),
+                bank_rates: trade::bank_rates(game, seat),
             })
         });
 

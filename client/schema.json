@@ -2085,6 +2085,10 @@
     },
     "OwnView": {
       "properties": {
+        "bank_rates": {
+          "$ref": "#/$defs/ResourceCounts",
+          "description": "Cards given to the bank for one card, per resource (4, or 3 and 2 with ports)."
+        },
         "development_cards": {
           "items": {
             "$ref": "#/$defs/DevelopmentCard"
@@ -2112,7 +2116,8 @@
         "seat",
         "hand",
         "development_cards",
-        "new_development_cards"
+        "new_development_cards",
+        "bank_rates"
       ],
       "type": "object"
     },

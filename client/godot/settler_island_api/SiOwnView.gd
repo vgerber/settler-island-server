@@ -7,6 +7,8 @@ var hand: Array[int] = []
 var development_cards: Array[String] = []
 ## Bought this turn, playable from the next turn on.
 var new_development_cards: Array[String] = []
+## Cards given to the bank for one card, per resource (4, or 3 and 2 with ports).
+var bank_rates: Array[int] = []
 
 static func from_dict(data: Dictionary) -> SiOwnView:
 	var decoded := SiOwnView.new()
@@ -14,6 +16,7 @@ static func from_dict(data: Dictionary) -> SiOwnView:
 	decoded.hand.assign((data.get("hand") as Array).map(func(item0): return int(item0)))
 	decoded.development_cards.assign((data.get("development_cards") as Array).map(func(item0): return str(item0)))
 	decoded.new_development_cards.assign((data.get("new_development_cards") as Array).map(func(item0): return str(item0)))
+	decoded.bank_rates.assign((data.get("bank_rates") as Array).map(func(item0): return int(item0)))
 	return decoded
 
 func to_dict() -> Dictionary:
@@ -22,5 +25,6 @@ func to_dict() -> Dictionary:
 		"hand": hand.duplicate(),
 		"development_cards": development_cards.duplicate(),
 		"new_development_cards": new_development_cards.duplicate(),
+		"bank_rates": bank_rates.duplicate(),
 	}
 	return encoded

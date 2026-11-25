@@ -10,6 +10,15 @@ const BANK_RATE: u8 = 4;
 const GENERIC_PORT_RATE: u8 = 3;
 const SPECIFIC_PORT_RATE: u8 = 2;
 
+/// What one card of each resource costs at the bank for `seat`.
+pub(crate) fn bank_rates(game: &Game, seat: Seat) -> ResourceCounts {
+    let mut rates = ResourceCounts::default();
+    for resource in Resource::ALL {
+        rates.set(resource, bank_rate(game, seat, resource));
+    }
+    rates
+}
+
 /// Rate 2 with a matching specific port, 3 with any generic port, else 4.
 fn bank_rate(game: &Game, seat: Seat, give: Resource) -> u8 {
     game.board
@@ -341,6 +350,19 @@ mod tests {
         put_settlement(&mut game, 0, specific);
         assert_eq!(trade_rate(&mut game, Resource::Clay), 2);
         assert_eq!(trade_rate(&mut game, Resource::Wood), 3);
+    }
+
+    #[test]
+    fn the_own_view_shows_the_rate_each_trade_pays() {
+        let mut game = bare_game(ResourceCounts::new([8, 8, 8, 8, 8]));
+        let specific = corner_with(&game, Some(Port::Specific(Resource::Clay)));
+        put_settlement(&mut game, 0, specific);
+        let shown = game.view(Some(0)).own.unwrap().bank_rates;
+
+        assert_eq!(shown, ResourceCounts::new([2, 4, 4, 4, 4]));
+        for resource in Resource::ALL {
+            assert_eq!(trade_rate(&mut game, resource), shown.get(resource));
+        }
     }
 
     #[test]
