@@ -31,12 +31,13 @@ theme_override_constants/separation = 16
 layout_mode = 2
 
 [node name="Title" type="Label" parent="Margin/Rows/Header"]
+theme_type_variation = &"HeadingLabelDark"
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 28
 text = "Lobbies"
 
 [node name="UserLabel" type="Label" parent="Margin/Rows/Header"]
+theme_type_variation = &"CreamLabel"
 unique_name_in_owner = true
 layout_mode = 2
 
@@ -82,6 +83,7 @@ placeholder_text = "Password (if the lobby has one)"
 secret = true
 
 [node name="JoinButton" type="Button" parent="Margin/Rows/Columns/ListPanel/ListMargin/ListRows/JoinRow"]
+theme_type_variation = &"AccentButton"
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
@@ -103,8 +105,8 @@ layout_mode = 2
 theme_override_constants/separation = 10
 
 [node name="CreateTitle" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+theme_type_variation = &"SubheadingLabel"
 layout_mode = 2
-theme_override_font_sizes/font_size = 22
 text = "New lobby"
 
 [node name="LobbyNameEdit" type="LineEdit" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
@@ -156,6 +158,7 @@ placeholder_text = "Password (optional)"
 secret = true
 
 [node name="CreateButton" type="Button" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
+theme_type_variation = &"AccentButton"
 unique_name_in_owner = true
 layout_mode = 2
 text = "Create"

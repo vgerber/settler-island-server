@@ -47,6 +47,7 @@ func _seat_row(seat: int, occupant: SiSeatOccupant, lobby: SiLobbyDetails, is_ow
 	if is_owner and occupant is SiSeatOccupantBot:
 		var remove_button := Button.new()
 		remove_button.text = "Remove bot"
+		remove_button.theme_type_variation = &"DangerButton"
 		remove_button.pressed.connect(func() -> void: Net.client.send_remove_bot(seat))
 		row.add_child(remove_button)
 	return row
