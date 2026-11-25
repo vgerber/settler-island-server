@@ -50,14 +50,15 @@ pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
     deal_chips(&mut tiles, rng);
 
     let mut corners = topology.corners;
-    place_ports(&mut corners, &topology.edges, rng);
+    let mut edges = topology.edges;
+    place_ports(&mut corners, &mut edges, rng);
 
     Board {
         buildings: vec![None; corners.len()],
-        roads: vec![None; topology.edges.len()],
+        roads: vec![None; edges.len()],
         tiles,
         corners,
-        edges: topology.edges,
+        edges,
         robber,
     }
 }
@@ -127,7 +128,7 @@ fn coast_ring(corners: &[Corner], edges: &[Edge]) -> Vec<usize> {
 }
 
 /// 4 generic and one specific port per resource on shuffled coast edges with at least one free coast edge between.
-fn place_ports(corners: &mut [Corner], edges: &[Edge], rng: &mut ChaCha8Rng) {
+fn place_ports(corners: &mut [Corner], edges: &mut [Edge], rng: &mut ChaCha8Rng) {
     let ring = coast_ring(corners, edges);
     let mut ports: Vec<Port> = std::iter::repeat_n(Port::Generic, 4)
         .chain(Resource::ALL.into_iter().map(Port::Specific))
@@ -141,7 +142,8 @@ fn place_ports(corners: &mut [Corner], edges: &[Edge], rng: &mut ChaCha8Rng) {
     }
     let mut position = rng.random_range(0..ring.len());
     for (port, gap) in ports.into_iter().zip(gaps) {
-        let edge = &edges[ring[position % ring.len()]];
+        let edge = &mut edges[ring[position % ring.len()]];
+        edge.port = Some(port);
         for corner in edge.corners {
             corners[usize::from(corner.0)].port = Some(port);
         }
@@ -180,6 +182,33 @@ mod tests {
         assert_eq!(chips, NUMBER_CHIPS.to_vec());
         for (terrain, expected) in TERRAIN_COUNTS {
             assert_eq!(count(terrain), expected);
+        }
+    }
+
+    #[test]
+    fn port_edges_name_exactly_the_port_corners() {
+        for seed in 0..50 {
+            let board = board_for(seed);
+            let port_edges: Vec<&Edge> = board
+                .edges()
+                .iter()
+                .filter(|edge| edge.port.is_some())
+                .collect();
+            assert_eq!(port_edges.len(), PORT_COUNT);
+            let mut from_edges: Vec<CornerId> = Vec::new();
+            for edge in &port_edges {
+                for corner in edge.corners {
+                    assert_eq!(
+                        board.corner(corner).and_then(|corner| corner.port),
+                        edge.port
+                    );
+                    from_edges.push(corner);
+                }
+            }
+            from_edges.sort();
+            let from_corners: Vec<CornerId> =
+                port_corners(&board).into_iter().map(|(id, _)| id).collect();
+            assert_eq!(from_edges, from_corners, "seed {seed}");
         }
     }
 

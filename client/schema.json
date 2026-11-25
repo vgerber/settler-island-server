@@ -806,6 +806,18 @@
           "maxItems": 2,
           "minItems": 2,
           "type": "array"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Port"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The port this coast edge holds; both its corners trade at that port."
         }
       },
       "required": [

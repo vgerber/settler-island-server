@@ -3,14 +3,19 @@ class_name SiEdge
 extends RefCounted
 
 var corners: Array[int] = []
+## The port this coast edge holds; both its corners trade at that port.
+var port: SiPort = null
 
 static func from_dict(data: Dictionary) -> SiEdge:
 	var decoded := SiEdge.new()
 	decoded.corners.assign((data.get("corners") as Array).map(func(item0): return int(item0)))
+	decoded.port = (null if data.get("port") == null else SiPort.from_dict(data.get("port")))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
 		"corners": corners.duplicate(),
 	}
+	if port != null:
+		encoded["port"] = port.to_dict()
 	return encoded

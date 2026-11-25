@@ -55,6 +55,9 @@ pub struct Corner {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Edge {
     pub corners: [CornerId; 2],
+    /// The port this coast edge holds; both its corners trade at that port.
+    #[serde(default)]
+    pub port: Option<Port>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

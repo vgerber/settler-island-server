@@ -41,7 +41,10 @@ pub(crate) fn build(radius: i32) -> Topology {
 
     let edges = edge_pairs
         .into_iter()
-        .map(|corners| Edge { corners })
+        .map(|corners| Edge {
+            corners,
+            port: None,
+        })
         .collect();
     Topology {
         tiles,

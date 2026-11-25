@@ -53,58 +53,10 @@ func _place_corners(tile: SiTile, placed: Array[bool]) -> void:
 		corner_points[corner] = tile_corner(tile.coordinates, index)
 
 
-## A port spans a coast edge whose two corners carry it. Two generic ports one free edge apart give a
-## run of four corners with the same port, so each run of such edges along the coast holds a port on
-## its first, third, ... edge, counted from either end.
 func _find_ports(board: SiBoard) -> void:
-	var remaining: Dictionary = {}
-	for edge_index in board.edges.size():
-		if _is_port_edge(board, board.edges[edge_index]):
-			remaining[edge_index] = true
-	for edge_index: int in remaining.keys():
-		if remaining.has(edge_index) and _is_run_end(board, remaining, edge_index):
-			_walk_run(board, remaining, edge_index)
-
-
-func _is_port_edge(board: SiBoard, edge: SiEdge) -> bool:
-	var first := board.corners[edge.corners[0]]
-	var second := board.corners[edge.corners[1]]
-	if first.port == null or second.port == null:
-		return false
-	var coast := _shared_tiles(first, second).size() == 1
-	return coast and _port_name(first.port) == _port_name(second.port)
-
-
-static func _port_name(port: SiPort) -> String:
-	return (port as SiPortSpecific).value if port is SiPortSpecific else "Generic"
-
-
-func _is_run_end(board: SiBoard, remaining: Dictionary, edge_index: int) -> bool:
-	var corners := board.edges[edge_index].corners
-	return _other_port_edge(board, remaining, corners[0], edge_index) == -1 \
-		or _other_port_edge(board, remaining, corners[1], edge_index) == -1
-
-
-## Places a port on every other edge of the run starting at `edge_index` and removes the run.
-func _walk_run(board: SiBoard, remaining: Dictionary, edge_index: int) -> void:
-	var current := edge_index
-	var takes_port := true
-	while current != -1:
-		remaining.erase(current)
-		if takes_port:
-			_add_port(board, board.edges[current])
-		takes_port = not takes_port
-		var corners := board.edges[current].corners
-		var next := _other_port_edge(board, remaining, corners[0], current)
-		current = next if next != -1 else _other_port_edge(board, remaining, corners[1], current)
-
-
-## A port edge still in `remaining` at `corner`, other than `edge_index`; -1 if there is none.
-func _other_port_edge(board: SiBoard, remaining: Dictionary, corner: int, edge_index: int) -> int:
-	for neighbour in board.corners[corner].edges:
-		if neighbour != edge_index and remaining.has(neighbour):
-			return neighbour
-	return -1
+	for edge in board.edges:
+		if edge.port != null:
+			_add_port(board, edge)
 
 
 func _add_port(board: SiBoard, edge: SiEdge) -> void:
@@ -112,7 +64,7 @@ func _add_port(board: SiBoard, edge: SiEdge) -> void:
 	var coast_tile: int = _shared_tiles(first, board.corners[edge.corners[1]])[0]
 	var midpoint := (corner_points[edge.corners[0]] + corner_points[edge.corners[1]]) / 2.0
 	var outward := (midpoint - tile_centers[coast_tile]).normalized()
-	ports.append({"port": first.port, "corners": edge.corners, "marker": midpoint + outward * PORT_DISTANCE})
+	ports.append({"port": edge.port, "corners": edge.corners, "marker": midpoint + outward * PORT_DISTANCE})
 
 
 func _shared_tiles(first: SiCorner, second: SiCorner) -> Array[int]:
