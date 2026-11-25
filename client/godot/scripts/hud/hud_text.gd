@@ -67,9 +67,9 @@ static func total(resources: Array[int]) -> int:
 
 static func phase_text(phase: SiPhase, own_seat: int) -> String:
 	if phase is SiPhaseSetupSettlement:
-		return "Setup round %d: place a settlement" % ((phase as SiPhaseSetupSettlement).round + 1)
+		return "Setup round %d: place a settlement" % ((phase as SiPhaseSetupSettlement).round)
 	if phase is SiPhaseSetupRoad:
-		return "Setup round %d: place a road" % ((phase as SiPhaseSetupRoad).round + 1)
+		return "Setup round %d: place a road" % ((phase as SiPhaseSetupRoad).round)
 	if phase is SiPhaseRoll:
 		return "Roll the dice"
 	if phase is SiPhaseMain:

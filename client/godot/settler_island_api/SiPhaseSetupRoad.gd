@@ -4,6 +4,7 @@ extends SiPhase
 
 const VARIANT := "SetupRoad"
 
+## 1 or 2, as in `SetupSettlement`.
 var round: int = 0
 var settlement: int = 0
 

@@ -8,9 +8,11 @@ use crate::game::Seat;
 #[serde(tag = "type")]
 pub enum Phase {
     SetupSettlement {
+        /// 1 in seat order, then 2 in reverse order.
         round: u8,
     },
     SetupRoad {
+        /// 1 or 2, as in `SetupSettlement`.
         round: u8,
         settlement: CornerId,
     },

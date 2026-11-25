@@ -2126,6 +2126,7 @@
         {
           "properties": {
             "round": {
+              "description": "1 in seat order, then 2 in reverse order.",
               "format": "uint8",
               "maximum": 255,
               "minimum": 0,
@@ -2145,6 +2146,7 @@
         {
           "properties": {
             "round": {
+              "description": "1 or 2, as in `SetupSettlement`.",
               "format": "uint8",
               "maximum": 255,
               "minimum": 0,
