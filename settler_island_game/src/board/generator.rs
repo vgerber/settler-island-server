@@ -18,7 +18,7 @@ const TERRAIN_COUNTS: [(Option<Resource>, usize); 6] = [
 
 const PORT_COUNT: usize = 9;
 
-/// The base board: shuffled terrain (desert anywhere), shuffled chips, ports on the coast, robber on the desert.
+/// The base board: shuffled terrain (desert anywhere), shuffled chips with no 6 or 8 touching, ports on the coast, robber on the desert.
 pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
     let topology = topology::build(ISLAND_RADIUS);
 
@@ -27,8 +27,6 @@ pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
         .flat_map(|(terrain, count)| std::iter::repeat_n(*terrain, *count))
         .collect();
     terrains.shuffle(rng);
-    let mut chips = NUMBER_CHIPS.to_vec();
-    chips.shuffle(rng);
 
     let mut tiles = Vec::with_capacity(topology.tiles.len());
     let mut robber = TileId(0);
@@ -39,17 +37,17 @@ pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
         .enumerate()
     {
         let resource = terrains.get(index).copied().flatten();
-        let number = resource.and_then(|_| chips.pop());
         if resource.is_none() {
             robber = TileId(index as u8);
         }
         tiles.push(Tile {
             coordinates: *coordinates,
             resource,
-            number,
+            number: None,
             corners: *corners,
         });
     }
+    deal_chips(&mut tiles, rng);
 
     let mut corners = topology.corners;
     place_ports(&mut corners, &topology.edges, rng);
@@ -62,6 +60,33 @@ pub(crate) fn generate(rng: &mut ChaCha8Rng) -> Board {
         edges: topology.edges,
         robber,
     }
+}
+
+/// Shuffled chips on every land tile, dealt again until no 6 or 8 touches another (base rules, variable setup).
+fn deal_chips(tiles: &mut [Tile], rng: &mut ChaCha8Rng) {
+    let mut chips = NUMBER_CHIPS.to_vec();
+    loop {
+        chips.shuffle(rng);
+        let mut remaining = chips.iter().copied();
+        for tile in tiles.iter_mut() {
+            tile.number = tile.resource.and_then(|_| remaining.next());
+        }
+        if !red_numbers_touch(tiles) {
+            return;
+        }
+    }
+}
+
+fn red_numbers_touch(tiles: &[Tile]) -> bool {
+    let red: Vec<&Tile> = tiles
+        .iter()
+        .filter(|tile| matches!(tile.number, Some(6 | 8)))
+        .collect();
+    red.iter().enumerate().any(|(index, first)| {
+        red[index + 1..]
+            .iter()
+            .any(|second| first.coordinates.distance(&second.coordinates) == 1)
+    })
 }
 
 /// Coast edges (one land tile on both corners) in order around the island.
@@ -155,6 +180,26 @@ mod tests {
         assert_eq!(chips, NUMBER_CHIPS.to_vec());
         for (terrain, expected) in TERRAIN_COUNTS {
             assert_eq!(count(terrain), expected);
+        }
+    }
+
+    #[test]
+    fn red_numbers_never_touch() {
+        for seed in 0..300 {
+            let board = board_for(seed);
+            let red: Vec<&Tile> = board
+                .tiles()
+                .iter()
+                .filter(|tile| matches!(tile.number, Some(6 | 8)))
+                .collect();
+            for (index, first) in red.iter().enumerate() {
+                for second in &red[index + 1..] {
+                    assert!(
+                        first.coordinates.distance(&second.coordinates) > 1,
+                        "seed {seed}: a 6 or 8 touches another"
+                    );
+                }
+            }
         }
     }
 
