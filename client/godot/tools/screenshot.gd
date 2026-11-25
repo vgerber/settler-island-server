@@ -1,0 +1,103 @@
+extends SceneTree
+## Walks the main scene through its screens against a running server and saves one PNG per screen:
+## connect, lobby browser, lobby room, game. Needs a window (not --headless); quits by itself.
+## Usage: godot --path client/godot -s tools/screenshot.gd -- http://127.0.0.1:<port> <output directory>
+
+const SETTLE_FRAMES := 20
+const TIMEOUT_MILLISECONDS := 30000
+
+var _server_http := ""
+var _output_directory := ""
+var _net: Node = null
+var _client: SiClient = null
+var _main: Node = null
+var _deadline := 0
+## Frames left before the next capture, then the step that follows it.
+var _wait_frames := -1
+var _after_capture: Callable
+var _capture_name := ""
+
+
+func _init() -> void:
+	var arguments := OS.get_cmdline_user_args()
+	if arguments.size() < 2:
+		push_error("usage: -s tools/screenshot.gd -- <server url> <output directory>")
+		quit(1)
+		return
+	_server_http = arguments[0]
+	_output_directory = arguments[1]
+	_deadline = Time.get_ticks_msec() + TIMEOUT_MILLISECONDS
+
+
+func _process(_delta: float) -> bool:
+	if Time.get_ticks_msec() > _deadline:
+		push_error("screenshot: timed out waiting for %s" % _capture_name)
+		quit(1)
+		return true
+	if _net == null:
+		_start()
+		return false
+	if _wait_frames > 0:
+		_wait_frames -= 1
+		return false
+	if _wait_frames == 0:
+		_wait_frames = -1
+		_save(_capture_name)
+		_after_capture.call()
+	return false
+
+
+func _start() -> void:
+	# A stored session would log in on its own and skip the connect screen.
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://session.cfg"))
+	_net = root.get_node("Net")
+	_client = _net.get("client") as SiClient
+	_main = (load("res://scenes/main.tscn") as PackedScene).instantiate()
+	root.add_child(_main)
+	_capture_after_settling("connect", _log_in)
+
+
+func _capture_after_settling(capture_name: String, next_step: Callable) -> void:
+	_capture_name = capture_name
+	_after_capture = next_step
+	_wait_frames = SETTLE_FRAMES
+
+
+func _log_in() -> void:
+	_net.connect("online", func(_user: SiUser, _running_lobby: Variant) -> void: _capture_after_settling("lobby_browser", _create_lobby))
+	_net.call("start", _server_http, "Screenshot")
+
+
+func _create_lobby() -> void:
+	_client.lobby_state_received.connect(_on_lobby_state)
+	_client.send_create_lobby("Screenshot table", 4, SiDifficulty.HEURISTIC, null, 10)
+
+
+func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
+	var open_seats := message.lobby.seats.filter(func(seat: SiSeatOccupant) -> bool: return seat is SiSeatOccupantOpen)
+	if open_seats.size() == 1 and _capture_name == "lobby_browser":
+		_capture_after_settling("lobby_room", _add_last_bot)
+		return
+	if open_seats.size() > 1:
+		_client.send_add_bot(SiDifficulty.HEURISTIC)
+
+
+func _add_last_bot() -> void:
+	_client.lobby_state_received.disconnect(_on_lobby_state)
+	_client.lobby_state_received.connect(func(message: SiServerMessageLobbyState) -> void:
+		if not message.lobby.started:
+			_client.send_start_game()
+	)
+	_client.game_started_received.connect(func(_message: SiServerMessageGameStarted) -> void: _capture_after_settling("game", _quit))
+	_client.send_add_bot(SiDifficulty.HEURISTIC)
+
+
+func _quit() -> void:
+	_net.call("stop")
+	quit(0)
+
+
+func _save(capture_name: String) -> void:
+	var path := _output_directory.path_join("%s.png" % capture_name)
+	var error := root.get_viewport().get_texture().get_image().save_png(path)
+	print("saved %s (%d)" % [path, error])
