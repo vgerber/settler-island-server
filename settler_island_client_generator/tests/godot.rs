@@ -1,6 +1,7 @@
 //! Runs the generated GDScript client in a headless Godot: a JSON round trip of sample messages, a
-//! short game against a real server, the game project in `client/godot` playing a full game, and its
-//! board placing corners and sending the clicked action. Skipped with a notice when no Godot binary is found; the
+//! short game against a real server, the game project in `client/godot` playing a full game, its
+//! board placing corners and sending the clicked action, and the HUD's discard dialog and event log.
+//! Skipped with a notice when no Godot binary is found; the
 //! binary is `$SETTLER_GODOT` or the default install path below.
 
 use std::fs::{self, File};
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use settler_island_bot::{create_bot, play_game, Difficulty};
 use settler_island_client_generator::{default_client_directory, API_DIRECTORY};
-use settler_island_game::{replay, Action, Game, GameError, GameSettings, Port};
+use settler_island_game::{replay, Action, Game, GameError, GameSettings, Phase, Port};
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage,
     User, UserId, UserKind,
@@ -492,4 +493,73 @@ fn board_places_shared_corners_once_and_sends_the_clicked_action() {
     );
 
     assert!(output.contains("BOARD_OK"), "{output}");
+}
+
+/// `GameStarted` for a seat that must discard and has more than one way to do it, from a bot game.
+fn discard_fixture() -> Value {
+    for seed in 1..50 {
+        let settings = GameSettings {
+            seats: 4,
+            points_to_win: 10,
+            seed,
+        };
+        let bots = (0..4)
+            .map(|seat| create_bot(Difficulty::Random, seat))
+            .collect();
+        let outcome = play_game(settings.clone(), bots, 3000).unwrap();
+        let mut game = Game::new(settings).unwrap();
+        for entry in &outcome.record.entries {
+            game.apply(entry.seat, entry.action.clone()).unwrap();
+            if !matches!(game.phase(), Phase::Discard { .. }) {
+                continue;
+            }
+            let choosing = game
+                .pending_seats()
+                .into_iter()
+                .find(|seat| game.legal_actions(*seat).len() > 1);
+            if let Some(seat) = choosing {
+                return to_json(&ServerMessage::GameStarted {
+                    request_id: None,
+                    seat,
+                    view: game.view(Some(seat)),
+                    legal_actions: game.legal_actions(seat),
+                });
+            }
+        }
+    }
+    panic!("no bot game reached a discard with a choice");
+}
+
+#[test]
+fn hud_discard_dialog_sends_exactly_the_picked_legal_discard() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-hud-discard.json");
+    fs::write(&fixture_path, discard_fixture().to_string()).unwrap();
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("hud-discard", "hud_discard.gd"),
+        "hud_discard.gd",
+        fixture_path.to_str().unwrap(),
+    );
+
+    assert!(output.contains("HUD_DISCARD_OK"), "{output}");
+}
+
+#[test]
+fn hud_event_log_has_a_line_for_every_event() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("hud-event-log", "hud_event_log.gd"),
+        "hud_event_log.gd",
+        "-",
+    );
+
+    assert!(output.contains("HUD_EVENT_LOG_OK"), "{output}");
 }
