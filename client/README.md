@@ -32,7 +32,9 @@ SETTLER_BIND=127.0.0.1:8253 SETTLER_SESSION_SECRET=<32+ bytes> cargo run -p sett
 ```
 
 The test project copies only `SiGuestSession.gd` from `godot/`; the full-game test copies all of `godot/` (without
-`.godot/`) and plays a game through `Net` and `GameState`, reconnecting midway.
+`.godot/`) and plays a game through `Net` and `GameState`, reconnecting midway. `ui_game.gd` runs the real main scene and plays
+a whole game by clicking HUD buttons, dialogs and highlighted board targets (seeded random choices); it fails
+on a dead end, a click that misses its control or a game that does not finish.
 
 ## Regenerate
 

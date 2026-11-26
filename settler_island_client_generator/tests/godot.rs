@@ -1,6 +1,7 @@
 //! Runs the generated GDScript client in a headless Godot: a JSON round trip of sample messages, a
-//! short game against a real server, the game project in `client/godot` playing a full game, its
-//! board placing corners and sending the clicked action, and the HUD's discard dialog and event log.
+//! short game against a real server, the game project in `client/godot` playing a full game (once
+//! through `GameState`, once through mouse clicks on its main scene), its board placing corners and
+//! sending the clicked action, `GameState` after a dropped act, and the HUD's discard dialog and event log.
 //! Skipped with a notice when no Godot binary is found; the
 //! binary is `$SETTLER_GODOT` or the default install path below.
 
@@ -359,13 +360,15 @@ fn generated_classes_round_trip_every_message() {
     assert!(output.contains("ROUND_TRIP_OK"), "{output}");
 }
 
-/// A server with instant bots on an ephemeral port, running on `runtime` until the test ends.
-fn start_server(runtime: &tokio::runtime::Runtime) -> String {
+/// A server with instant bots on an ephemeral port, running on `runtime` until the test ends; `seed`
+/// fixes the board, dice and bots of every game.
+fn start_server(runtime: &tokio::runtime::Runtime, seed: Option<u64>) -> String {
     let address = runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let config = Config {
             bot_delay: Duration::ZERO,
+            seed,
             ..Config::new(SessionSecret::new(vec![7; 32]).unwrap())
         };
         tokio::spawn(serve(
@@ -386,7 +389,7 @@ fn generated_client_plays_against_a_real_server() {
         return;
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let server = start_server(&runtime);
+    let server = start_server(&runtime, None);
 
     let output = run_script(
         &godot,
@@ -404,7 +407,7 @@ fn game_client_plays_a_full_game_and_rejoins_it() {
         return;
     };
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let server = start_server(&runtime);
+    let server = start_server(&runtime, None);
 
     let output = run_script(
         &godot,
@@ -414,6 +417,24 @@ fn game_client_plays_a_full_game_and_rejoins_it() {
     );
 
     assert!(output.contains("FULL_GAME_OK"), "{output}");
+}
+
+#[test]
+fn main_scene_plays_a_full_game_with_mouse_clicks_only() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime, Some(4));
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("ui-game", "ui_game.gd"),
+        "ui_game.gd",
+        &server,
+    );
+
+    assert!(output.contains("UI_GAME_OK"), "{output}");
 }
 
 /// `GameStarted` for `seat` at the current state of `game`.
