@@ -87,14 +87,16 @@ impl PostgresStore {
         let Some(next) = next else {
             return Ok(StoreError::UnknownGame(game));
         };
-        let expected = u32::try_from(next).map_err(|_| corrupt(game, "action index"))?;
+        let row = database_id(game)?;
+        let expected = u32::try_from(next).map_err(|_| corrupt(row, "action index"))?;
         Ok(StoreError::OutOfOrder { expected, got })
     }
 
     async fn load(&self, row: GameRow) -> Result<StoredGame, StoreError> {
-        let id = GameId(u64::try_from(row.id).map_err(|_| corrupt(GameId(0), "game id"))?);
-        let seats = self.load_seats(id, row.id).await?;
-        let actions = self.load_actions(id, row.id).await?;
+        let raw = row.id;
+        let id = GameId(u64::try_from(raw).map_err(|_| corrupt(raw, "game id"))?);
+        let seats = self.load_seats(raw).await?;
+        let actions = self.load_actions(raw).await?;
         let snapshot = sqlx::query!(
             r#"SELECT index, state AS "state: Json<Game>" FROM game_snapshots
                WHERE game = $1 ORDER BY index DESC LIMIT 1"#,
@@ -105,12 +107,12 @@ impl PostgresStore {
         .map(|snapshot| -> Result<Snapshot, StoreError> {
             Ok(Snapshot {
                 actions: u32::try_from(snapshot.index)
-                    .map_err(|_| corrupt(id, "snapshot index"))?,
+                    .map_err(|_| corrupt(raw, "snapshot index"))?,
                 state: snapshot.state.0,
             })
         })
         .transpose()?;
-        let lobby = u32::try_from(row.lobby_id).map_err(|_| corrupt(id, "lobby id"))?;
+        let lobby = u32::try_from(row.lobby_id).map_err(|_| corrupt(raw, "lobby id"))?;
         Ok(StoredGame {
             id,
             game: NewGame {
@@ -118,7 +120,7 @@ impl PostgresStore {
                     seats: row.settings.0.seats,
                     points_to_win: row.settings.0.points_to_win,
                     // Stored as the same 64 bits.
-                    seed: row.seed as u64,
+                    seed: u64::from_ne_bytes(row.seed.to_ne_bytes()),
                 },
                 seats,
                 lobby: LobbyId(lobby),
@@ -134,7 +136,7 @@ impl PostgresStore {
         })
     }
 
-    async fn load_seats(&self, id: GameId, game: i64) -> Result<Vec<SeatPlayer>, StoreError> {
+    async fn load_seats(&self, game: i64) -> Result<Vec<SeatPlayer>, StoreError> {
         let rows = sqlx::query!(
             r#"SELECT seat.bot_difficulty AS "bot_difficulty: Json<Difficulty>",
                       users.id AS "user_id?", users.name AS "user_name?", users.kind AS "user_kind?"
@@ -152,9 +154,9 @@ impl PostgresStore {
                 let (Some(user_id), Some(name), Some(kind)) =
                     (row.user_id, row.user_name, row.user_kind)
                 else {
-                    return Err(corrupt(id, "seat"));
+                    return Err(corrupt(game, "seat"));
                 };
-                let kind = parse_kind(&kind).ok_or_else(|| corrupt(id, "user kind"))?;
+                let kind = parse_kind(&kind).ok_or_else(|| corrupt(game, "user kind"))?;
                 Ok(SeatPlayer::Human(User {
                     id: UserId(user_id),
                     name,
@@ -164,7 +166,7 @@ impl PostgresStore {
             .collect()
     }
 
-    async fn load_actions(&self, id: GameId, game: i64) -> Result<Vec<StoredAction>, StoreError> {
+    async fn load_actions(&self, game: i64) -> Result<Vec<StoredAction>, StoreError> {
         let rows = sqlx::query!(
             r#"SELECT index, seat, action AS "action: Json<Action>", events AS "events: Json<Vec<Event>>"
                FROM game_actions WHERE game = $1 ORDER BY index"#,
@@ -175,8 +177,8 @@ impl PostgresStore {
         rows.into_iter()
             .map(|row| {
                 Ok(StoredAction {
-                    index: u32::try_from(row.index).map_err(|_| corrupt(id, "action index"))?,
-                    seat: Seat::try_from(row.seat).map_err(|_| corrupt(id, "seat"))?,
+                    index: u32::try_from(row.index).map_err(|_| corrupt(game, "action index"))?,
+                    seat: Seat::try_from(row.seat).map_err(|_| corrupt(game, "seat"))?,
                     action: row.action.0,
                     events: row.events.0,
                 })
@@ -197,6 +199,7 @@ struct GameRow {
 
 impl GameStore for PostgresStore {
     async fn create_game(&self, game: NewGame) -> Result<GameId, StoreError> {
+        let lobby = i32::try_from(game.lobby.0).map_err(|_| out_of_range("lobby id"))?;
         let mut transaction = self.pool.begin().await?;
         let settings = RecordSettings {
             seats: game.settings.seats,
@@ -205,23 +208,23 @@ impl GameStore for PostgresStore {
         let id = sqlx::query_scalar!(
             "INSERT INTO games (lobby_id, lobby_name, bot_difficulty, settings, seed)
              VALUES ($1, $2, $3, $4, $5) RETURNING id",
-            // Lobby ids are small counters; the column is signed.
-            game.lobby.0 as i32,
+            lobby,
             game.lobby_name,
             Json(game.bot_difficulty) as _,
             Json(settings) as _,
             // Stored as the same 64 bits.
-            game.settings.seed as i64,
+            i64::from_ne_bytes(game.settings.seed.to_ne_bytes()),
         )
         .fetch_one(&mut *transaction)
         .await?;
         for (seat, player) in game.seats.iter().enumerate() {
-            Self::insert_seat(&mut transaction, id, seat as i16, player).await?;
+            let seat = i16::try_from(seat).map_err(|_| out_of_range("seat"))?;
+            Self::insert_seat(&mut transaction, id, seat, player).await?;
         }
         transaction.commit().await?;
         u64::try_from(id)
             .map(GameId)
-            .map_err(|_| corrupt(GameId(0), "game id"))
+            .map_err(|_| corrupt(id, "game id"))
     }
 
     async fn append_action(
@@ -231,7 +234,7 @@ impl GameStore for PostgresStore {
         snapshot: Option<Game>,
     ) -> Result<(), StoreError> {
         let id = database_id(game)?;
-        let index = i32::try_from(action.index).map_err(|_| corrupt(game, "action index"))?;
+        let index = i32::try_from(action.index).map_err(|_| out_of_range("action index"))?;
         let mut transaction = self.pool.begin().await?;
         // Inserts only into a running game and only at the next index.
         let inserted = sqlx::query!(
@@ -367,8 +370,12 @@ fn database_id(game: GameId) -> Result<i64, StoreError> {
     i64::try_from(game.0).map_err(|_| StoreError::UnknownGame(game))
 }
 
-fn corrupt(game: GameId, field: &'static str) -> StoreError {
-    StoreError::Corrupt { game, field }
+fn corrupt(row: i64, field: &'static str) -> StoreError {
+    StoreError::Corrupt { row, field }
+}
+
+fn out_of_range(field: &'static str) -> StoreError {
+    StoreError::OutOfRange { field }
 }
 
 fn kind_name(kind: UserKind) -> &'static str {

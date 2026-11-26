@@ -344,3 +344,45 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     assert_eq!(record, expected);
     assert!(matches!(replayed.phase(), Phase::Finished { .. }));
 }
+
+#[tokio::test]
+async fn postgres_refuses_a_lobby_id_its_column_cannot_hold() {
+    let Some(database) = test_database().await else {
+        return;
+    };
+    let store = PostgresStore::connect(database.options()).await.unwrap();
+    let mut game = new_game();
+    game.lobby = LobbyId(u32::MAX);
+
+    let result = store.create_game(game).await;
+
+    assert!(matches!(
+        result,
+        Err(StoreError::OutOfRange { field: "lobby id" })
+    ));
+    assert!(store.load_running().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn postgres_names_the_raw_row_and_field_of_an_out_of_range_value() {
+    let Some(database) = test_database().await else {
+        return;
+    };
+    let options = database.options();
+    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let id = store.create_game(new_game()).await.unwrap();
+    let mut connection = options.connect().await.unwrap();
+    let row = i64::try_from(id.0).unwrap();
+    sqlx::query("UPDATE games SET lobby_id = -1 WHERE id = $1")
+        .bind(row)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+    let result = store.load_running().await;
+
+    assert!(matches!(
+        result,
+        Err(StoreError::Corrupt { row: found, field: "lobby id" }) if found == row
+    ));
+}

@@ -109,8 +109,10 @@ pub enum StoreError {
     Database(#[from] sqlx::Error),
     #[error("database migration: {0}")]
     Migration(#[from] sqlx::migrate::MigrateError),
-    #[error("game {game:?} has a stored {field} out of range")]
-    Corrupt { game: GameId, field: &'static str },
+    #[error("database row {row} has a stored {field} out of range")]
+    Corrupt { row: i64, field: &'static str },
+    #[error("{field} does not fit its database column")]
+    OutOfRange { field: &'static str },
 }
 
 /// Durable game log: a lobby writes each action here before anyone sees its events.
