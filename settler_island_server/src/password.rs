@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::IpAddr;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -22,9 +22,6 @@ const GUESS_WINDOW: Duration = Duration::from_secs(60);
 const PRUNE_ABOVE: usize = 10_000;
 
 static HASH_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_HASHES);
-
-/// Process-wide, like the hash permits, so guesses spread over many connections still add up.
-pub(crate) static GUESSES: LazyLock<GuessLimiter> = LazyLock::new(GuessLimiter::default);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PasswordError {

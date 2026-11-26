@@ -51,6 +51,7 @@ pub use store::{
 use connection_limit::ConnectionLimiter;
 use identity::Identity;
 use metrics::Metrics;
+use password::GuessLimiter;
 use rate_limit::IpLimiter;
 use registry::RegistryHandle;
 
@@ -70,6 +71,7 @@ struct AppState<I> {
     metrics: Arc<Metrics>,
     session_limiter: Arc<IpLimiter>,
     connection_limiter: Arc<ConnectionLimiter>,
+    password_guesses: Arc<GuessLimiter>,
 }
 
 // Derived `Clone` would needlessly require `I: Clone`.
@@ -82,6 +84,7 @@ impl<I> Clone for AppState<I> {
             metrics: self.metrics.clone(),
             session_limiter: self.session_limiter.clone(),
             connection_limiter: self.connection_limiter.clone(),
+            password_guesses: self.password_guesses.clone(),
         }
     }
 }
@@ -168,6 +171,7 @@ pub async fn router<S: GameStore, I: IdentityStore>(
             config.max_connections,
             config.max_connections_per_ip,
         )),
+        password_guesses: Arc::new(GuessLimiter::default()),
         config,
         metrics,
     };
@@ -257,6 +261,8 @@ async fn upgrade<I: IdentityStore>(
                 state.identity,
                 state.config,
                 state.metrics,
+                address,
+                state.password_guesses,
             )
             .await;
             // Moved in and dropped here so the slot stays taken for the socket's whole lifetime.

@@ -20,7 +20,7 @@ use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest, SeatCount};
 use crate::metrics::Metrics;
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
-use crate::password::{self, Guesser, GUESSES};
+use crate::password::{self, GuessLimiter, Guesser};
 use crate::rate_limit::TokenBucket;
 use crate::registry::{LobbyEntry, NewLobby, RegistryHandle};
 
@@ -45,6 +45,8 @@ struct Connection<I> {
     lobby: Option<LobbyHandle>,
     /// The client address, for the per-address password guess limit.
     address: Option<IpAddr>,
+    /// Shared by every connection, so guesses spread over many connections still add up.
+    guesses: Arc<GuessLimiter>,
     limiter: TokenBucket,
     metrics: Arc<Metrics>,
 }
@@ -56,6 +58,8 @@ pub(crate) async fn run<I: IdentityStore>(
     identity: Arc<Identity<I>>,
     config: Arc<Config>,
     metrics: Arc<Metrics>,
+    address: IpAddr,
+    guesses: Arc<GuessLimiter>,
 ) {
     metrics.connections.inc();
     let (sink, stream) = socket.split();
@@ -68,8 +72,8 @@ pub(crate) async fn run<I: IdentityStore>(
         identity,
         user: None,
         lobby: None,
-        // The upgrade route in lib.rs does not pass the peer address yet.
-        address: None,
+        address: Some(address),
+        guesses,
         limiter: TokenBucket::new(
             f64::from(config.messages_per_second),
             config.messages_per_second,
@@ -357,7 +361,7 @@ impl<I: IdentityStore> Connection<I> {
                 lobby,
                 address: self.address,
             };
-            check_password(&guesser, hash, password.unwrap_or_default()).await?;
+            check_password(&self.guesses, &guesser, hash, password.unwrap_or_default()).await?;
         }
         let outbox = self.outbox.clone();
         entry
@@ -428,11 +432,12 @@ async fn hash_password(password: String) -> Result<String, ErrorCode> {
 
 /// Refuses a guesser over the wrong-guess limit before Argon2 runs.
 async fn check_password(
+    guesses: &GuessLimiter,
     guesser: &Guesser,
     hash: Arc<str>,
     password: String,
 ) -> Result<(), ErrorCode> {
-    GUESSES
+    guesses
         .attempt(guesser, Instant::now())
         .map_err(|_| ErrorCode::LimitReached {
             limit: ServerLimit::PasswordGuesses,
@@ -444,6 +449,6 @@ async fn check_password(
     if !matches {
         return Err(ErrorCode::WrongPassword);
     }
-    GUESSES.forgive(guesser);
+    guesses.forgive(guesser);
     Ok(())
 }

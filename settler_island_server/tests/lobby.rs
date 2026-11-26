@@ -271,6 +271,30 @@ async fn password_guessing_is_refused_after_five_wrong_guesses_in_a_minute() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wrong_guesses_from_one_address_add_up_across_guest_accounts() {
+    let address = start(test_config()).await;
+    let (mut owner, _) = Client::welcomed(address, "Owner").await;
+    let lobby = owner.create_lobby("Secret", 3, Some("hunter2")).await;
+
+    // A fresh guest per guess: only the per-address count can stop this.
+    for guess in 0..5 {
+        let (mut guesser, _) = Client::welcomed(address, &format!("Guesser{guess}")).await;
+        let wrong = format!("guess {guess}");
+        assert_eq!(
+            guesser.try_join(lobby, Some(&wrong)).await,
+            Err(ErrorCode::WrongPassword)
+        );
+    }
+    let (mut last, _) = Client::welcomed(address, "Guesser5").await;
+    assert_eq!(
+        last.try_join(lobby, Some("hunter2")).await,
+        Err(ErrorCode::LimitReached {
+            limit: ServerLimit::PasswordGuesses
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_user_is_in_at_most_one_lobby() {
     let address = start(test_config()).await;
     let (mut first, _) = Client::welcomed(address, "First").await;
