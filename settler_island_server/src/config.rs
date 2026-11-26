@@ -177,7 +177,7 @@ pub enum ConfigError {
 impl Config {
     pub fn new(session_secret: SessionSecret) -> Config {
         Config {
-            bind: SocketAddr::from(([127, 0, 0, 1], 8253)),
+            bind: SocketAddr::from(([127, 0, 0, 1], settler_island_protocol::DEFAULT_PORT)),
             bot_delay: Duration::from_millis(DEFAULT_BOT_DELAY_MILLISECONDS),
             trade_answer_time: Duration::from_secs(DEFAULT_TRADE_ANSWER_SECONDS),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
