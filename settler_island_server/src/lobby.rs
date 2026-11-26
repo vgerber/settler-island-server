@@ -155,13 +155,12 @@ enum GameEnd {
 impl RunningGame {
     /// A human asked in the open trade who has not answered yet.
     fn human_answer_pending(&self) -> bool {
-        let Some(offer) = self.game.trade() else {
+        let Some(offer) = self.game.phase().trade_offer() else {
             return false;
         };
-        self.game
-            .pending_seats()
-            .into_iter()
-            .any(|seat| seat != offer.seat && self.bots[usize::from(seat)].is_none())
+        (0..)
+            .zip(&self.bots)
+            .any(|(seat, bot)| bot.is_none() && offer.awaits_answer_from(seat))
     }
 }
 
@@ -629,7 +628,11 @@ impl<S: GameStore> Lobby<S> {
             .pending_seats()
             .into_iter()
             .find(|seat| running.bots[usize::from(*seat)].is_some())?;
-        let offering = running.game.trade().is_some_and(|offer| offer.seat == seat);
+        let offering = running
+            .game
+            .phase()
+            .trade_offer()
+            .is_some_and(|offer| offer.offerer == seat);
         let at = match self.answers_due {
             Some(due) if offering && running.human_answer_pending() => due.max(self.bot_deadline),
             _ => self.bot_deadline,
@@ -642,7 +645,7 @@ impl<S: GameStore> Lobby<S> {
         let open = self
             .game
             .as_ref()
-            .is_some_and(|running| running.game.trade().is_some());
+            .is_some_and(|running| running.game.phase().trade_offer().is_some());
         self.answers_due = open.then(|| {
             self.answers_due
                 .unwrap_or_else(|| Instant::now() + self.config.trade_answer_time)

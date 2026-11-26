@@ -2328,13 +2328,17 @@
         {
           "description": "A player trade is open (step 2a).",
           "properties": {
+            "offer": {
+              "$ref": "#/$defs/TradeOffer"
+            },
             "type": {
               "const": "TradeOffered",
               "type": "string"
             }
           },
           "required": [
-            "type"
+            "type",
+            "offer"
           ],
           "type": "object"
         },
@@ -2423,17 +2427,6 @@
           "maximum": 255,
           "minimum": 0,
           "type": "integer"
-        },
-        "trade": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TradeOffer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The open player trade while `phase` is `TradeOffered`."
         },
         "turn_number": {
           "format": "uint32",
@@ -2996,9 +2989,20 @@
       "type": "integer"
     },
     "TradeOffer": {
-      "description": "An open player trade (step 2a).",
+      "description": "An open player trade (step 2a); it exists only inside the `TradeOffered` phase.",
       "properties": {
+        "addressed": {
+          "description": "`None` asks every other seat.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "answers": {
+          "description": "Who answered and whether they accepted, at most one entry per seat.",
           "items": {
             "maxItems": 2,
             "minItems": 2,
@@ -3020,27 +3024,18 @@
         "give": {
           "$ref": "#/$defs/ResourceCounts"
         },
-        "receive": {
-          "$ref": "#/$defs/ResourceCounts"
-        },
-        "seat": {
+        "offerer": {
           "format": "uint8",
           "maximum": 255,
           "minimum": 0,
           "type": "integer"
         },
-        "to": {
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
+        "receive": {
+          "$ref": "#/$defs/ResourceCounts"
         }
       },
       "required": [
-        "seat",
+        "offerer",
         "give",
         "receive",
         "answers"

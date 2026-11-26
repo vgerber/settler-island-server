@@ -118,9 +118,9 @@ async fn a_bot_offer_stays_open_until_the_asked_human_answers() {
     let offered_by_bot = |play: &Play| {
         let by_bot = play
             .view
-            .trade
-            .as_ref()
-            .is_some_and(|offer| offer.seat != seat);
+            .phase
+            .trade_offer()
+            .is_some_and(|offer| offer.offerer != seat);
         by_bot && play.legal.contains(&Action::RejectTrade)
     };
     play_as(&mut client, human.as_mut(), &mut play, |play| {
@@ -145,7 +145,7 @@ async fn assert_offer_stays_open(client: &mut Client) {
     while let Ok(message) = tokio::time::timeout_at(deadline, client.receive()).await {
         if let ServerMessage::GameUpdate { view, .. } = message {
             assert!(
-                view.trade.is_some(),
+                view.phase.trade_offer().is_some(),
                 "the bot closed its offer before the human answered"
             );
         }

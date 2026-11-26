@@ -15,8 +15,6 @@ var largest_army: Variant = null
 var longest_road: Variant = null
 ## `None` for spectators.
 var own: SiOwnView = null
-## The open player trade while `phase` is `TradeOffered`.
-var trade: SiTradeOffer = null
 
 static func from_dict(data: Dictionary) -> SiPlayerView:
 	var decoded := SiPlayerView.new()
@@ -31,7 +29,6 @@ static func from_dict(data: Dictionary) -> SiPlayerView:
 	decoded.largest_army = (null if data.get("largest_army") == null else int(data.get("largest_army")))
 	decoded.longest_road = (null if data.get("longest_road") == null else int(data.get("longest_road")))
 	decoded.own = (null if data.get("own") == null else SiOwnView.from_dict(data.get("own")))
-	decoded.trade = (null if data.get("trade") == null else SiTradeOffer.from_dict(data.get("trade")))
 	return decoded
 
 func to_dict() -> Dictionary:
@@ -51,6 +48,4 @@ func to_dict() -> Dictionary:
 		encoded["longest_road"] = int(longest_road)
 	if own != null:
 		encoded["own"] = own.to_dict()
-	if trade != null:
-		encoded["trade"] = trade.to_dict()
 	return encoded

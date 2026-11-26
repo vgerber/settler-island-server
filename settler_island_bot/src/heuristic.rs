@@ -2,7 +2,7 @@ mod evaluation;
 mod hand;
 
 use settler_island_game::{
-    Action, OwnView, Phase, PlayerView, Purchase, Resource, ResourceCounts, Seat,
+    Action, OwnView, Phase, PlayerView, Purchase, Resource, ResourceCounts, Seat, TradeOffer,
     DISCARD_ABOVE_CARDS, MIN_LARGEST_ARMY,
 };
 
@@ -51,7 +51,7 @@ impl HeuristicBot {
                 _ => None,
             }),
             Phase::Steal { .. } => steal(view, legal),
-            Phase::TradeOffered => Some(answer_trade(view, own, legal)),
+            Phase::TradeOffered { offer } => Some(answer_trade(view, own, offer, legal)),
             Phase::Finished { .. } => None,
         }
     }
@@ -301,7 +301,7 @@ fn near_win(view: &PlayerView, points: u8) -> bool {
 }
 
 /// Own offers settle with the weakest accepting seat; foreign offers are accepted when they help the goal.
-fn answer_trade(view: &PlayerView, own: &OwnView, legal: &[Action]) -> Action {
+fn answer_trade(view: &PlayerView, own: &OwnView, offer: &TradeOffer, legal: &[Action]) -> Action {
     let partner = legal
         .iter()
         .filter_map(|action| match action {
@@ -316,18 +316,15 @@ fn answer_trade(view: &PlayerView, own: &OwnView, legal: &[Action]) -> Action {
     if legal.contains(&Action::CancelTrade) {
         return Action::CancelTrade;
     }
-    if legal.contains(&Action::AcceptTrade) && helps_goal(view, own) {
+    if legal.contains(&Action::AcceptTrade) && helps_goal(view, own, offer) {
         return Action::AcceptTrade;
     }
     Action::RejectTrade
 }
 
 /// We receive `give` and pay `receive`: accept when that closes the gap to the goal without opening another.
-fn helps_goal(view: &PlayerView, own: &OwnView) -> bool {
-    let Some(offer) = &view.trade else {
-        return false;
-    };
-    let Some(offerer) = view.players.get(usize::from(offer.seat)) else {
+fn helps_goal(view: &PlayerView, own: &OwnView, offer: &TradeOffer) -> bool {
+    let Some(offerer) = view.players.get(usize::from(offer.offerer)) else {
         return false;
     };
     let mut after = own.hand;
@@ -351,7 +348,7 @@ fn helps_goal(view: &PlayerView, own: &OwnView) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, TileId, TradeOffer};
+    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, TileId};
 
     /// A real board after four heuristic bots placed their setup pieces.
     fn after_setup(seed: u64) -> Game {
@@ -564,15 +561,15 @@ mod tests {
     fn offered_view(give: Resource, receive: Resource, offerer_points: u8) -> PlayerView {
         let game = after_setup(7);
         let hand = ResourceCounts::new([1, 0, 0, 2, 2]);
-        let mut view = view_with(&game, Phase::TradeOffered, hand);
-        view.players[1].points = offerer_points;
-        view.trade = Some(TradeOffer {
-            seat: 1,
+        let offer = TradeOffer {
+            offerer: 1,
             give: ResourceCounts::single(give, 1),
             receive: ResourceCounts::single(receive, 1),
-            to: None,
+            addressed: None,
             answers: Vec::new(),
-        });
+        };
+        let mut view = view_with(&game, Phase::TradeOffered { offer }, hand);
+        view.players[1].points = offerer_points;
         view
     }
 

@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::board::{CornerId, TileId};
-use crate::game::Seat;
+use crate::game::{Seat, TradeOffer};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
@@ -35,8 +35,20 @@ pub enum Phase {
         roads_left: u8,
     },
     /// A player trade is open (step 2a).
-    TradeOffered,
+    TradeOffered {
+        offer: TradeOffer,
+    },
     Finished {
         winner: Seat,
     },
+}
+
+impl Phase {
+    /// The open player trade, which exists only in `TradeOffered`.
+    pub fn trade_offer(&self) -> Option<&TradeOffer> {
+        match self {
+            Phase::TradeOffered { offer } => Some(offer),
+            _ => None,
+        }
+    }
 }

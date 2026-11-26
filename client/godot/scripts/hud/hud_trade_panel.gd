@@ -26,10 +26,10 @@ func _init() -> void:
 
 
 func show_trade(state: GameState) -> void:
-	var offer := state.view.trade
-	if offer == null:
+	if not state.view.phase is SiPhaseTradeOffered:
 		hide()
 		return
+	var offer := (state.view.phase as SiPhaseTradeOffered).offer
 	_title_label.text = _title(offer, state.seat)
 	_offer_label.text = _terms(offer, state.seat)
 	_answers_label.text = _answers_text(offer, state)
@@ -38,27 +38,27 @@ func show_trade(state: GameState) -> void:
 
 
 func _title(offer: SiTradeOffer, own_seat: int) -> String:
-	var addressed := "everyone" if offer.to == null else HudText.seat_object(int(offer.to), own_seat)
-	if offer.seat == own_seat:
+	var addressed := "everyone" if offer.addressed == null else HudText.seat_object(int(offer.addressed), own_seat)
+	if offer.offerer == own_seat:
 		return "Your offer to %s" % addressed
-	return "%s offers a trade to %s" % [HudText.seat_name(offer.seat, own_seat), addressed]
+	return "%s offers a trade to %s" % [HudText.seat_name(offer.offerer, own_seat), addressed]
 
 
 ## The terms from the own side when the own seat is part of the trade.
 func _terms(offer: SiTradeOffer, own_seat: int) -> String:
-	if offer.seat == own_seat:
+	if offer.offerer == own_seat:
 		return "You give %s\nYou get %s" % [HudText.counts(offer.give), HudText.counts(offer.receive)]
-	var addressed := offer.to == null or int(offer.to) == own_seat
+	var addressed := offer.addressed == null or int(offer.addressed) == own_seat
 	if addressed:
 		return "You get %s\nYou give %s" % [HudText.counts(offer.give), HudText.counts(offer.receive)]
-	var offerer := HudText.seat_name(offer.seat, own_seat)
+	var offerer := HudText.seat_name(offer.offerer, own_seat)
 	return "%s gives %s\n%s wants %s" % [offerer, HudText.counts(offer.give), offerer, HudText.counts(offer.receive)]
 
 
 func _answers_text(offer: SiTradeOffer, state: GameState) -> String:
 	var lines: PackedStringArray = []
 	for seat in state.view.players.size():
-		if seat == offer.seat or (offer.to != null and int(offer.to) != seat):
+		if seat == offer.offerer or (offer.addressed != null and int(offer.addressed) != seat):
 			continue
 		lines.append("%s: %s" % [HudText.seat_name(seat, state.seat), _answer_of(offer, seat)])
 	return "\n".join(lines)

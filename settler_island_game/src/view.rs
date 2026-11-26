@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::board::Board;
-use crate::game::{DevelopmentCard, Game, Seat, TradeOffer};
+use crate::game::{DevelopmentCard, Game, Seat};
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
 use crate::rules::{scoring, trade};
@@ -20,8 +20,6 @@ pub struct PlayerView {
     pub longest_road: Option<Seat>,
     pub largest_army: Option<Seat>,
     pub players: Vec<PublicPlayerView>,
-    /// The open player trade while `phase` is `TradeOffered`.
-    pub trade: Option<TradeOffer>,
     /// `None` for spectators.
     pub own: Option<OwnView>,
 }
@@ -98,7 +96,6 @@ impl PlayerView {
             longest_road: game.longest_road,
             largest_army: game.largest_army,
             players,
-            trade: game.trade.clone(),
             own,
         }
     }

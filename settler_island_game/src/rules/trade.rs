@@ -124,13 +124,13 @@ pub(crate) fn offer_trade(
         return Err(GameError::NotEnoughResources);
     }
 
-    game.trade = Some(TradeOffer {
-        seat,
+    let offer = TradeOffer {
+        offerer: seat,
         give,
         receive,
-        to,
+        addressed: to,
         answers: Vec::new(),
-    });
+    };
     Ok(vec![
         Event::TradeOffered {
             seat,
@@ -138,7 +138,7 @@ pub(crate) fn offer_trade(
             receive,
             to,
         },
-        game.enter(Phase::TradeOffered),
+        game.enter(Phase::TradeOffered { offer }),
     ])
 }
 
@@ -149,11 +149,7 @@ fn shares_a_resource(first: &ResourceCounts, second: &ResourceCounts) -> bool {
 }
 
 fn open_offer(game: &Game) -> Result<&TradeOffer, GameError> {
-    let offer = game.trade.as_ref().ok_or(GameError::NoTradeOpen)?;
-    if game.phase != Phase::TradeOffered {
-        return Err(GameError::WrongPhase);
-    }
-    Ok(offer)
+    game.phase.trade_offer().ok_or(GameError::NoTradeOpen)
 }
 
 pub(crate) fn answer_trade(
@@ -162,20 +158,20 @@ pub(crate) fn answer_trade(
     accepted: bool,
 ) -> Result<Vec<Event>, GameError> {
     let offer = open_offer(game)?;
-    let addressed = seat != offer.seat && offer.to.is_none_or(|to| to == seat);
-    if !addressed || seat >= game.settings.seats {
+    if !offer.asks(seat) || seat >= game.settings.seats {
         return Err(GameError::NotYourTurn);
     }
-    if offer.answers.iter().any(|(answered, _)| *answered == seat) {
+    if !offer.awaits_answer_from(seat) {
         return Err(GameError::InvalidTrade);
     }
     if accepted && !game.player(seat)?.hand.contains(&offer.receive) {
         return Err(GameError::NotEnoughResources);
     }
 
-    if let Some(open) = game.trade.as_mut() {
-        open.answers.push((seat, accepted));
-    }
+    let mut answered = offer.clone();
+    answered.answers.push((seat, accepted));
+    // Still the same trade: the answer is announced by `TradeAnswered`, not a phase change.
+    game.phase = Phase::TradeOffered { offer: answered };
     Ok(vec![Event::TradeAnswered { seat, accepted }])
 }
 
@@ -185,10 +181,10 @@ pub(crate) fn confirm_trade(
     with: Seat,
 ) -> Result<Vec<Event>, GameError> {
     let offer = open_offer(game)?.clone();
-    if seat != offer.seat {
+    if seat != offer.offerer {
         return Err(GameError::NotYourTurn);
     }
-    if !offer.answers.contains(&(with, true)) {
+    if offer.answer_of(with) != Some(true) {
         return Err(GameError::InvalidTrade);
     }
     if !game.player(with)?.hand.contains(&offer.receive) {
@@ -205,7 +201,6 @@ pub(crate) fn confirm_trade(
         offer.give,
         offer.receive,
     )?;
-    game.trade = None;
     Ok(vec![
         Event::TradeCompleted {
             seat,
@@ -218,11 +213,10 @@ pub(crate) fn confirm_trade(
 }
 
 pub(crate) fn cancel_trade(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
-    if open_offer(game)?.seat != seat {
+    if open_offer(game)?.offerer != seat {
         return Err(GameError::NotYourTurn);
     }
 
-    game.trade = None;
     Ok(vec![
         Event::TradeCancelled { seat },
         game.enter(Phase::Main),
@@ -243,12 +237,21 @@ pub(crate) fn legal_main(game: &Game, seat: Seat) -> Vec<Action> {
         .collect()
 }
 
-pub(crate) fn legal_answers(game: &Game, seat: Seat) -> Vec<Action> {
-    let Some(offer) = &game.trade else {
-        return Vec::new();
-    };
-    if seat == offer.seat {
+/// Seats still asked for an answer, plus the offerer who can confirm or cancel.
+pub(crate) fn pending_seats(game: &Game, offer: &TradeOffer) -> Vec<Seat> {
+    let mut seats: Vec<Seat> = (0..game.settings.seats)
+        .filter(|seat| offer.awaits_answer_from(*seat))
+        .collect();
+    seats.push(offer.offerer);
+    seats
+}
+
+pub(crate) fn legal_answers(game: &Game, offer: &TradeOffer, seat: Seat) -> Vec<Action> {
+    if seat == offer.offerer {
         return offerer_choices(game, offer);
+    }
+    if !offer.awaits_answer_from(seat) {
+        return Vec::new();
     }
     let mut actions = Vec::new();
     if holds(game, seat, &offer.receive) {
@@ -454,13 +457,12 @@ mod tests {
     #[test]
     fn full_player_trade_moves_cards_and_returns_to_main() {
         let mut game = open_trade(None);
-        assert_eq!(game.phase, Phase::TradeOffered);
+        assert!(matches!(game.phase, Phase::TradeOffered { .. }));
         game.apply(1, Action::AcceptTrade).unwrap();
         game.apply(2, Action::RejectTrade).unwrap();
         let events = game.apply(0, Action::ConfirmTrade { with: 1 }).unwrap();
 
         assert_eq!(game.phase, Phase::Main);
-        assert_eq!(game.trade, None);
         assert!(events.contains(&Event::TradeCompleted {
             seat: 0,
             with: 1,
@@ -580,14 +582,14 @@ mod tests {
     #[test]
     fn a_failed_trade_swap_leaves_both_hands_unchanged() {
         let mut game = open_trade(Some(1));
-        let offer = game.trade.clone().unwrap();
+        let offer = game.phase.trade_offer().unwrap().clone();
         game.player_mut(1).unwrap().hand = ResourceCounts::default();
         let before = game.clone();
 
         assert_eq!(
             exchange(
                 &mut game,
-                Holder::Seat(offer.seat),
+                Holder::Seat(offer.offerer),
                 Holder::Seat(1),
                 offer.give,
                 offer.receive
@@ -603,14 +605,33 @@ mod tests {
         game.apply(1, Action::RejectTrade).unwrap();
         game.apply(2, Action::RejectTrade).unwrap();
 
-        assert_eq!(game.phase, Phase::TradeOffered);
+        assert!(game.phase.trade_offer().is_some());
         assert_eq!(game.pending_seats(), vec![0]);
         assert_eq!(game.legal_actions(0), vec![Action::CancelTrade]);
         let events = game.apply(0, Action::CancelTrade).unwrap();
         assert!(events.contains(&Event::TradeCancelled { seat: 0 }));
         assert_eq!(game.phase, Phase::Main);
-        assert_eq!(game.trade, None);
         assert_eq!(game.player(0).unwrap().hand, cards(Resource::Wood, 2));
+    }
+
+    #[test]
+    fn every_seat_sees_the_offer_and_its_answers_in_the_phase() {
+        let mut game = open_trade(None);
+        game.apply(2, Action::RejectTrade).unwrap();
+        let expected = TradeOffer {
+            offerer: 0,
+            give: cards(Resource::Wood, 2),
+            receive: cards(Resource::Ore, 1),
+            addressed: None,
+            answers: vec![(2, false)],
+        };
+
+        for viewer in [Some(1), None] {
+            assert_eq!(game.view(viewer).phase.trade_offer(), Some(&expected));
+        }
+        assert!(expected.awaits_answer_from(1));
+        assert!(!expected.awaits_answer_from(2));
+        assert!(!expected.awaits_answer_from(0));
     }
 
     #[test]
@@ -666,9 +687,6 @@ mod tests {
                 // Rejections are fine; only the invariants matter.
                 let _ = game.apply(seat, action);
                 prop_assert_eq!(total(&game), 95);
-                if game.phase == Phase::Main {
-                    prop_assert_eq!(&game.trade, &None);
-                }
             }
         }
     }

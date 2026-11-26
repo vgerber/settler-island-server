@@ -5,12 +5,16 @@ extends SiPhase
 
 const VARIANT := "TradeOffered"
 
-static func from_dict(_data: Variant) -> SiPhaseTradeOffered:
+var offer: SiTradeOffer = null
+
+static func from_dict(data: Variant) -> SiPhaseTradeOffered:
 	var decoded := SiPhaseTradeOffered.new()
+	decoded.offer = SiTradeOffer.from_dict(data.get("offer"))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
 		"type": "TradeOffered",
+		"offer": offer.to_dict(),
 	}
 	return encoded

@@ -63,14 +63,36 @@ pub struct PlayerState {
     pub knights_played: u8,
 }
 
-/// An open player trade (step 2a).
+/// An open player trade (step 2a); it exists only inside the `TradeOffered` phase.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TradeOffer {
-    pub seat: Seat,
+    pub offerer: Seat,
     pub give: ResourceCounts,
     pub receive: ResourceCounts,
-    pub to: Option<Seat>,
+    /// `None` asks every other seat.
+    pub addressed: Option<Seat>,
+    /// Who answered and whether they accepted, at most one entry per seat.
     pub answers: Vec<(Seat, bool)>,
+}
+
+impl TradeOffer {
+    /// Whether `seat` is asked: the addressed seat, or anyone but the offerer when the offer is open to all.
+    pub fn asks(&self, seat: Seat) -> bool {
+        seat != self.offerer && self.addressed.is_none_or(|addressed| addressed == seat)
+    }
+
+    /// `Some(accepted)` once `seat` has answered.
+    pub fn answer_of(&self, seat: Seat) -> Option<bool> {
+        self.answers
+            .iter()
+            .find(|(answered, _)| *answered == seat)
+            .map(|(_, accepted)| *accepted)
+    }
+
+    /// Whether `seat` is asked and has not answered yet.
+    pub fn awaits_answer_from(&self, seat: Seat) -> bool {
+        self.asks(seat) && self.answer_of(seat).is_none()
+    }
 }
 
 /// One side of a resource transfer.
@@ -95,7 +117,6 @@ pub struct Game {
     pub(crate) turn_number: u32,
     /// Whether the current seat rolled this turn; a knight before the roll returns to `Phase::Roll`.
     pub(crate) dice_rolled: bool,
-    pub(crate) trade: Option<TradeOffer>,
     pub(crate) longest_road: Option<Seat>,
     pub(crate) largest_army: Option<Seat>,
 }
@@ -138,7 +159,6 @@ impl Game {
             rng,
             turn_number: 0,
             dice_rolled: false,
-            trade: None,
             longest_road: None,
             largest_army: None,
         })
@@ -207,7 +227,7 @@ impl Game {
             Phase::Discard { .. } => robber::legal_discards(self, seat),
             Phase::Steal { .. } => robber::legal_steals(self, seat),
             Phase::RoadBuilding { .. } => development::legal_free_roads(self, seat),
-            Phase::TradeOffered => trade::legal_answers(self, seat),
+            Phase::TradeOffered { offer } => trade::legal_answers(self, offer, seat),
             Phase::Finished { .. } => Vec::new(),
         }
     }
@@ -221,7 +241,7 @@ impl Game {
                 .filter(|(_, count)| *count > 0)
                 .map(|(seat, _)| *seat)
                 .collect(),
-            Phase::TradeOffered => self.trade_pending_seats(),
+            Phase::TradeOffered { offer } => trade::pending_seats(self, offer),
             _ => vec![self.current],
         }
     }
@@ -232,11 +252,6 @@ impl Game {
 
     pub fn phase(&self) -> &Phase {
         &self.phase
-    }
-
-    /// The open player trade while the phase is `TradeOffered`.
-    pub fn trade(&self) -> Option<&TradeOffer> {
-        self.trade.as_ref()
     }
 
     pub fn winner(&self) -> Option<Seat> {
@@ -256,20 +271,6 @@ impl Game {
 
     pub fn board(&self) -> &Board {
         &self.board
-    }
-
-    /// Addressed seats that have not answered, plus the offerer who can confirm or cancel.
-    fn trade_pending_seats(&self) -> Vec<Seat> {
-        let Some(offer) = &self.trade else {
-            return vec![self.current];
-        };
-        let mut seats: Vec<Seat> = (0..self.settings.seats)
-            .filter(|seat| *seat != offer.seat)
-            .filter(|seat| offer.to.is_none_or(|addressed| addressed == *seat))
-            .filter(|seat| offer.answers.iter().all(|(answered, _)| answered != seat))
-            .collect();
-        seats.push(offer.seat);
-        seats
     }
 
     pub(crate) fn player(&self, seat: Seat) -> Result<&PlayerState, GameError> {
