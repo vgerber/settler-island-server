@@ -8,14 +8,14 @@ use serde::Deserialize;
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
     DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES,
-    MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
+    MAX_POINTS_TO_WIN, MIN_POINTS_TO_WIN,
 };
 use tokio::sync::{mpsc, Notify};
 use tracing::{debug, error};
 
 use crate::config::Config;
 use crate::identity::{Identity, IdentityStore};
-use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest};
+use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest, SeatCount};
 use crate::metrics::Metrics;
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
@@ -272,9 +272,7 @@ impl<I: IdentityStore> Connection<I> {
             return Err(ErrorCode::AlreadyInLobby);
         }
         let name = clean_name(name, MAX_LOBBY_NAME_CHARS).ok_or(ErrorCode::InvalidLobbyName)?;
-        if !(MIN_SEATS..=MAX_SEATS).contains(&options.seats) {
-            return Err(ErrorCode::InvalidSeatCount);
-        }
+        let seats = SeatCount::new(options.seats)?;
         let points_to_win = options.points_to_win.unwrap_or(DEFAULT_POINTS_TO_WIN);
         if !(MIN_POINTS_TO_WIN..=MAX_POINTS_TO_WIN).contains(&points_to_win) {
             return Err(ErrorCode::InvalidPointsToWin);
@@ -289,7 +287,7 @@ impl<I: IdentityStore> Connection<I> {
             outbox: self.outbox.clone(),
             request_id,
             password_hash,
-            seats: options.seats,
+            seats,
             points_to_win,
             bot_difficulty: options.bot_difficulty.unwrap_or(Difficulty::Heuristic),
         };

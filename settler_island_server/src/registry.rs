@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
-use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup};
+use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup, SeatCount};
 use crate::metrics::Metrics;
 use crate::outbox::Outbox;
 use crate::store::{GameStore, SeatPlayer, StoredGame};
@@ -19,7 +19,7 @@ pub(crate) struct NewLobby {
     pub outbox: Outbox,
     pub request_id: u32,
     pub password_hash: Option<String>,
-    pub seats: u8,
+    pub seats: SeatCount,
     pub points_to_win: u8,
     pub bot_difficulty: Difficulty,
 }
@@ -215,12 +215,7 @@ impl<S: GameStore> Registry<S> {
                     listing.summary = summary;
                 }
             }
-            LobbyNotice::Closed(id) => {
-                self.lobbies.remove(&id);
-                self.metrics.lobbies.set(self.lobbies.len() as i64);
-                self.memberships.retain(|_, lobby| *lobby != id);
-                self.seated.remove(&id);
-            }
+            LobbyNotice::Closed(id) => self.unlist_lobby(id),
             LobbyNotice::Seated { lobby, users } => {
                 self.seated.insert(lobby, users);
             }
@@ -297,8 +292,7 @@ impl<S: GameStore> Registry<S> {
             handle,
             password_hash: None,
         };
-        self.lobbies.insert(id, Listing { entry, summary });
-        self.metrics.lobbies.set(self.lobbies.len() as i64);
+        self.list_lobby(id, Listing { entry, summary });
     }
 
     fn create(&mut self, lobby: NewLobby) -> Result<LobbyHandle, ErrorCode> {
@@ -330,10 +324,29 @@ impl<S: GameStore> Registry<S> {
             handle: handle.clone(),
             password_hash: lobby.password_hash.map(Arc::from),
         };
-        self.lobbies.insert(id, Listing { entry, summary });
-        self.metrics.lobbies.set(self.lobbies.len() as i64);
+        self.list_lobby(id, Listing { entry, summary });
         self.memberships.insert(owner, id);
         Ok(handle)
+    }
+
+    fn list_lobby(&mut self, id: LobbyId, listing: Listing) {
+        self.lobbies.insert(id, listing);
+        self.count_lobbies();
+    }
+
+    /// Forgets a closed lobby with its members and seats.
+    fn unlist_lobby(&mut self, id: LobbyId) {
+        self.lobbies.remove(&id);
+        self.count_lobbies();
+        self.memberships.retain(|_, lobby| *lobby != id);
+        self.seated.remove(&id);
+    }
+
+    fn count_lobbies(&self) {
+        // The map holds far fewer lobbies than i64::MAX.
+        self.metrics
+            .lobbies
+            .set(i64::try_from(self.lobbies.len()).unwrap_or(i64::MAX));
     }
 
     fn page(&self, page: u32, per_page: u32) -> LobbyPage {

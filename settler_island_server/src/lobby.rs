@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use settler_island_bot::{create_bot, Bot, Difficulty};
-use settler_island_game::{Action, Event, Game, GameRecord, GameSettings, Phase, Seat};
+use settler_island_bot::{bot_seed, create_bot, Bot, Difficulty};
+use settler_island_game::{
+    Action, Event, Game, GameRecord, GameSettings, Seat, MAX_SEATS, MIN_SEATS,
+};
 
 use crate::store::StoredGame;
 use settler_island_protocol::{
@@ -12,12 +14,14 @@ use tokio::time::{sleep_until, Instant};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
-use crate::metrics::Metrics;
+use crate::metrics::{GameInProgress, Metrics};
 use crate::outbox::Outbox;
-use crate::store::{GameId, GameStore, NewGame, SeatPlayer, StoredAction, SNAPSHOT_INTERVAL};
+use crate::store::{
+    GameId, GameStore, NewGame, SeatPlayer, StoreError, StoredAction, SNAPSHOT_INTERVAL,
+};
 
 const COMMAND_QUEUE: usize = 64;
-/// Stands in for a player who leaves a running game.
+/// How long to wait before retrying a store write that failed.
 const STORE_RETRY: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub(crate) type Reply = oneshot::Sender<Result<(), ErrorCode>>;
@@ -102,6 +106,19 @@ impl LobbyHandle {
     }
 }
 
+/// A lobby's number of seats, within the bounds the game supports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SeatCount(u8);
+
+impl SeatCount {
+    pub(crate) fn new(seats: u8) -> Result<SeatCount, ErrorCode> {
+        if !(MIN_SEATS..=MAX_SEATS).contains(&seats) {
+            return Err(ErrorCode::InvalidSeatCount);
+        }
+        Ok(SeatCount(seats))
+    }
+}
+
 pub(crate) struct LobbySetup {
     pub id: LobbyId,
     pub name: String,
@@ -109,7 +126,7 @@ pub(crate) struct LobbySetup {
     pub outbox: Outbox,
     pub request_id: u32,
     pub has_password: bool,
-    pub seats: u8,
+    pub seats: SeatCount,
     pub points_to_win: u8,
     pub bot_difficulty: Difficulty,
 }
@@ -125,9 +142,16 @@ struct RunningGame {
     record: GameRecord,
     /// Indexed by seat; `Some` where a bot plays.
     bots: Vec<Option<Box<dyn Bot>>>,
-    /// Set when a bot's move was rejected; bots stop instead of retrying forever.
+    /// Set when neither a bot's move nor its fallback was accepted; bots stop instead of retrying forever.
     stalled: bool,
     seed: u64,
+    in_progress: GameInProgress,
+}
+
+/// How a running game ends.
+enum GameEnd {
+    Finished { winner: Seat },
+    Abandoned,
 }
 
 impl RunningGame {
@@ -173,11 +197,24 @@ pub(crate) fn spawn<S: GameStore>(
     metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 ) -> (LobbyHandle, LobbySummary) {
-    let mut seats = vec![SeatOccupant::Open; usize::from(setup.seats)];
-    seats[0] = SeatOccupant::Human {
+    let request_id = setup.request_id;
+    open(setup, store, config, metrics, notices).spawn(Some(request_id))
+}
+
+/// A new lobby with the owner in the first seat and the others open.
+fn open<S: GameStore>(
+    setup: LobbySetup,
+    store: Arc<S>,
+    config: Arc<Config>,
+    metrics: Arc<Metrics>,
+    notices: mpsc::UnboundedSender<LobbyNotice>,
+) -> Lobby<S> {
+    let owner_seat = SeatOccupant::Human {
         user: setup.owner.clone(),
     };
-    let lobby = Lobby {
+    let open_seats = std::iter::repeat_n(SeatOccupant::Open, usize::from(setup.seats.0) - 1);
+    let seats = std::iter::once(owner_seat).chain(open_seats).collect();
+    Lobby {
         id: setup.id,
         name: setup.name,
         owner: setup.owner.clone(),
@@ -197,8 +234,7 @@ pub(crate) fn spawn<S: GameStore>(
         config,
         metrics,
         notices,
-    };
-    lobby.spawn(Some(setup.request_id))
+    }
 }
 
 /// Recreates the lobby of a game that was running when the server stopped: every human seat waits for its
@@ -247,6 +283,7 @@ pub(crate) fn restore<S: GameStore>(
             bots,
             stalled: false,
             seed,
+            in_progress: metrics.game_started(),
         }),
         bot_deadline: Instant::now(),
         answers_due: None,
@@ -262,7 +299,6 @@ pub(crate) fn restore<S: GameStore>(
         metrics,
         notices,
     };
-    lobby.metrics.running_games.inc();
     Some(lobby.spawn(None))
 }
 
@@ -387,9 +423,9 @@ impl<S: GameStore> Lobby<S> {
                 .ok_or(ErrorCode::GameAlreadyStarted)?,
             None => self.open_seat().ok_or(ErrorCode::LobbyFull)?,
         };
-        self.seats[seat] = SeatOccupant::Human { user: user.clone() };
+        self.seats[usize::from(seat)] = SeatOccupant::Human { user: user.clone() };
         if let Some(running) = &mut self.game {
-            running.bots[seat] = None;
+            running.bots[usize::from(seat)] = None;
         }
         let user_id = user.id.clone();
         self.members.push(Member { user, outbox });
@@ -422,10 +458,11 @@ impl<S: GameStore> Lobby<S> {
         let Some(seat) = self.seat_of(user) else {
             return;
         };
-        self.seats[seat] = match &mut self.game {
+        let index = usize::from(seat);
+        self.seats[index] = match &mut self.game {
             Some(running) => {
-                let seed = bot_seed(running.seed, seat);
-                running.bots[seat] = Some(create_bot(self.bot_difficulty, seed));
+                let seed = bot_seed(running.seed, index);
+                running.bots[index] = Some(create_bot(self.bot_difficulty, seed));
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
                 SeatOccupant::Bot {
                     difficulty: self.bot_difficulty,
@@ -483,7 +520,7 @@ impl<S: GameStore> Lobby<S> {
     ) -> Result<(), ErrorCode> {
         self.check_owner_before_start(user)?;
         let seat = self.open_seat().ok_or(ErrorCode::LobbyFull)?;
-        self.seats[seat] = SeatOccupant::Bot {
+        self.seats[usize::from(seat)] = SeatOccupant::Bot {
             difficulty,
             reserved_for: None,
         };
@@ -508,7 +545,7 @@ impl<S: GameStore> Lobby<S> {
             return Err(ErrorCode::SeatsNotFilled);
         }
         let settings = GameSettings {
-            seats: self.seats.len() as u8,
+            seats: self.seat_count(),
             points_to_win: self.points_to_win,
             seed: self.config.seed.unwrap_or_else(rand::random),
         };
@@ -546,9 +583,9 @@ impl<S: GameStore> Lobby<S> {
             bots,
             stalled: false,
             seed: settings.seed,
+            in_progress: self.metrics.game_started(),
         });
         self.bot_deadline = Instant::now() + self.config.bot_delay;
-        self.metrics.running_games.inc();
         self.note_membership(LobbyNotice::Seated {
             lobby: self.id,
             users: self
@@ -571,9 +608,8 @@ impl<S: GameStore> Lobby<S> {
         Ok(())
     }
 
-    async fn act(&mut self, seat: usize, request_id: u32, action: Action) -> Result<(), ErrorCode> {
+    async fn act(&mut self, seat: Seat, request_id: u32, action: Action) -> Result<(), ErrorCode> {
         let running = self.game.as_mut().ok_or(ErrorCode::NoGame)?;
-        let seat = seat as Seat;
         let events =
             apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await?;
         self.bot_deadline = Instant::now() + self.config.bot_delay;
@@ -617,15 +653,19 @@ impl<S: GameStore> Lobby<S> {
 
     /// Closes the game in the store; `false` when that failed and the lobby must stay open for a retry.
     async fn abandon(&mut self) -> bool {
-        let Some(game) = self.game.as_ref().map(|running| running.id) else {
+        let Some(running) = self
+            .game
+            .as_mut()
+            .filter(|running| !running.game.is_finished())
+        else {
             return true;
         };
-        if let Err(error) = self.store.abandon(game).await {
+        let game = running.id;
+        if let Err(error) = end_game(running, self.store.as_ref(), GameEnd::Abandoned).await {
             error!(lobby = self.id.0, game = game.0, %error, "abandoning the game failed, retrying");
             self.abandon_at = Some(Instant::now() + STORE_RETRY);
             return false;
         }
-        self.metrics.running_games.dec();
         info!(lobby = self.id.0, game = game.0, "game abandoned");
         true
     }
@@ -648,7 +688,8 @@ impl<S: GameStore> Lobby<S> {
             return;
         }
         let action = bot.choose(&view, &legal);
-        match apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await {
+        let store = self.store.as_ref();
+        match apply_bot_choice(running, store, &self.metrics, seat, action, &legal).await {
             Ok(events) => {
                 self.metrics.bot_actions.inc();
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
@@ -662,18 +703,18 @@ impl<S: GameStore> Lobby<S> {
                     lobby = self.id.0,
                     seat,
                     ?code,
-                    "bot move rejected, bots stop"
+                    "bot move and its fallback rejected, bots stop"
                 );
                 running.stalled = true;
             }
         }
     }
 
-    fn send_record(&self, seat: usize, user: &UserId, request_id: u32) -> Result<(), ErrorCode> {
+    fn send_record(&self, seat: Seat, user: &UserId, request_id: u32) -> Result<(), ErrorCode> {
         let running = self.game.as_ref().ok_or(ErrorCode::NoGame)?;
         let mut record = running.record.clone();
-        if !matches!(running.game.phase(), Phase::Finished { .. }) {
-            let viewer = Some(seat as Seat);
+        if !running.game.is_finished() {
+            let viewer = Some(seat);
             for entry in &mut record.entries {
                 entry.events = entry
                     .events
@@ -698,7 +739,6 @@ impl<S: GameStore> Lobby<S> {
             let Some(seat) = self.seat_of(&member.user.id) else {
                 continue;
             };
-            let seat = seat as Seat;
             let request_id = cause
                 .filter(|(cause_seat, _)| *cause_seat == seat)
                 .map(|(_, request_id)| request_id);
@@ -744,7 +784,6 @@ impl<S: GameStore> Lobby<S> {
         else {
             return;
         };
-        let seat = seat as Seat;
         member.outbox.send(ServerMessage::GameStarted {
             request_id,
             seat,
@@ -756,7 +795,7 @@ impl<S: GameStore> Lobby<S> {
     fn game_running(&self) -> bool {
         self.game
             .as_ref()
-            .is_some_and(|running| !matches!(running.game.phase(), Phase::Finished { .. }))
+            .is_some_and(|running| !running.game.is_finished())
     }
 
     /// Tells the registry that nobody holds a seat any more once the game has ended.
@@ -778,22 +817,30 @@ impl<S: GameStore> Lobby<S> {
         self.members.iter().find(|member| member.user.id == *user)
     }
 
-    fn seat_of(&self, user: &UserId) -> Option<usize> {
-        self.seats.iter().position(
+    fn seat_of(&self, user: &UserId) -> Option<Seat> {
+        self.find_seat(
             |occupant| matches!(occupant, SeatOccupant::Human { user: seated } if seated.id == *user),
         )
     }
 
-    fn reserved_seat(&self, user: &UserId) -> Option<usize> {
-        self.seats.iter().position(|occupant| {
+    fn reserved_seat(&self, user: &UserId) -> Option<Seat> {
+        self.find_seat(|occupant| {
             matches!(occupant, SeatOccupant::Bot { reserved_for: Some(reserved), .. } if reserved.id == *user)
         })
     }
 
-    fn open_seat(&self) -> Option<usize> {
-        self.seats
-            .iter()
-            .position(|occupant| *occupant == SeatOccupant::Open)
+    fn open_seat(&self) -> Option<Seat> {
+        self.find_seat(|occupant| *occupant == SeatOccupant::Open)
+    }
+
+    fn find_seat(&self, wanted: impl Fn(&SeatOccupant) -> bool) -> Option<Seat> {
+        let index = self.seats.iter().position(wanted)?;
+        Seat::try_from(index).ok()
+    }
+
+    /// The seats were built from a `SeatCount`, so they always fit.
+    fn seat_count(&self) -> u8 {
+        u8::try_from(self.seats.len()).unwrap_or(MAX_SEATS)
     }
 
     fn first_human(&self) -> Option<User> {
@@ -826,8 +873,8 @@ impl<S: GameStore> Lobby<S> {
             id: self.id,
             name: self.name.clone(),
             owner: self.owner.clone(),
-            seats: self.seats.len() as u8,
-            open_seats: open_seats as u8,
+            seats: self.seat_count(),
+            open_seats: u8::try_from(open_seats).unwrap_or(MAX_SEATS),
             has_password: self.has_password,
             started: self.game.is_some(),
             points_to_win: self.points_to_win,
@@ -865,17 +912,65 @@ async fn apply_and_store<S: GameStore>(
             error!(game = running.id.0, %error, "storing an action failed");
             ErrorCode::Internal
         })?;
-    if let Phase::Finished { winner } = next.phase() {
-        info!(game = running.id.0, winner, "game finished");
-        metrics.running_games.dec();
-        if let Err(error) = store.finish(running.id, *winner).await {
-            error!(game = running.id.0, %error, "marking the game finished failed");
-        }
-    }
     metrics.actions_applied.inc();
     running.game = next;
     running.record.push(seat, action, events.clone());
+    if let Some(winner) = running.game.winner() {
+        info!(game = running.id.0, winner, "game finished");
+        if let Err(error) = end_game(running, store, GameEnd::Finished { winner }).await {
+            error!(game = running.id.0, %error, "marking the game finished failed");
+        }
+    }
     Ok(events)
+}
+
+/// Applies a bot's choice; one the game rejects is replaced by ending the turn, or else the first legal action, so a
+/// bot's mistake does not stall the game.
+async fn apply_bot_choice<S: GameStore>(
+    running: &mut RunningGame,
+    store: &S,
+    metrics: &Metrics,
+    seat: Seat,
+    action: Action,
+    legal: &[Action],
+) -> Result<Vec<Event>, ErrorCode> {
+    let error = match apply_and_store(running, store, metrics, seat, action).await {
+        Err(ErrorCode::Game { error }) => error,
+        result => return result,
+    };
+    warn!(
+        game = running.id.0,
+        seat,
+        ?error,
+        "bot move rejected, falling back"
+    );
+    let fallback = legal
+        .iter()
+        .find(|candidate| **candidate == Action::EndTurn)
+        .or_else(|| legal.first())
+        .cloned()
+        .ok_or(ErrorCode::Game { error })?;
+    apply_and_store(running, store, metrics, seat, fallback).await
+}
+
+/// The one way a running game ends: stores the end and stops counting the game as running, at most once. A finished
+/// game stops counting even when the store fails; an abandoned one only once the store has it, as the lobby retries.
+async fn end_game<S: GameStore>(
+    running: &mut RunningGame,
+    store: &S,
+    end: GameEnd,
+) -> Result<(), StoreError> {
+    match end {
+        GameEnd::Finished { winner } => {
+            running.in_progress.end();
+            store.finish(running.id, winner).await
+        }
+        GameEnd::Abandoned => {
+            store.abandon(running.id).await?;
+            running.in_progress.end();
+            Ok(())
+        }
+    }
 }
 
 fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
@@ -887,7 +982,93 @@ fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
     }
 }
 
-/// Distinct per seat and per game, reproducible from the game seed.
-fn bot_seed(game_seed: u64, seat: usize) -> u64 {
-    game_seed.wrapping_add(seat as u64 + 1)
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use settler_island_bot::{Bot, Difficulty};
+    use settler_island_game::{Action, PlayerView, ResourceCounts};
+    use settler_island_protocol::{LobbyId, User, UserId, UserKind};
+    use tokio::sync::{mpsc, Notify};
+
+    use super::{open, Lobby, LobbySetup, SeatCount};
+    use crate::config::{Config, SessionSecret};
+    use crate::metrics::Metrics;
+    use crate::outbox::{Outbox, OUTBOX_CAPACITY};
+    use crate::store::MemoryStore;
+
+    /// Always asks for something the game never accepts from it.
+    struct IllegalBot;
+
+    impl Bot for IllegalBot {
+        fn choose(&mut self, _view: &PlayerView, _legal: &[Action]) -> Action {
+            Action::Discard {
+                resources: ResourceCounts::default(),
+            }
+        }
+    }
+
+    async fn started_lobby(metrics: Arc<Metrics>) -> Lobby<MemoryStore> {
+        let owner = User {
+            id: UserId("ada".to_string()),
+            name: "Ada".to_string(),
+            kind: UserKind::Guest,
+        };
+        let (sender, _) = mpsc::channel(OUTBOX_CAPACITY);
+        let (notices, _) = mpsc::unbounded_channel();
+        let setup = LobbySetup {
+            id: LobbyId(1),
+            name: "Table".to_string(),
+            owner: owner.clone(),
+            outbox: Outbox::new(sender, Arc::new(Notify::new())),
+            request_id: 1,
+            has_password: false,
+            seats: SeatCount::new(3).unwrap(),
+            points_to_win: 10,
+            bot_difficulty: Difficulty::Random,
+        };
+        let mut config = Config::new(SessionSecret::new(vec![7; 64]).unwrap());
+        config.seed = Some(5);
+        let store = Arc::new(MemoryStore::default());
+        let mut lobby = open(setup, store, Arc::new(config), metrics, notices);
+        for _ in 0..2 {
+            lobby.add_bot(&owner.id, 1, Difficulty::Random).unwrap();
+        }
+        lobby.start(&owner.id, 1).await.unwrap();
+        lobby
+    }
+
+    fn running_games(metrics: &Metrics) -> String {
+        let text = metrics.render().unwrap();
+        let line = text
+            .lines()
+            .find(|line| line.starts_with("settler_running_games "));
+        line.unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn a_rejected_bot_move_falls_back_instead_of_stalling_the_game() {
+        let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap())).await;
+        let running = lobby.game.as_mut().unwrap();
+        running.bots = (0..3)
+            .map(|_| Some(Box::new(IllegalBot) as Box<dyn Bot>))
+            .collect();
+        let moves = 40;
+        for _ in 0..moves {
+            lobby.play_bot().await;
+        }
+        let running = lobby.game.as_ref().unwrap();
+        assert!(!running.stalled);
+        assert_eq!(running.record.entries.len(), moves);
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_game_is_counted_down_once_when_its_lobby_closes() {
+        let metrics = Arc::new(Metrics::new().unwrap());
+        let mut lobby = started_lobby(metrics.clone()).await;
+        assert_eq!(running_games(&metrics), "settler_running_games 1");
+        assert!(lobby.abandon().await);
+        drop(lobby);
+        assert_eq!(running_games(&metrics), "settler_running_games 0");
+    }
 }
