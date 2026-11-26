@@ -43,3 +43,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Security 2B is on branch worktree-agent-a9e15d8dcebfc7e98 (1461622): merge after 1B, then switch lib.rs
   client_address to rate_limit::forwarded_client(peer, x-forwarded-for, trusted proxies or &[] when
   trust_forwarded_for is off); the gate fails on dead code until then.
+- 2D follow-up: test that a request after the JWKS failure back-off expires fetches again (make the back-off a constructor parameter so a test can use a short window).
