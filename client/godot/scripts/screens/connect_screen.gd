@@ -3,7 +3,7 @@ extends Control
 ## Server address and guest name. With a stored session it connects on its own, so a restarted
 ## client goes straight back into a running game.
 
-const DEFAULT_SERVER := "http://127.0.0.1:8253"
+const DEFAULT_SERVER := "http://127.0.0.1:%d" % SiLimits.DEFAULT_PORT
 
 ## Only the first connect screen of a run connects on its own; after a failure the player decides.
 static var _tried_stored_session: bool = false
@@ -15,6 +15,7 @@ static var _tried_stored_session: bool = false
 
 
 func _ready() -> void:
+	_name_edit.max_length = SiLimits.MAX_USER_NAME_CHARS
 	_connect_button.pressed.connect(_on_connect)
 	_name_edit.text_submitted.connect(func(_text: String) -> void: _on_connect())
 	Net.failed.connect(_on_failed)

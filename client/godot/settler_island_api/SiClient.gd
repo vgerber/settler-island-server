@@ -28,7 +28,8 @@ var _open := false
 var _last_request_id := 0
 
 
-## Opens the connection, e.g. `ws://127.0.0.1:8080/api/v1/ws`; `connected` follows once it is open.
+## Opens the connection, e.g. `"ws://127.0.0.1:%d%s" % [SiLimits.DEFAULT_PORT, SiLimits.WEBSOCKET_ROUTE]`;
+## `connected` follows once it is open.
 func connect_to_url(url: String) -> Error:
 	_socket = WebSocketPeer.new()
 	_open = false

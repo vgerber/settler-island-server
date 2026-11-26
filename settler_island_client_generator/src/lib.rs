@@ -2,6 +2,7 @@
 //! types and one GDScript class per schema type under `client/godot/settler_island_api/`.
 
 pub mod gdscript;
+pub mod limits;
 pub mod model;
 
 use std::collections::BTreeMap;
@@ -11,7 +12,10 @@ use std::path::{Path, PathBuf};
 
 use schemars::generate::SchemaSettings;
 use serde_json::{json, Value};
-use settler_island_protocol::{ClientMessage, ServerMessage};
+use settler_island_protocol::{
+    ClientMessage, GuestSession, GuestSessionRequest, HttpError, ServerMessage, UpgradeRequest,
+    Upgraded,
+};
 
 pub const SCHEMA_FILE: &str = "schema.json";
 pub const API_DIRECTORY: &str = "godot/settler_island_api";
@@ -40,15 +44,21 @@ pub fn default_client_directory() -> PathBuf {
         .join("client")
 }
 
-/// The JSON Schema of every message in both directions, definitions under `$defs`.
+/// The JSON Schema of every message in both directions, definitions under `$defs`; the HTTP session
+/// bodies are definitions only, since no WebSocket frame carries them.
 pub fn protocol_schema() -> Value {
     let mut generator = SchemaSettings::draft2020_12().into_generator();
     let client = generator.subschema_for::<ClientMessage>();
     let server = generator.subschema_for::<ServerMessage>();
+    generator.subschema_for::<GuestSessionRequest>();
+    generator.subschema_for::<GuestSession>();
+    generator.subschema_for::<UpgradeRequest>();
+    generator.subschema_for::<Upgraded>();
+    generator.subschema_for::<HttpError>();
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Settler Island protocol",
-        "description": "A WebSocket text frame holds one ClientMessage (client to server) or one ServerMessage (server to client).",
+        "description": "A WebSocket text frame holds one ClientMessage (client to server) or one ServerMessage (server to client). GuestSessionRequest, GuestSession, UpgradeRequest, Upgraded and HttpError are the bodies of the HTTP session routes.",
         "oneOf": [client, server],
         "$defs": generator.definitions(),
     })

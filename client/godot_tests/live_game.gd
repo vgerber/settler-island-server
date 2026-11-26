@@ -7,7 +7,7 @@ const TIMEOUT_MILLISECONDS := 30000
 const UPDATES_WANTED := 5
 
 var _client := SiClient.new()
-var _session := SiGuestSession.new()
+var _session := SiSessionClient.new()
 var _base_url := ""
 var _token := ""
 var _deadline := 0
@@ -34,16 +34,16 @@ func _init() -> void:
 	_client.game_update_received.connect(_on_game_update)
 	_client.error_received.connect(_on_error)
 	root.add_child.call_deferred(_session)
-	_session.succeeded.connect(_on_session)
-	_session.failed.connect(func(reason: String): _finish(1, "LIVE_FAILED %s" % reason))
+	_session.guest_session_received.connect(_on_session)
+	_session.failed.connect(func(reason: String, _error: SiHttpError): _finish(1, "LIVE_FAILED %s" % reason))
 	# The session node enters the tree deferred, so start the request after that.
-	_session.request.call_deferred(_base_url, "Godot")
+	_session.request_guest_session.call_deferred(_base_url, "Godot")
 
 
-func _on_session(token: String, user: SiUser) -> void:
-	print("guest session for %s (%s)" % [user.name, user.kind])
-	_token = token
-	var error := _client.connect_to_url(_base_url.replace("http://", "ws://") + "/api/v1/ws")
+func _on_session(session: SiGuestSession) -> void:
+	print("guest session for %s (%s)" % [session.user.name, session.user.kind])
+	_token = session.token
+	var error := _client.connect_to_url(_base_url.replace("http://", "ws://") + SiLimits.WEBSOCKET_ROUTE)
 	if error != OK:
 		_finish(1, "LIVE_FAILED connect_to_url returned %d" % error)
 

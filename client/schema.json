@@ -1981,6 +1981,50 @@
       ],
       "type": "object"
     },
+    "GuestSession": {
+      "description": "Reply to `POST /api/v1/sessions/guest`; `token` is what `Authenticate` expects.",
+      "properties": {
+        "token": {
+          "type": "string"
+        },
+        "user": {
+          "$ref": "#/$defs/User"
+        }
+      },
+      "required": [
+        "token",
+        "user"
+      ],
+      "type": "object"
+    },
+    "GuestSessionRequest": {
+      "description": "Body of `POST /api/v1/sessions/guest`.",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "HttpError": {
+      "description": "Body of every failed HTTP request.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
     "LobbyDetails": {
       "properties": {
         "bot_difficulty": {
@@ -3003,6 +3047,35 @@
       ],
       "type": "object"
     },
+    "UpgradeRequest": {
+      "description": "Body of `POST /api/v1/sessions/upgrade`: later logins with the account map to the guest's user id.",
+      "properties": {
+        "account_token": {
+          "description": "A Keycloak access token.",
+          "type": "string"
+        },
+        "guest_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "guest_token",
+        "account_token"
+      ],
+      "type": "object"
+    },
+    "Upgraded": {
+      "description": "Reply to `POST /api/v1/sessions/upgrade`: the user as later account logins see it.",
+      "properties": {
+        "user": {
+          "$ref": "#/$defs/User"
+        }
+      },
+      "required": [
+        "user"
+      ],
+      "type": "object"
+    },
     "User": {
       "properties": {
         "id": {
@@ -3032,7 +3105,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "A WebSocket text frame holds one ClientMessage (client to server) or one ServerMessage (server to client).",
+  "description": "A WebSocket text frame holds one ClientMessage (client to server) or one ServerMessage (server to client). GuestSessionRequest, GuestSession, UpgradeRequest, Upgraded and HttpError are the bodies of the HTTP session routes.",
   "oneOf": [
     {
       "$ref": "#/$defs/ClientMessage"

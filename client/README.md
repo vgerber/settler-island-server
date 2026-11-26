@@ -3,9 +3,9 @@
 `schema.json` and `godot/settler_island_api/` are generated from the protocol types in `settler_island_protocol`;
 never edit them by hand. The rest of `godot/` is the hand-written game project (Godot 4.7, typed GDScript).
 
-- `schema.json`: JSON Schema of `ClientMessage` and `ServerMessage` (definitions under `$defs`).
-- `godot/settler_island_api/`: Godot 4 GDScript, one `Si<Type>.gd` per schema type, plus the `SiClient` node.
-- `godot/SiGuestSession.gd`: hand-written (not generated) helper for `POST /api/v1/sessions/guest`; copy it next to the API folder.
+- `schema.json`: JSON Schema of `ClientMessage`, `ServerMessage` and the HTTP session bodies (definitions under `$defs`).
+- `godot/settler_island_api/`: Godot 4 GDScript, one `Si<Type>.gd` per schema type, plus the `SiClient` node, the
+  `SiSessionClient` node for the HTTP session routes, and `SiLimits` (limits, purchase costs, default port, routes).
 - `godot/project.godot`, `godot/scenes/`, `godot/scripts/`: the game (see below).
 - `godot/tools/screenshot.gd`: walks the screens against a running server and saves a PNG of each.
 - `godot/tools/board_screenshot.gd`: renders the game screen for the board fixtures that the Godot board test
@@ -31,7 +31,7 @@ SETTLER_BIND=127.0.0.1:8253 SETTLER_SESSION_SECRET=<32+ bytes> cargo run -p sett
 ~/Software/godot/godot --path client/godot -s tools/screenshot.gd -- http://127.0.0.1:8253 "$PWD/.build"
 ```
 
-The test project copies only `SiGuestSession.gd` from `godot/`; the full-game test copies all of `godot/` (without
+The test project copies only the generated API from `godot/`; the full-game test copies all of `godot/` (without
 `.godot/`) and plays a game through `Net` and `GameState`, reconnecting midway. `ui_game.gd` runs the real main scene and plays
 a whole game by clicking HUD buttons, dialogs and highlighted board targets (seeded random choices); it fails
 on a dead end, a click that misses its control or a game that does not finish.
@@ -65,30 +65,32 @@ ln -s /path/to/settler-island-server/client/godot/settler_island_api /path/to/ga
 
 ## Example
 
-The generated client covers only the WebSocket. A guest first gets a token over HTTP with `SiGuestSession`
-(`POST /api/v1/sessions/guest {name}` -> `{token, user}`), then sends `Authenticate` as the first message:
+A guest first gets a token over HTTP with `SiSessionClient` (`POST SiLimits.GUEST_SESSION_ROUTE` with a
+`SiGuestSessionRequest`, answered by a `SiGuestSession`), then sends `Authenticate` as the first message. A refused
+request emits `failed` with the server's `SiHttpError` message:
 
 ```gdscript
 extends Node
 
 var client := SiClient.new()
-var session := SiGuestSession.new()
+var session := SiSessionClient.new()
+var server := "http://127.0.0.1:%d" % SiLimits.DEFAULT_PORT
 var token := ""
 
 func _ready() -> void:
 	add_child(client)
 	add_child(session)
-	session.succeeded.connect(_on_session)
-	session.failed.connect(func(reason): push_warning(reason))
-	session.request("http://127.0.0.1:8080", "Ada")
+	session.guest_session_received.connect(_on_session)
+	session.failed.connect(func(reason, _error): push_warning(reason))
+	session.request_guest_session(server, "Ada")
 
-func _on_session(new_token: String, _user: SiUser) -> void:
-	token = new_token
+func _on_session(guest: SiGuestSession) -> void:
+	token = guest.token
 	client.connected.connect(func(): client.send_authenticate(token))
 	client.welcome_received.connect(_on_welcome)
 	client.game_update_received.connect(_on_game_update)
 	client.error_received.connect(func(message): push_warning(message.message))
-	client.connect_to_url("ws://127.0.0.1:8080/api/v1/ws")
+	client.connect_to_url(server.replace("http://", "ws://") + SiLimits.WEBSOCKET_ROUTE)
 
 func _on_welcome(message: SiServerMessageWelcome) -> void:
 	print("logged in as ", message.user.name)

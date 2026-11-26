@@ -3,8 +3,6 @@ extends Control
 ## Lists open lobbies (refreshed every few seconds, the server does not push the list), joins one or
 ## creates a new one. The server's `LobbyState` reply moves on to the lobby room.
 
-const LOBBIES_PER_PAGE := 50
-const SEAT_CHOICES: Array[int] = [4, 3]
 
 @onready var _user_label: Label = %UserLabel
 @onready var _lobby_list: ItemList = %LobbyList
@@ -20,10 +18,17 @@ const SEAT_CHOICES: Array[int] = [4, 3]
 @onready var _refresh_timer: Timer = %RefreshTimer
 
 var _lobbies: Array[SiLobbySummary] = []
+## Largest first, so the default choice is a full table.
+var _seat_choices: Array[int] = []
 
 
 func _ready() -> void:
-	for seats in SEAT_CHOICES:
+	_lobby_name_edit.max_length = SiLimits.MAX_LOBBY_NAME_CHARS
+	_points_spin.min_value = SiLimits.MIN_POINTS_TO_WIN
+	_points_spin.max_value = SiLimits.MAX_POINTS_TO_WIN
+	_points_spin.value = SiLimits.DEFAULT_POINTS_TO_WIN
+	for seats in range(SiLimits.MAX_SEATS, SiLimits.MIN_SEATS - 1, -1):
+		_seat_choices.append(seats)
 		_seats_option.add_item("%d players" % seats)
 	for difficulty in SiDifficulty.VALUES:
 		_difficulty_option.add_item(difficulty)
@@ -42,7 +47,7 @@ func _ready() -> void:
 
 
 func _refresh() -> void:
-	Net.client.send_list_lobbies(0, LOBBIES_PER_PAGE)
+	Net.client.send_list_lobbies(0, SiLimits.MAX_LOBBIES_PER_PAGE)
 
 
 func _on_lobbies(message: SiServerMessageLobbies) -> void:
@@ -87,7 +92,7 @@ func _on_create() -> void:
 	var password := _create_password_edit.text
 	Net.client.send_create_lobby(
 		_lobby_name_edit.text.strip_edges(),
-		SEAT_CHOICES[_seats_option.selected],
+		_seat_choices[_seats_option.selected],
 		SiDifficulty.VALUES[_difficulty_option.selected],
 		null if password.is_empty() else password,
 		int(_points_spin.value),

@@ -7,14 +7,13 @@ signal failed(reason: String)
 
 const SESSION_PATH := "user://session.cfg"
 const SESSION_SECTION := "session"
-const WEBSOCKET_PATH := "/api/v1/ws"
 
 var client: SiClient = SiClient.new()
 var user: SiUser = null
 var server_http: String = ""
 var user_name: String = ""
 
-var _session: SiGuestSession = SiGuestSession.new()
+var _session: SiSessionClient = SiSessionClient.new()
 var _token: String = ""
 ## True while the token came from the session file; the server may have forgotten it since.
 var _token_is_stored: bool = false
@@ -29,8 +28,8 @@ var _socket_opened: bool = false
 func _ready() -> void:
 	add_child(client)
 	add_child(_session)
-	_session.succeeded.connect(_on_session_succeeded)
-	_session.failed.connect(_fail)
+	_session.guest_session_received.connect(_on_guest_session)
+	_session.failed.connect(_on_session_failed)
 	client.connected.connect(_on_connected)
 	client.disconnected.connect(_on_disconnected)
 	client.welcome_received.connect(_on_welcome)
@@ -47,7 +46,7 @@ func start(new_server_http: String, new_user_name: String) -> void:
 	if _token_is_stored:
 		_open_socket()
 		return
-	_session.request(server_http, user_name)
+	_session.request_guest_session(server_http, user_name)
 
 
 func stop() -> void:
@@ -90,8 +89,8 @@ func _store_token() -> void:
 		push_warning("Net: could not save the session (%d)" % error)
 
 
-func _on_session_succeeded(token: String, _guest: SiUser) -> void:
-	_token = token
+func _on_guest_session(session: SiGuestSession) -> void:
+	_token = session.token
 	_token_is_stored = false
 	_store_token()
 	if _reauthenticating:
@@ -101,9 +100,14 @@ func _on_session_succeeded(token: String, _guest: SiUser) -> void:
 	_open_socket()
 
 
+## Shows the server's own reason, such as a name that is too long.
+func _on_session_failed(reason: String, _error: SiHttpError) -> void:
+	_fail(reason)
+
+
 func _open_socket() -> void:
 	_socket_opened = true
-	var url := server_http.replace("https://", "wss://").replace("http://", "ws://") + WEBSOCKET_PATH
+	var url := server_http.replace("https://", "wss://").replace("http://", "ws://") + SiLimits.WEBSOCKET_ROUTE
 	var error := client.connect_to_url(url)
 	if error != OK:
 		_fail("cannot open %s (%d)" % [url, error])
@@ -140,7 +144,7 @@ func _on_error(message: SiServerMessageError) -> void:
 	if message.code is SiErrorCodeInvalidToken and _token_is_stored:
 		_token_is_stored = false
 		_reauthenticating = true
-		_session.request(server_http, user_name)
+		_session.request_guest_session(server_http, user_name)
 		return
 	_fail("login refused: %s" % message.message)
 

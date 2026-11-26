@@ -28,6 +28,7 @@ use axum::{Json, Router};
 use serde::Serialize;
 use settler_island_protocol::{
     ErrorCode, GuestSession, GuestSessionRequest, HttpError, UpgradeRequest, Upgraded,
+    GUEST_SESSION_ROUTE, HEALTH_ROUTE, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
 };
 use tokio::net::TcpListener;
 
@@ -127,16 +128,16 @@ pub async fn router<S: GameStore, I: IdentityStore>(
         metrics,
     };
     let sessions = Router::new()
-        .route("/api/v1/sessions/guest", post(guest_session::<I>))
-        .route("/api/v1/sessions/upgrade", post(upgrade_session::<I>))
+        .route(GUEST_SESSION_ROUTE, post(guest_session::<I>))
+        .route(UPGRADE_SESSION_ROUTE, post(upgrade_session::<I>))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             limit_sessions::<I>,
         ));
     let router = Router::new()
-        .route("/api/v1/health", get(health))
+        .route(HEALTH_ROUTE, get(health))
         .route("/metrics", get(metrics_page::<I>))
-        .route("/api/v1/ws", get(upgrade::<I>))
+        .route(WEBSOCKET_ROUTE, get(upgrade::<I>))
         .merge(sessions)
         .with_state(state);
     Ok(router)

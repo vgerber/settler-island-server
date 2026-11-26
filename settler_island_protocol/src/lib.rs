@@ -4,18 +4,26 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use settler_island_bot::Difficulty;
-pub use settler_island_game::{Action, Event, GameError, GameRecord, PlayerView, Seat};
+pub use settler_island_game::{
+    Action, Event, GameError, GameRecord, PlayerView, Purchase, Resource, Seat,
+    DEFAULT_POINTS_TO_WIN, MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
+};
 
 /// Larger text frames are answered with `ErrorCode::MessageTooLarge`.
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 pub const MAX_USER_NAME_CHARS: usize = 24;
 pub const MAX_LOBBY_NAME_CHARS: usize = 40;
 pub const MAX_LOBBIES_PER_PAGE: u32 = 50;
-pub const MIN_SEATS: u8 = 3;
-pub const MAX_SEATS: u8 = 4;
-pub const MIN_POINTS_TO_WIN: u8 = 3;
-pub const MAX_POINTS_TO_WIN: u8 = 15;
-pub const DEFAULT_POINTS_TO_WIN: u8 = 10;
+
+/// The port the server listens on unless `SETTLER_BIND` says otherwise.
+pub const DEFAULT_PORT: u16 = 8253;
+/// `GET` upgrades to the WebSocket that carries `ClientMessage` and `ServerMessage`.
+pub const WEBSOCKET_ROUTE: &str = "/api/v1/ws";
+/// `POST` a `GuestSessionRequest`, get a `GuestSession`.
+pub const GUEST_SESSION_ROUTE: &str = "/api/v1/sessions/guest";
+/// `POST` an `UpgradeRequest`, get `Upgraded`.
+pub const UPGRADE_SESSION_ROUTE: &str = "/api/v1/sessions/upgrade";
+pub const HEALTH_ROUTE: &str = "/api/v1/health";
 
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -279,18 +287,37 @@ impl ErrorCode {
     pub fn description(&self) -> String {
         let text = match self {
             ErrorCode::InvalidMessage => "the message is not a valid client message",
-            ErrorCode::MessageTooLarge => "the message is larger than 64 KiB",
+            ErrorCode::MessageTooLarge => {
+                return format!(
+                    "the message is larger than {} KiB",
+                    MAX_MESSAGE_BYTES / 1024
+                )
+            }
             ErrorCode::RateLimited => "too many messages, slow down",
             ErrorCode::NotWelcomed => "send Authenticate first",
             ErrorCode::AlreadyWelcomed => "Authenticate was already sent",
             ErrorCode::InvalidToken => "the token is invalid or expired",
             ErrorCode::AccountsDisabled => "this server does not accept accounts",
             ErrorCode::AccountAlreadyLinked => "the account is already linked to another user",
-            ErrorCode::InvalidName => "the name must have 1 to 24 visible characters",
-            ErrorCode::InvalidLobbyName => "the lobby name must have 1 to 40 visible characters",
-            ErrorCode::InvalidSeatCount => "a lobby has 3 or 4 seats",
-            ErrorCode::InvalidPointsToWin => "points to win must be between 3 and 15",
-            ErrorCode::InvalidPage => "per_page must be between 1 and 50",
+            ErrorCode::InvalidName => {
+                return format!("the name must have 1 to {MAX_USER_NAME_CHARS} visible characters")
+            }
+            ErrorCode::InvalidLobbyName => {
+                return format!(
+                    "the lobby name must have 1 to {MAX_LOBBY_NAME_CHARS} visible characters"
+                )
+            }
+            ErrorCode::InvalidSeatCount => {
+                return format!("a lobby has {MIN_SEATS} to {MAX_SEATS} seats")
+            }
+            ErrorCode::InvalidPointsToWin => {
+                return format!(
+                    "points to win must be between {MIN_POINTS_TO_WIN} and {MAX_POINTS_TO_WIN}"
+                )
+            }
+            ErrorCode::InvalidPage => {
+                return format!("per_page must be between 1 and {MAX_LOBBIES_PER_PAGE}")
+            }
             ErrorCode::LobbyNotFound => "no such lobby",
             ErrorCode::LobbyFull => "the lobby is full",
             ErrorCode::GameAlreadyStarted => "the game has already started",

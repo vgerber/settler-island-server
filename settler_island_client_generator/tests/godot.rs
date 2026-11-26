@@ -23,8 +23,6 @@ use settler_island_protocol::{
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
 const GODOT_TIMEOUT: Duration = Duration::from_secs(240);
-/// The one hand-written script of `client/godot` the API test project needs.
-const GUEST_SESSION: &str = "SiGuestSession.gd";
 
 fn godot_binary() -> Option<PathBuf> {
     let path = std::env::var_os("SETTLER_GODOT")
@@ -52,7 +50,7 @@ fn godot_binary() -> Option<PathBuf> {
 
 #[derive(Clone, Copy)]
 enum Project {
-    /// `client/godot_tests` with the generated API and the guest session helper only.
+    /// `client/godot_tests` with the generated API only.
     Api,
     /// The game project `client/godot` plus every script of `client/godot_tests`.
     Game,
@@ -104,11 +102,6 @@ fn prepare_test_project(root: &Path) {
     let client = default_client_directory();
     copy_sources(&client.join("godot_tests"), &project);
     copy_sources(&client.join(API_DIRECTORY), &api);
-    fs::copy(
-        client.join("godot").join(GUEST_SESSION),
-        project.join(GUEST_SESSION),
-    )
-    .unwrap();
 }
 
 fn prepare_game_project(root: &Path) {
@@ -652,6 +645,28 @@ fn net_goes_online_after_a_failed_start() {
         "net_reconnect.gd",
         &server,
         "NET_RECONNECT_OK",
+    );
+}
+
+#[test]
+fn screens_take_their_limits_from_the_protocol() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let fixture = json!({
+        "server": start_server(&runtime, None),
+        "invalid_name_message": ErrorCode::InvalidName.description(),
+    });
+    let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-screen-limits.json");
+    fs::write(&fixture_path, fixture.to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "screen_limits.gd",
+        fixture_path.to_str().unwrap(),
+        "SCREEN_LIMITS_OK",
     );
 }
 
