@@ -3,6 +3,7 @@
 mod config;
 mod connection;
 mod connection_limit;
+mod http_server;
 mod identity;
 mod lobby;
 mod metrics;
@@ -49,6 +50,7 @@ pub use store::{
 };
 
 use connection_limit::ConnectionLimiter;
+pub use http_server::serve_router;
 use identity::Identity;
 use metrics::Metrics;
 use password::GuessLimiter;
@@ -200,7 +202,7 @@ pub async fn router<S: GameStore, I: IdentityStore>(
     Ok(router)
 }
 
-/// Serves until `shutdown` completes.
+/// Builds the router and serves it until `shutdown` completes, metrics on the game port.
 pub async fn serve<S: GameStore, I: IdentityStore>(
     listener: TcpListener,
     config: Config,
@@ -209,12 +211,8 @@ pub async fn serve<S: GameStore, I: IdentityStore>(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), ServeError> {
     let router = router(config, store, identities).await?;
-    axum::serve(
-        listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown)
-    .await?;
+    // The same hyper path as the binary, so tests exercise the header timeout too.
+    serve_router(listener, None, router, shutdown).await;
     Ok(())
 }
 

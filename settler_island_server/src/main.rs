@@ -1,6 +1,6 @@
 use settler_island_server::{
-    serve, Config, LogFormat, MemoryIdentityStore, MemoryStore, PoolSettings, PostgresStore,
-    ServeError, StoreError,
+    router, serve_router, Config, LogFormat, MemoryIdentityStore, MemoryStore, PoolSettings,
+    PostgresStore, ServeError, StoreError,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -52,6 +52,13 @@ enum StartError {
 async fn run(config: Config) -> Result<(), StartError> {
     let listener = TcpListener::bind(config.bind).await?;
     info!(address = %listener.local_addr()?, "listening");
+    let metrics_listener = match config.metrics_bind {
+        Some(address) => Some(TcpListener::bind(address).await?),
+        None => None,
+    };
+    if let Some(metrics_listener) = &metrics_listener {
+        info!(address = %metrics_listener.local_addr()?, "serving metrics");
+    }
     match config.database_url.clone() {
         Some(url) => {
             let pool_settings = PoolSettings {
@@ -60,13 +67,15 @@ async fn run(config: Config) -> Result<(), StartError> {
             };
             let store = PostgresStore::connect(url.options(), pool_settings).await?;
             info!("games are stored in Postgres");
-            serve(listener, config, store.clone(), store, shutdown_signal()).await?;
+            let app = router(config, store.clone(), store).await?;
+            serve_router(listener, metrics_listener, app, shutdown_signal()).await;
         }
         None => {
             warn!("DATABASE_URL is unset: games and account links live in memory only");
             let games = MemoryStore::default();
             let identities = MemoryIdentityStore::default();
-            serve(listener, config, games, identities, shutdown_signal()).await?;
+            let app = router(config, games, identities).await?;
+            serve_router(listener, metrics_listener, app, shutdown_signal()).await;
         }
     }
     info!("shut down");
