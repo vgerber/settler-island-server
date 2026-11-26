@@ -37,3 +37,6 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Watch: `concurrent_lobby_traffic_neither_deadlocks_nor_leaks` failed once under heavy parallel agent load (log lost; 30/30 alone). On the next failure read the kept gate log under .build/logs/ before changing anything.
 - Later: replay/rebuild reject a record whose format_version is not FORMAT_VERSION (today it is written but never checked).
 - After 3d: drop the dead `if "request_id" in message:` guard in the generator (SiClient.gd changes once); generator: dedup all field names in read_fields, add the DuplicateFile unit test.
+- 3g (after 3e, protocol): interrupt phases (MoveRobber, Steal, Discard, RoadBuilding) carry the phase they resume
+  (Roll or Main) instead of the `dice_rolled` flag, so "Main without a roll" is unrepresentable; touches phase.rs,
+  game.rs, robber.rs, development.rs, turn.rs, client/. Replace remaining GameRecord::push callers with push_entry.
