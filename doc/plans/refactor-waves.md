@@ -40,3 +40,6 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - 3g (after 3e, protocol): interrupt phases (MoveRobber, Steal, Discard, RoadBuilding) carry the phase they resume
   (Roll or Main) instead of the `dice_rolled` flag, so "Main without a roll" is unrepresentable; touches phase.rs,
   game.rs, robber.rs, development.rs, turn.rs, client/. Replace remaining GameRecord::push callers with push_entry.
+- Security 2B is on branch worktree-agent-a9e15d8dcebfc7e98 (1461622): merge after 1B, then switch lib.rs
+  client_address to rate_limit::forwarded_client(peer, x-forwarded-for, trusted proxies or &[] when
+  trust_forwarded_for is off); the gate fails on dead code until then.
