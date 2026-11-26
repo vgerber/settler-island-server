@@ -7,7 +7,8 @@ use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Seat};
 
-const FORMAT_VERSION: u16 = 1;
+// 2: the open trade moved into `Phase::TradeOffered { offer }`, so phase events carry the offer.
+const FORMAT_VERSION: u16 = 2;
 const RULES_VERSION: u16 = 1;
 
 /// A game as header plus ordered entries; random outcomes are in the events, the seed is never stored.
