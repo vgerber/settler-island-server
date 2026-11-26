@@ -24,7 +24,7 @@ messages), meet in lobbies and play; the server owns all game state.
 
 ```sh
 docker compose up -d db                                   # Postgres on 127.0.0.1:6436
-cp .env.example .env                                      # every setting is documented in the file
+cp .env.example .env                                      # every setting is documented; sets SQLX_OFFLINE=true
 set -a && . ./.env && set +a
 cargo run -p settler_island_server                        # listens on 127.0.0.1:8253
 ```
@@ -47,10 +47,12 @@ Postgres tests skip unless `SETTLER_TEST_DATABASE_URL` points at a server (each 
 SETTLER_TEST_DATABASE_URL=postgres://settler:settler@127.0.0.1:6436/settler_island cargo test --workspace
 ```
 
-Queries are checked at compile time against `.sqlx`; build with `SQLX_OFFLINE=true` when no database is running, and
-refresh the data after changing a query with `cargo sqlx prepare --workspace`. New migrations go in
+Queries are checked at compile time against `.sqlx`. `.env` (copied from `.env.example`) sets `SQLX_OFFLINE=true`, which
+sqlx reads at compile time, so every `cargo` command builds with the database stopped. Without a `.env`, export
+`SQLX_OFFLINE=true` first. Refresh the data after changing a query with the database running and
+`cargo sqlx prepare --workspace` (install with `cargo install sqlx-cli --version 0.8.6 --locked`). New migrations go in
 `settler_island_server/migrations` (`cargo sqlx migrate add <name> --source settler_island_server/migrations`).
-CI runs format, clippy and the tests, with and without Postgres (`.github/workflows/ci.yml`).
+CI runs format, clippy, `cargo sqlx prepare --workspace --check` and the tests, with and without Postgres (`.github/workflows/ci.yml`).
 
 ## Client generator
 
