@@ -4,8 +4,10 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use settler_island_bot::Bot;
+use settler_island_game::{Action, Phase, PlayerView, Seat};
 use settler_island_protocol::{
-    ClientMessage, ErrorCode, GuestSession, GuestSessionRequest, LobbyDetails, LobbyId,
+    ClientMessage, Difficulty, ErrorCode, GuestSession, GuestSessionRequest, LobbyDetails, LobbyId,
     ServerMessage, User,
 };
 use settler_island_server::{
@@ -67,20 +69,78 @@ pub async fn start_with(
 }
 
 /// A fresh, empty database on the server in `SETTLER_TEST_DATABASE_URL`, so tests run in parallel;
-/// `None` (after a skip notice) when the variable is unset.
-pub async fn test_database(test: &str) -> Option<PgConnectOptions> {
+/// dropped again when the guard goes out of scope.
+pub struct TestDatabase {
+    admin: PgConnectOptions,
+    name: String,
+}
+
+impl TestDatabase {
+    pub fn options(&self) -> PgConnectOptions {
+        self.admin.clone().database(&self.name)
+    }
+}
+
+impl Drop for TestDatabase {
+    fn drop(&mut self) {
+        let admin = self.admin.clone();
+        let statement = format!("DROP DATABASE IF EXISTS {} WITH (FORCE)", self.name);
+        // Drop cannot await and the test's runtime may be gone or busy, so a thread with its own runtime does it.
+        let dropped = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let mut connection = admin.connect().await.unwrap();
+                connection.execute(statement.as_str()).await.unwrap();
+            });
+        })
+        .join();
+        if dropped.is_err() && !std::thread::panicking() {
+            panic!("could not drop the test database {}", self.name);
+        }
+    }
+}
+
+/// `None` (after a skip notice) when `SETTLER_TEST_DATABASE_URL` is unset.
+pub async fn test_database() -> Option<TestDatabase> {
     let Ok(url) = std::env::var("SETTLER_TEST_DATABASE_URL") else {
+        let test = std::thread::current()
+            .name()
+            .unwrap_or("a test")
+            .to_string();
         eprintln!("skipping {test}: SETTLER_TEST_DATABASE_URL is unset");
         return None;
     };
-    let options: PgConnectOptions = url.parse().unwrap();
+    let admin: PgConnectOptions = url.parse().unwrap();
     let name = format!("settler_test_{}", uuid::Uuid::new_v4().simple());
-    let mut admin = options.connect().await.unwrap();
-    admin
+    let mut connection = admin.connect().await.unwrap();
+    connection
         .execute(format!("CREATE DATABASE {name}").as_str())
         .await
         .unwrap();
-    Some(options.database(&name))
+    Some(TestDatabase { admin, name })
+}
+
+/// Polls `check` until it returns a value; panics after `RECEIVE_TIMEOUT`. For state that settles on its own,
+/// where a fixed sleep is either too slow or flaky.
+pub async fn eventually<Value, Check, Pending>(what: &str, mut check: Check) -> Value
+where
+    Check: FnMut() -> Pending,
+    Pending: std::future::Future<Output = Option<Value>>,
+{
+    let deadline = tokio::time::Instant::now() + RECEIVE_TIMEOUT;
+    loop {
+        if let Some(value) = check().await {
+            return value;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 pub async fn guest_session(address: SocketAddr, name: &str) -> GuestSession {
@@ -225,6 +285,16 @@ impl Client {
     }
 
     pub async fn create_lobby(&mut self, name: &str, seats: u8, password: Option<&str>) -> LobbyId {
+        self.create_lobby_to(name, seats, password, None).await
+    }
+
+    pub async fn create_lobby_to(
+        &mut self,
+        name: &str,
+        seats: u8,
+        password: Option<&str>,
+        points_to_win: Option<u8>,
+    ) -> LobbyId {
         let name = name.to_string();
         let password = password.map(str::to_string);
         let lobby = self
@@ -233,11 +303,82 @@ impl Client {
                 name,
                 password,
                 seats,
-                points_to_win: None,
+                points_to_win,
                 bot_difficulty: None,
             })
             .await;
         lobby.id
+    }
+
+    /// Joins and returns the lobby, or the refusal.
+    pub async fn try_join(
+        &mut self,
+        lobby: LobbyId,
+        password: Option<&str>,
+    ) -> Result<LobbyDetails, ErrorCode> {
+        match self.join(lobby, password).await {
+            ServerMessage::LobbyState { lobby, .. } => Ok(lobby),
+            ServerMessage::Error { code, .. } => Err(code),
+            other => panic!("expected LobbyState or Error, got {other:?}"),
+        }
+    }
+
+    /// The next `GameStarted` (a start or a `GetState` answer), skipping anything else.
+    pub async fn next_game_started(&mut self) -> Dealt {
+        loop {
+            if let ServerMessage::GameStarted {
+                seat,
+                view,
+                legal_actions,
+                ..
+            } = self.receive().await
+            {
+                return Dealt {
+                    seat,
+                    view,
+                    legal_actions,
+                };
+            }
+        }
+    }
+
+    /// The next `GameUpdate`, skipping anything else.
+    pub async fn next_game_update(&mut self) -> (PlayerView, Vec<Action>) {
+        loop {
+            if let ServerMessage::GameUpdate {
+                view,
+                legal_actions,
+                ..
+            } = self.receive().await
+            {
+                return (view, legal_actions);
+            }
+        }
+    }
+
+    /// Creates a lobby of `seats`, fills the other seats with bots of `difficulty`, starts it and waits for the deal.
+    pub async fn start_with_bots(
+        &mut self,
+        name: &str,
+        seats: u8,
+        points_to_win: Option<u8>,
+        difficulty: Difficulty,
+    ) -> (LobbyId, Dealt) {
+        let lobby = self.create_lobby_to(name, seats, None, points_to_win).await;
+        for _ in 1..seats {
+            self.expect_lobby(|request_id| ClientMessage::AddBot {
+                request_id,
+                difficulty,
+            })
+            .await;
+        }
+        let started = self
+            .request(|request_id| ClientMessage::StartGame { request_id })
+            .await;
+        let ServerMessage::LobbyState { .. } = started else {
+            panic!("expected LobbyState, got {started:?}");
+        };
+        (lobby, self.next_game_started().await)
     }
 
     pub async fn join(&mut self, lobby: LobbyId, password: Option<&str>) -> ServerMessage {
@@ -248,5 +389,83 @@ impl Client {
             password,
         })
         .await
+    }
+}
+
+/// What a seat got when the game started.
+pub struct Dealt {
+    pub seat: Seat,
+    pub view: PlayerView,
+    pub legal_actions: Vec<Action>,
+}
+
+/// A seat's latest view while a bot plays it.
+pub struct Play {
+    pub view: PlayerView,
+    pub legal: Vec<Action>,
+    /// Game updates received so far.
+    pub updates: usize,
+    outstanding: Option<u32>,
+}
+
+impl Play {
+    pub fn new(view: PlayerView, legal: Vec<Action>) -> Play {
+        Play {
+            view,
+            legal,
+            updates: 0,
+            outstanding: None,
+        }
+    }
+
+    /// The seat may act and has nothing in flight.
+    pub fn to_move(&self) -> bool {
+        self.outstanding.is_none() && !self.legal.is_empty()
+    }
+
+    pub fn finished(&self) -> bool {
+        matches!(self.view.phase, Phase::Finished { .. })
+    }
+}
+
+/// Plays the seat with `bot` until `stop` says so; `stop` is asked before every move. Lobby broadcasts are ignored and
+/// a move that bots overtook is dropped (the next update brings a fresh list); anything else fails the test.
+pub async fn play_as(
+    client: &mut Client,
+    bot: &mut dyn Bot,
+    play: &mut Play,
+    mut stop: impl FnMut(&Play) -> bool,
+) {
+    while !stop(play) {
+        if play.to_move() {
+            let action = bot.choose(&play.view, &play.legal);
+            play.outstanding = Some(
+                client
+                    .send(|request_id| ClientMessage::Act { request_id, action })
+                    .await,
+            );
+        }
+        match client.receive().await {
+            ServerMessage::GameUpdate {
+                request_id,
+                view,
+                legal_actions,
+                ..
+            } => {
+                if request_id.is_some() && request_id == play.outstanding {
+                    play.outstanding = None;
+                }
+                play.view = view;
+                play.legal = legal_actions;
+                play.updates += 1;
+            }
+            ServerMessage::Error {
+                request_id,
+                code: ErrorCode::Game { .. },
+                ..
+            } if request_id.is_some() && request_id == play.outstanding => play.outstanding = None,
+            ServerMessage::LobbyState { .. } => {}
+            other => panic!("unexpected message during play: {other:?}"),
+        }
     }
 }

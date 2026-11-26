@@ -2,10 +2,10 @@ mod common;
 
 use std::time::Duration;
 
-use common::{start, test_config, Client};
+use common::{play_as, start, test_config, Client, Play};
 use settler_island_bot::create_bot;
 use settler_island_game::{replay, Action, GameSettings, Phase, PlayerView, Seat};
-use settler_island_protocol::{ClientMessage, Difficulty, ErrorCode, ServerMessage};
+use settler_island_protocol::{ClientMessage, Difficulty, ServerMessage};
 use settler_island_server::Config;
 
 const SEED: u64 = 11;
@@ -60,81 +60,22 @@ async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
 /// Plays one game with the random bot logic for the human; `None` when it runs too long.
 async fn play_once(address: std::net::SocketAddr, attempt: u64) -> Option<Finished> {
     let (mut client, _) = Client::welcomed(address, "Human").await;
-    let password = None;
-    client
-        .expect_lobby(|request_id| ClientMessage::CreateLobby {
-            request_id,
-            name: "Seeded".to_string(),
-            password,
-            seats: 4,
-            points_to_win: Some(POINTS_TO_WIN),
-            bot_difficulty: None,
-        })
+    let (_, dealt) = client
+        .start_with_bots("Seeded", 4, Some(POINTS_TO_WIN), Difficulty::Random)
         .await;
-    for _ in 0..3 {
-        client
-            .expect_lobby(|request_id| ClientMessage::AddBot {
-                request_id,
-                difficulty: Difficulty::Random,
-            })
-            .await;
-    }
-    let start_id = client
-        .send(|request_id| ClientMessage::StartGame { request_id })
-        .await;
-    let (seat, mut view, mut legal) = loop {
-        if let ServerMessage::GameStarted {
-            request_id: Some(id),
-            seat,
-            view,
-            legal_actions,
-        } = client.receive().await
-        {
-            assert_eq!(id, start_id);
-            break (seat, view, legal_actions);
-        }
-    };
-
     let mut human = create_bot(Difficulty::Random, 1000 + attempt);
-    let mut outstanding: Option<u32> = None;
-    for _ in 0..MAX_UPDATES_PER_ATTEMPT {
-        if outstanding.is_none() && !legal.is_empty() {
-            let action = human.choose(&view, &legal);
-            outstanding = Some(
-                client
-                    .send(|request_id| ClientMessage::Act { request_id, action })
-                    .await,
-            );
-        }
-        match client.receive().await {
-            ServerMessage::GameUpdate {
-                request_id,
-                view: next_view,
-                legal_actions,
-                ..
-            } => {
-                if request_id.is_some() && request_id == outstanding {
-                    outstanding = None;
-                }
-                view = next_view;
-                legal = legal_actions;
-            }
-            // A move chosen from an update that bots overtook meanwhile; the next update brings a fresh list.
-            ServerMessage::Error {
-                request_id,
-                code: ErrorCode::Game { .. },
-                ..
-            } if request_id.is_some() && request_id == outstanding => outstanding = None,
-            other => panic!("unexpected message during play: {other:?}"),
-        }
-        if matches!(view.phase, Phase::Finished { .. }) {
-            let actions = full_record(&mut client).await;
-            return Some(Finished {
-                seat,
-                view,
-                actions,
-            });
-        }
+    let mut play = Play::new(dealt.view, dealt.legal_actions);
+    play_as(&mut client, human.as_mut(), &mut play, |play| {
+        play.finished() || play.updates >= MAX_UPDATES_PER_ATTEMPT as usize
+    })
+    .await;
+    if play.finished() {
+        let actions = full_record(&mut client).await;
+        return Some(Finished {
+            seat: dealt.seat,
+            view: play.view,
+            actions,
+        });
     }
     client
         .request(|request_id| ClientMessage::LeaveLobby { request_id })
@@ -169,87 +110,34 @@ async fn a_bot_offer_stays_open_until_the_asked_human_answers() {
     };
     let address = start(config).await;
     let (mut client, _) = Client::welcomed(address, "Human").await;
+    let (_, dealt) = client
+        .start_with_bots("Traders", 4, None, Difficulty::Heuristic)
+        .await;
+    let seat = dealt.seat;
+    let mut human = create_bot(Difficulty::Random, 3);
+    let mut play = Play::new(dealt.view, dealt.legal_actions);
+    let offered_by_bot = |play: &Play| {
+        let by_bot = play
+            .view
+            .trade
+            .as_ref()
+            .is_some_and(|offer| offer.seat != seat);
+        by_bot && play.legal.contains(&Action::RejectTrade)
+    };
+    play_as(&mut client, human.as_mut(), &mut play, |play| {
+        offered_by_bot(play)
+            || play.finished()
+            || play.updates >= MAX_UPDATES_PER_ATTEMPT as usize * 4
+    })
+    .await;
+    assert!(offered_by_bot(&play), "no bot offered the human a trade");
+    assert_offer_stays_open(&mut client).await;
     client
-        .expect_lobby(|request_id| ClientMessage::CreateLobby {
+        .send(|request_id| ClientMessage::Act {
             request_id,
-            name: "Traders".to_string(),
-            password: None,
-            seats: 4,
-            points_to_win: None,
-            bot_difficulty: None,
+            action: Action::RejectTrade,
         })
         .await;
-    for _ in 0..3 {
-        client
-            .expect_lobby(|request_id| ClientMessage::AddBot {
-                request_id,
-                difficulty: Difficulty::Heuristic,
-            })
-            .await;
-    }
-    client
-        .send(|request_id| ClientMessage::StartGame { request_id })
-        .await;
-    let (seat, mut view, mut legal) = loop {
-        if let ServerMessage::GameStarted {
-            seat,
-            view,
-            legal_actions,
-            ..
-        } = client.receive().await
-        {
-            break (seat, view, legal_actions);
-        }
-    };
-
-    let mut human = create_bot(Difficulty::Random, 3);
-    let mut outstanding: Option<u32> = None;
-    for _ in 0..MAX_UPDATES_PER_ATTEMPT * 4 {
-        let offered_by_bot = view.trade.as_ref().is_some_and(|offer| offer.seat != seat);
-        if offered_by_bot && legal.contains(&Action::RejectTrade) {
-            assert_offer_stays_open(&mut client).await;
-            client
-                .send(|request_id| ClientMessage::Act {
-                    request_id,
-                    action: Action::RejectTrade,
-                })
-                .await;
-            return;
-        }
-        if outstanding.is_none() && !legal.is_empty() {
-            let action = human.choose(&view, &legal);
-            outstanding = Some(
-                client
-                    .send(|request_id| ClientMessage::Act { request_id, action })
-                    .await,
-            );
-        }
-        match client.receive().await {
-            ServerMessage::GameUpdate {
-                request_id,
-                view: next_view,
-                legal_actions,
-                ..
-            } => {
-                if request_id.is_some() && request_id == outstanding {
-                    outstanding = None;
-                }
-                view = next_view;
-                legal = legal_actions;
-            }
-            ServerMessage::Error {
-                request_id,
-                code: ErrorCode::Game { .. },
-                ..
-            } if request_id.is_some() && request_id == outstanding => outstanding = None,
-            other => panic!("unexpected message during play: {other:?}"),
-        }
-        assert!(
-            !matches!(view.phase, Phase::Finished { .. }),
-            "no bot offered the human a trade"
-        );
-    }
-    panic!("no bot offered the human a trade");
 }
 
 /// Every update while the human stays silent still shows the offer.

@@ -2,9 +2,9 @@ mod common;
 
 use std::time::Duration;
 
-use common::{guest_session, start_with, test_config, test_database, Client};
-use settler_island_bot::{create_bot, Bot};
-use settler_island_game::{Action, Game, GameRecord, GameSettings, Phase, PlayerView, Seat};
+use common::{guest_session, play_as, start_with, test_config, test_database, Client, Play};
+use settler_island_bot::create_bot;
+use settler_island_game::{Action, Game, GameRecord, GameSettings, Phase, Seat};
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId, UserKind,
 };
@@ -45,10 +45,10 @@ fn new_game() -> NewGame {
 
 #[tokio::test]
 async fn postgres_snapshot_plus_replay_equals_the_live_game() {
-    let Some(options) = test_database("postgres_snapshot_plus_replay_equals_the_live_game").await
-    else {
+    let Some(database) = test_database().await else {
         return;
     };
+    let options = database.options();
     let store = PostgresStore::connect(options).await.unwrap();
     let id = store.create_game(new_game()).await.unwrap();
     let mut live = Game::new(new_game().settings).unwrap();
@@ -105,10 +105,10 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
 
 #[tokio::test]
 async fn postgres_abandoned_games_are_kept_but_not_restored() {
-    let Some(options) = test_database("postgres_abandoned_games_are_kept_but_not_restored").await
-    else {
+    let Some(database) = test_database().await else {
         return;
     };
+    let options = database.options();
     let store = PostgresStore::connect(options.clone()).await.unwrap();
     let abandoned = store.create_game(new_game()).await.unwrap();
     let running = store.create_game(new_game()).await.unwrap();
@@ -137,9 +137,10 @@ async fn postgres_abandoned_games_are_kept_but_not_restored() {
 
 #[tokio::test]
 async fn postgres_unattended_time_survives_a_reload_and_is_cleared_on_return() {
-    let Some(options) = test_database("postgres_unattended_time_survives_a_reload").await else {
+    let Some(database) = test_database().await else {
         return;
     };
+    let options = database.options();
     let store = PostgresStore::connect(options.clone()).await.unwrap();
     let id = store.create_game(new_game()).await.unwrap();
     assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
@@ -167,9 +168,10 @@ async fn postgres_unattended_time_survives_a_reload_and_is_cleared_on_return() {
 
 #[tokio::test]
 async fn postgres_identity_links_keep_the_first_user() {
-    let Some(options) = test_database("postgres_identity_links_keep_the_first_user").await else {
+    let Some(database) = test_database().await else {
         return;
     };
+    let options = database.options();
     let store = PostgresStore::connect(options).await.unwrap();
     let first = UserId("guest-first".to_string());
     let second = UserId("guest-second".to_string());
@@ -224,22 +226,10 @@ async fn an_action_the_store_rejects_is_never_broadcast() {
     )
     .await;
     let (mut client, _) = Client::welcomed(address, "Ada").await;
-    client.create_lobby("Unlucky", 3, None).await;
-    for _ in 0..2 {
-        client
-            .expect_lobby(|request_id| ClientMessage::AddBot {
-                request_id,
-                difficulty: Difficulty::Random,
-            })
-            .await;
-    }
-    let started = client
-        .request(|request_id| ClientMessage::StartGame { request_id })
+    let (_, dealt) = client
+        .start_with_bots("Unlucky", 3, None, Difficulty::Random)
         .await;
-    let ServerMessage::LobbyState { .. } = started else {
-        panic!("expected LobbyState, got {started:?}");
-    };
-    let (view, legal) = next_game_started(&mut client).await;
+    let (view, legal) = (dealt.view, dealt.legal_actions);
     let action = legal[0].clone();
 
     let act = client
@@ -258,72 +248,7 @@ async fn an_action_the_store_rejects_is_never_broadcast() {
     client
         .send(|request_id| ClientMessage::GetState { request_id })
         .await;
-    let (view_after, _) = next_game_started(&mut client).await;
-    assert_eq!(view_after, view);
-}
-
-async fn next_game_started(client: &mut Client) -> (PlayerView, Vec<Action>) {
-    loop {
-        if let ServerMessage::GameStarted {
-            view,
-            legal_actions,
-            ..
-        } = client.receive().await
-        {
-            return (view, legal_actions);
-        }
-    }
-}
-
-/// Plays with `human` until the game finishes, or until `stop_after` updates arrived and it is the human's
-/// turn (so the bots wait); returns the update count.
-async fn play(
-    client: &mut Client,
-    human: &mut dyn Bot,
-    view: &mut PlayerView,
-    mut legal: Vec<Action>,
-    stop_after: usize,
-) -> usize {
-    let mut outstanding: Option<u32> = None;
-    let mut updates = 0;
-    while !matches!(view.phase, Phase::Finished { .. }) {
-        let human_to_move = outstanding.is_none() && !legal.is_empty();
-        if updates >= stop_after && human_to_move {
-            break;
-        }
-        if human_to_move {
-            let action = human.choose(view, &legal);
-            outstanding = Some(
-                client
-                    .send(|request_id| ClientMessage::Act { request_id, action })
-                    .await,
-            );
-        }
-        match client.receive().await {
-            ServerMessage::GameUpdate {
-                request_id,
-                view: next_view,
-                legal_actions,
-                ..
-            } => {
-                if request_id.is_some() && request_id == outstanding {
-                    outstanding = None;
-                }
-                *view = next_view;
-                legal = legal_actions;
-                updates += 1;
-            }
-            // A move chosen from an update that bots overtook meanwhile.
-            ServerMessage::Error {
-                request_id,
-                code: ErrorCode::Game { .. },
-                ..
-            } if request_id.is_some() && request_id == outstanding => outstanding = None,
-            ServerMessage::LobbyState { .. } => {}
-            other => panic!("unexpected message during play: {other:?}"),
-        }
-    }
-    updates
+    assert_eq!(client.next_game_started().await.view, view);
 }
 
 fn server_runtime() -> Runtime {
@@ -337,11 +262,10 @@ fn server_runtime() -> Runtime {
 #[test]
 fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() {
     let client_runtime = server_runtime();
-    let Some(options) = client_runtime.block_on(test_database(
-        "a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay",
-    )) else {
+    let Some(database) = client_runtime.block_on(test_database()) else {
         return;
     };
+    let options = database.options();
     let config = Config {
         seed: Some(SEED),
         messages_per_second: 10_000,
@@ -357,21 +281,19 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     let (token, lobby, played_before) = client_runtime.block_on(async {
         let session = guest_session(address_a, "Ada").await;
         let (mut client, _) = Client::authenticated(address_a, &session.token).await;
-        let lobby = start_game(&mut client).await;
-        let (mut view, legal) = next_game_started(&mut client).await;
-        let played = play(
-            &mut client,
-            human.as_mut(),
-            &mut view,
-            legal,
-            ACTIONS_BEFORE_CRASH,
-        )
+        let (lobby, dealt) = client
+            .start_with_bots("Restart", 4, Some(POINTS_TO_WIN), Difficulty::Heuristic)
+            .await;
+        let mut play = Play::new(dealt.view, dealt.legal_actions);
+        play_as(&mut client, human.as_mut(), &mut play, |play| {
+            play.finished() || (play.updates >= ACTIONS_BEFORE_CRASH && play.to_move())
+        })
         .await;
         assert!(
-            !matches!(view.phase, Phase::Finished { .. }),
+            !play.finished(),
             "the game must still run when the server dies"
         );
-        (session.token, lobby, played)
+        (session.token, lobby, play.updates)
     });
     // A crash: every task of server A stops mid-flight.
     drop(server_a);
@@ -384,17 +306,20 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     let record = client_runtime.block_on(async {
         let (mut client, user) = Client::authenticated(address_b, &token).await;
         assert_eq!(user.name, "Ada");
-        let joined = client.join(lobby, None).await;
-        let ServerMessage::LobbyState { lobby: details, .. } = joined else {
-            panic!("rejoining after the restart failed: {joined:?}");
-        };
+        let details = client
+            .try_join(lobby, None)
+            .await
+            .expect("rejoining after the restart failed");
         assert!(details.started);
-        let (mut view, legal) = next_game_started(&mut client).await;
-        let finish = play(&mut client, human.as_mut(), &mut view, legal, MAX_UPDATES);
+        let dealt = client.next_game_started().await;
+        let mut play = Play::new(dealt.view, dealt.legal_actions);
+        let finish = play_as(&mut client, human.as_mut(), &mut play, |play| {
+            play.finished() || (play.updates >= MAX_UPDATES && play.to_move())
+        });
         tokio::time::timeout(Duration::from_secs(60), finish)
             .await
             .expect("the restored game did not finish in time");
-        assert!(matches!(view.phase, Phase::Finished { .. }));
+        assert!(play.finished());
         let reply = client
             .request(|request_id| ClientMessage::GetRecord { request_id })
             .await;
@@ -418,31 +343,4 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     }
     assert_eq!(record, expected);
     assert!(matches!(replayed.phase(), Phase::Finished { .. }));
-}
-
-/// Creates a 4-seat lobby with three heuristic bots and starts it.
-async fn start_game(client: &mut Client) -> LobbyId {
-    let password = None;
-    let lobby = client
-        .expect_lobby(|request_id| ClientMessage::CreateLobby {
-            request_id,
-            name: "Restart".to_string(),
-            password,
-            seats: 4,
-            points_to_win: Some(POINTS_TO_WIN),
-            bot_difficulty: None,
-        })
-        .await;
-    for _ in 0..3 {
-        client
-            .expect_lobby(|request_id| ClientMessage::AddBot {
-                request_id,
-                difficulty: Difficulty::Heuristic,
-            })
-            .await;
-    }
-    client
-        .send(|request_id| ClientMessage::StartGame { request_id })
-        .await;
-    lobby.id
 }
