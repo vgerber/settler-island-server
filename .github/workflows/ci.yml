@@ -51,6 +51,10 @@ jobs:
       - run: cargo test -p settler_island_server
       # The committed .sqlx data must match the queries and migrations; sqlx-cli matches sqlx in Cargo.lock.
       - run: cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres,rustls
+      # The tests use their own databases; the check needs the schema in the service database.
+      - run: cargo sqlx migrate run --source settler_island_server/migrations
+        env:
+          DATABASE_URL: postgres://settler:settler@127.0.0.1:5432/settler_island
       - run: cargo sqlx prepare --workspace --check
         env:
           SQLX_OFFLINE: "false"
