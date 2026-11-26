@@ -21,12 +21,13 @@ func _ready() -> void:
 
 
 func show_lobby(lobby: SiLobbyDetails) -> void:
-	var is_owner := Net.user != null and lobby.owner.id == Net.user.id
+	var info := lobby.info
+	var is_owner := Net.user != null and info.owner.id == Net.user.id
 	var open_seats := lobby.seats.filter(func(occupant: SiSeatOccupant) -> bool: return occupant is SiSeatOccupantOpen)
-	_title_label.text = lobby.name
-	_info_label.text = "%d points to win%s" % [lobby.points_to_win, "  -  password protected" if lobby.has_password else ""]
+	_title_label.text = info.name
+	_info_label.text = "%d points to win%s" % [info.points_to_win, "  -  password protected" if info.has_password else ""]
 	if _seat_rows.get_child_count() == 0:
-		_bot_difficulty_option.select(SiDifficulty.VALUES.find(lobby.bot_difficulty))
+		_bot_difficulty_option.select(SiDifficulty.VALUES.find(info.bot_difficulty))
 	for row in _seat_rows.get_children():
 		_seat_rows.remove_child(row)
 		row.queue_free()
@@ -35,7 +36,7 @@ func show_lobby(lobby: SiLobbyDetails) -> void:
 	_add_bot_button.disabled = not is_owner or open_seats.is_empty()
 	_bot_difficulty_option.disabled = not is_owner
 	_start_button.disabled = not is_owner or not open_seats.is_empty()
-	_start_button.text = "Start game" if is_owner else "Waiting for %s to start" % lobby.owner.name
+	_start_button.text = "Start game" if is_owner else "Waiting for %s to start" % info.owner.name
 
 
 func _seat_row(seat: int, occupant: SiSeatOccupant, lobby: SiLobbyDetails, is_owner: bool) -> HBoxContainer:
@@ -57,7 +58,7 @@ func _describe(occupant: SiSeatOccupant, lobby: SiLobbyDetails) -> String:
 	if occupant is SiSeatOccupantHuman:
 		var user := (occupant as SiSeatOccupantHuman).user
 		var marks := ""
-		if user.id == lobby.owner.id:
+		if user.id == lobby.info.owner.id:
 			marks += "  (owner)"
 		if Net.user != null and user.id == Net.user.id:
 			marks += "  (you)"

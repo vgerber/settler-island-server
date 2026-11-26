@@ -310,7 +310,7 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
             .try_join(lobby, None)
             .await
             .expect("rejoining after the restart failed");
-        assert!(details.started);
+        assert!(details.info.started);
         let dealt = client.next_game_started().await;
         let mut play = Play::new(dealt.view, dealt.legal_actions);
         let finish = play_as(&mut client, human.as_mut(), &mut play, |play| {

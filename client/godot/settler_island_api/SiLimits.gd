@@ -12,6 +12,7 @@ const MAX_USER_NAME_CHARS := 24
 const MAX_LOBBY_NAME_CHARS := 40
 const MAX_LOBBIES_PER_PAGE := 50
 const DEFAULT_PORT := 8253
+const DEFAULT_BOT_DIFFICULTY := "Heuristic"
 
 const WEBSOCKET_ROUTE := "/api/v1/ws"
 const GUEST_SESSION_ROUTE := "/api/v1/sessions/guest"

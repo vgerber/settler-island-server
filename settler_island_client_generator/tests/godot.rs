@@ -22,8 +22,8 @@ use settler_island_game::{
     Port, Resource, ResourceCounts, TileId,
 };
 use settler_island_protocol::{
-    ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage,
-    User, UserId, UserKind,
+    ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
+    ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
@@ -520,7 +520,7 @@ fn fixtures() -> Value {
         action: action.clone(),
     }));
 
-    let lobby = LobbyDetails {
+    let info = LobbyInfo {
         id: LobbyId(9),
         name: "Table".to_string(),
         owner: owner.clone(),
@@ -528,6 +528,9 @@ fn fixtures() -> Value {
         started: false,
         points_to_win: 3,
         bot_difficulty: Difficulty::Heuristic,
+    };
+    let lobby = LobbyDetails {
+        info: info.clone(),
         seats: vec![
             SeatOccupant::Human {
                 user: owner.clone(),
@@ -554,15 +557,9 @@ fn fixtures() -> Value {
             page: 0,
             total: 1,
             lobbies: vec![LobbySummary {
-                id: LobbyId(9),
-                name: "Table".to_string(),
-                owner: owner.clone(),
+                info,
                 seats: 4,
                 open_seats: 1,
-                has_password: true,
-                started: false,
-                points_to_win: 3,
-                bot_difficulty: Difficulty::Heuristic,
             }],
         },
         ServerMessage::LobbyState {

@@ -7,7 +7,8 @@ use settler_island_game::{
 
 use crate::store::StoredGame;
 use settler_island_protocol::{
-    ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage, User, UserId,
+    ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant, ServerMessage, User,
+    UserId,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep_until, Instant};
@@ -851,8 +852,8 @@ impl<S: GameStore> Lobby<S> {
         })
     }
 
-    fn details(&self) -> LobbyDetails {
-        LobbyDetails {
+    fn info(&self) -> LobbyInfo {
+        LobbyInfo {
             id: self.id,
             name: self.name.clone(),
             owner: self.owner.clone(),
@@ -860,6 +861,12 @@ impl<S: GameStore> Lobby<S> {
             started: self.game.is_some(),
             points_to_win: self.points_to_win,
             bot_difficulty: self.bot_difficulty,
+        }
+    }
+
+    fn details(&self) -> LobbyDetails {
+        LobbyDetails {
+            info: self.info(),
             seats: self.seats.clone(),
         }
     }
@@ -871,15 +878,9 @@ impl<S: GameStore> Lobby<S> {
             .filter(|occupant| **occupant == SeatOccupant::Open)
             .count();
         LobbySummary {
-            id: self.id,
-            name: self.name.clone(),
-            owner: self.owner.clone(),
+            info: self.info(),
             seats: self.seat_count(),
             open_seats: u8::try_from(open_seats).unwrap_or(MAX_SEATS),
-            has_password: self.has_password,
-            started: self.game.is_some(),
-            points_to_win: self.points_to_win,
-            bot_difficulty: self.bot_difficulty,
         }
     }
 }

@@ -88,7 +88,7 @@ func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 func _add_last_bot() -> void:
 	_client.lobby_state_received.disconnect(_on_lobby_state)
 	_client.lobby_state_received.connect(func(message: SiServerMessageLobbyState) -> void:
-		if not message.lobby.started:
+		if not message.lobby.info.started:
 			_client.send_start_game()
 	)
 	_client.game_started_received.connect(func(_message: SiServerMessageGameStarted) -> void: _capture_after_settling("game", _quit))

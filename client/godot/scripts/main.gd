@@ -59,7 +59,7 @@ func _on_failed(reason: String) -> void:
 
 func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 	# A started lobby is followed by `GameStarted`; the game screen keeps the stage until the player leaves.
-	if _screen is GameScreen or message.lobby.started:
+	if _screen is GameScreen or message.lobby.info.started:
 		return
 	if not _screen is LobbyRoomScreen:
 		_show(LOBBY_ROOM_SCENE)

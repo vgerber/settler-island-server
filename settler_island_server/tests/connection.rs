@@ -167,9 +167,9 @@ async fn churn(address: std::net::SocketAddr, index: u32, rounds: u32) {
         };
         let target = lobbies
             .iter()
-            .filter(|lobby| !lobby.started && lobby.open_seats > 0)
+            .filter(|lobby| !lobby.info.started && lobby.open_seats > 0)
             .nth((index + round) as usize % 3)
-            .map(|lobby| lobby.id);
+            .map(|lobby| lobby.info.id);
         let joined = match target {
             Some(lobby) => client.try_join(lobby, None).await.is_ok(),
             None => false,

@@ -7,7 +7,7 @@ const VARIANT := "CreateLobby"
 var request_id: int = 0
 var name: String = ""
 var seats: int = 0
-## Replaces a player who leaves a running game; `None` means `Difficulty::Heuristic`.
+## Replaces a player who leaves a running game; `None` means `DEFAULT_BOT_DIFFICULTY`.
 var bot_difficulty: Variant = null
 var password: Variant = null
 ## `MIN_POINTS_TO_WIN` to `MAX_POINTS_TO_WIN`; `None` means `DEFAULT_POINTS_TO_WIN`.

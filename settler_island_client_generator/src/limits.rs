@@ -4,9 +4,10 @@
 use std::fmt::Write;
 
 use settler_island_protocol::{
-    Purchase, Resource, DEFAULT_POINTS_TO_WIN, DEFAULT_PORT, GUEST_SESSION_ROUTE, HEALTH_ROUTE,
-    MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_POINTS_TO_WIN, MAX_SEATS, MAX_USER_NAME_CHARS,
-    MIN_POINTS_TO_WIN, MIN_SEATS, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
+    Purchase, Resource, DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN, DEFAULT_PORT,
+    GUEST_SESSION_ROUTE, HEALTH_ROUTE, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS,
+    MAX_POINTS_TO_WIN, MAX_SEATS, MAX_USER_NAME_CHARS, MIN_POINTS_TO_WIN, MIN_SEATS,
+    UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
 };
 
 use crate::gdscript::HEADER;
@@ -40,12 +41,20 @@ pub fn limits_class() -> String {
         ("UPGRADE_SESSION_ROUTE", UPGRADE_SESSION_ROUTE),
         ("HEALTH_ROUTE", HEALTH_ROUTE),
     ];
+    // Travels as the same plain string as the `SiDifficulty` constants.
+    let default_bot_difficulty = format!("{DEFAULT_BOT_DIFFICULTY:?}");
     let mut output = format!(
         "{HEADER}class_name SiLimits\nextends RefCounted\n## Limits the server enforces, purchase costs, the default port and the HTTP routes.\n\n"
     );
     for (name, value) in integers {
         let _ = writeln!(output, "const {name} := {value}"); // Writing to a String cannot fail.
     }
+    // Writing to a String cannot fail.
+    let _ = writeln!(
+        output,
+        "const DEFAULT_BOT_DIFFICULTY := {}",
+        quoted(&default_bot_difficulty)
+    );
     output.push('\n');
     for (name, path) in routes {
         let _ = writeln!(output, "const {name} := {}", quoted(path)); // Writing to a String cannot fail.

@@ -307,7 +307,7 @@ impl Client {
                 bot_difficulty: None,
             })
             .await;
-        lobby.id
+        lobby.info.id
     }
 
     /// Joins and returns the lobby, or the refusal.

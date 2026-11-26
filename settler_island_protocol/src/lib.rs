@@ -14,6 +14,8 @@ pub const MAX_MESSAGE_BYTES: usize = 64 * 1024;
 pub const MAX_USER_NAME_CHARS: usize = 24;
 pub const MAX_LOBBY_NAME_CHARS: usize = 40;
 pub const MAX_LOBBIES_PER_PAGE: u32 = 50;
+/// Bots that replace a leaving player play at this level unless `CreateLobby` names another.
+pub const DEFAULT_BOT_DIFFICULTY: Difficulty = Difficulty::Heuristic;
 
 /// The port the server listens on unless `SETTLER_BIND` says otherwise.
 pub const DEFAULT_PORT: u16 = 8253;
@@ -108,7 +110,7 @@ pub enum ClientMessage {
         /// `MIN_POINTS_TO_WIN` to `MAX_POINTS_TO_WIN`; `None` means `DEFAULT_POINTS_TO_WIN`.
         #[serde(default)]
         points_to_win: Option<u8>,
-        /// Replaces a player who leaves a running game; `None` means `Difficulty::Heuristic`.
+        /// Replaces a player who leaves a running game; `None` means `DEFAULT_BOT_DIFFICULTY`.
         #[serde(default)]
         bot_difficulty: Option<Difficulty>,
     },
@@ -213,13 +215,12 @@ pub enum ServerMessage {
     },
 }
 
+/// What the lobby list and the lobby room both show about a lobby.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct LobbySummary {
+pub struct LobbyInfo {
     pub id: LobbyId,
     pub name: String,
     pub owner: User,
-    pub seats: u8,
-    pub open_seats: u8,
     pub has_password: bool,
     pub started: bool,
     pub points_to_win: u8,
@@ -227,14 +228,15 @@ pub struct LobbySummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LobbySummary {
+    pub info: LobbyInfo,
+    pub seats: u8,
+    pub open_seats: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LobbyDetails {
-    pub id: LobbyId,
-    pub name: String,
-    pub owner: User,
-    pub has_password: bool,
-    pub started: bool,
-    pub points_to_win: u8,
-    pub bot_difficulty: Difficulty,
+    pub info: LobbyInfo,
     /// Index is the game seat.
     pub seats: Vec<SeatOccupant>,
 }

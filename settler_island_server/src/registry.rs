@@ -211,7 +211,7 @@ impl<S: GameStore> Registry<S> {
     fn note(&mut self, notice: LobbyNotice) {
         match notice {
             LobbyNotice::Updated(summary) => {
-                if let Some(listing) = self.lobbies.get_mut(&summary.id) {
+                if let Some(listing) = self.lobbies.get_mut(&summary.info.id) {
                     listing.summary = summary;
                 }
             }

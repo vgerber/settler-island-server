@@ -492,7 +492,7 @@
                 }
               ],
               "default": null,
-              "description": "Replaces a player who leaves a running game; `None` means `Difficulty::Heuristic`."
+              "description": "Replaces a player who leaves a running game; `None` means `DEFAULT_BOT_DIFFICULTY`."
             },
             "name": {
               "type": "string"
@@ -2027,28 +2027,8 @@
     },
     "LobbyDetails": {
       "properties": {
-        "bot_difficulty": {
-          "$ref": "#/$defs/Difficulty"
-        },
-        "has_password": {
-          "type": "boolean"
-        },
-        "id": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "name": {
-          "type": "string"
-        },
-        "owner": {
-          "$ref": "#/$defs/User"
-        },
-        "points_to_win": {
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
+        "info": {
+          "$ref": "#/$defs/LobbyInfo"
         },
         "seats": {
           "description": "Index is the game seat.",
@@ -2056,24 +2036,16 @@
             "$ref": "#/$defs/SeatOccupant"
           },
           "type": "array"
-        },
-        "started": {
-          "type": "boolean"
         }
       },
       "required": [
-        "id",
-        "name",
-        "owner",
-        "has_password",
-        "started",
-        "points_to_win",
-        "bot_difficulty",
+        "info",
         "seats"
       ],
       "type": "object"
     },
-    "LobbySummary": {
+    "LobbyInfo": {
+      "description": "What the lobby list and the lobby room both show about a lobby.",
       "properties": {
         "bot_difficulty": {
           "$ref": "#/$defs/Difficulty"
@@ -2089,22 +2061,10 @@
         "name": {
           "type": "string"
         },
-        "open_seats": {
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
-        },
         "owner": {
           "$ref": "#/$defs/User"
         },
         "points_to_win": {
-          "format": "uint8",
-          "maximum": 255,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "seats": {
           "format": "uint8",
           "maximum": 255,
           "minimum": 0,
@@ -2118,12 +2078,35 @@
         "id",
         "name",
         "owner",
-        "seats",
-        "open_seats",
         "has_password",
         "started",
         "points_to_win",
         "bot_difficulty"
+      ],
+      "type": "object"
+    },
+    "LobbySummary": {
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/LobbyInfo"
+        },
+        "open_seats": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seats": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "info",
+        "seats",
+        "open_seats"
       ],
       "type": "object"
     },

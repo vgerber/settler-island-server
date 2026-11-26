@@ -32,7 +32,7 @@ func _ready() -> void:
 		_seats_option.add_item("%d players" % seats)
 	for difficulty in SiDifficulty.VALUES:
 		_difficulty_option.add_item(difficulty)
-	_difficulty_option.select(SiDifficulty.VALUES.find(SiDifficulty.HEURISTIC))
+	_difficulty_option.select(SiDifficulty.VALUES.find(SiLimits.DEFAULT_BOT_DIFFICULTY))
 	if Net.user != null:
 		_user_label.text = "Playing as %s" % Net.user.name
 		_lobby_name_edit.text = "%s's table" % Net.user.name
@@ -56,16 +56,17 @@ func _on_lobbies(message: SiServerMessageLobbies) -> void:
 	_lobby_list.clear()
 	for lobby in _lobbies:
 		var index := _lobby_list.add_item(_describe(lobby))
-		if lobby.id == selected_id:
+		if lobby.info.id == selected_id:
 			_lobby_list.select(index)
 	_update_join_button()
 
 
 func _describe(lobby: SiLobbySummary) -> String:
-	var state := "running" if lobby.started else "%d of %d seats open" % [lobby.open_seats, lobby.seats]
-	var lock := "  [password]" if lobby.has_password else ""
+	var info := lobby.info
+	var state := "running" if info.started else "%d of %d seats open" % [lobby.open_seats, lobby.seats]
+	var lock := "  [password]" if info.has_password else ""
 	return "%s  -  %s  -  %s  -  %d points, %s bots%s" % [
-		lobby.name, lobby.owner.name, state, lobby.points_to_win, lobby.bot_difficulty, lock,
+		info.name, info.owner.name, state, info.points_to_win, info.bot_difficulty, lock,
 	]
 
 
@@ -73,7 +74,7 @@ func _selected_lobby_id() -> int:
 	var selected := _lobby_list.get_selected_items()
 	if selected.is_empty() or selected[0] >= _lobbies.size():
 		return -1
-	return _lobbies[selected[0]].id
+	return _lobbies[selected[0]].info.id
 
 
 func _update_join_button() -> void:

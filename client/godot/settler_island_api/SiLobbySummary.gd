@@ -2,39 +2,21 @@
 class_name SiLobbySummary
 extends RefCounted
 
-var id: int = 0
-var name: String = ""
-var owner: SiUser = null
+var info: SiLobbyInfo = null
 var seats: int = 0
 var open_seats: int = 0
-var has_password: bool = false
-var started: bool = false
-var points_to_win: int = 0
-var bot_difficulty: String = ""
 
 static func from_dict(data: Dictionary) -> SiLobbySummary:
 	var decoded := SiLobbySummary.new()
-	decoded.id = int(data.get("id"))
-	decoded.name = str(data.get("name"))
-	decoded.owner = SiUser.from_dict(data.get("owner"))
+	decoded.info = SiLobbyInfo.from_dict(data.get("info"))
 	decoded.seats = int(data.get("seats"))
 	decoded.open_seats = int(data.get("open_seats"))
-	decoded.has_password = bool(data.get("has_password"))
-	decoded.started = bool(data.get("started"))
-	decoded.points_to_win = int(data.get("points_to_win"))
-	decoded.bot_difficulty = str(data.get("bot_difficulty"))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
-		"id": id,
-		"name": name,
-		"owner": owner.to_dict(),
+		"info": info.to_dict(),
 		"seats": seats,
 		"open_seats": open_seats,
-		"has_password": has_password,
-		"started": started,
-		"points_to_win": points_to_win,
-		"bot_difficulty": bot_difficulty,
 	}
 	return encoded

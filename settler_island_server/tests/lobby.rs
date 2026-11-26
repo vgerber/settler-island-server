@@ -95,7 +95,7 @@ async fn only_the_owner_manages_bots_and_starts_and_every_member_gets_their_own_
     let lobby_after = guest
         .expect_lobby(|request_id| ClientMessage::GetState { request_id })
         .await;
-    assert!(lobby_after.started);
+    assert!(lobby_after.info.started);
     assert_eq!(
         lobby_after.seats[1],
         SeatOccupant::Human { user: guest_user }
@@ -122,7 +122,7 @@ async fn start_needs_every_seat_and_join_fails_when_full_or_started() {
     );
 
     let started = owner.expect_lobby(start_game).await;
-    assert!(started.started);
+    assert!(started.info.started);
     assert_eq!(
         outsider.try_join(lobby, None).await,
         Err(ErrorCode::GameAlreadyStarted)
@@ -140,7 +140,7 @@ async fn the_next_member_owns_the_lobby_when_the_owner_leaves() {
     let left = owner.request(leave).await;
     assert!(matches!(left, ServerMessage::LobbyLeft { .. }));
     let details = guest.next_lobby_state().await;
-    assert_eq!(details.owner, guest_user);
+    assert_eq!(details.info.owner, guest_user);
     assert_eq!(details.seats[0], SeatOccupant::Open);
     guest.expect_lobby(add_bot).await;
     assert_eq!(owner.expect_error(add_bot).await, ErrorCode::NotInLobby);
@@ -172,6 +172,7 @@ async fn a_bot_plays_for_a_player_who_left_until_they_rejoin() {
     let lobby = owner
         .expect_lobby(create_with(None, Some(Difficulty::Random)))
         .await
+        .info
         .id;
     guest.try_join(lobby, None).await.unwrap();
     owner.expect_lobby(add_bot).await;
@@ -243,7 +244,7 @@ async fn a_password_lobby_admits_only_the_right_password() {
         );
     }
     let details = guest.try_join(lobby, Some("hunter2")).await.unwrap();
-    assert!(details.has_password);
+    assert!(details.info.has_password);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -292,7 +293,7 @@ async fn one_user_on_two_connections_is_still_in_at_most_one_lobby() {
         .request(|request_id| ClientMessage::LeaveLobby { request_id })
         .await;
     let fresh = second.expect_lobby(create_with(None, None)).await;
-    assert_ne!(fresh.id, mine);
+    assert_ne!(fresh.info.id, mine);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -318,7 +319,7 @@ async fn listing_pages_through_open_lobbies_and_drops_empty_ones() {
     };
     assert_eq!(total, 3);
     assert_eq!(lobbies.len(), 1);
-    assert_eq!(lobbies[0].name, "C");
+    assert_eq!(lobbies[0].info.name, "C");
     assert_eq!(
         viewer.expect_error(list(0, 51)).await,
         ErrorCode::InvalidPage
@@ -333,7 +334,10 @@ async fn listing_pages_through_open_lobbies_and_drops_empty_ones() {
         panic!("expected Lobbies");
     };
     assert_eq!(total, 2);
-    let names: Vec<&str> = lobbies.iter().map(|lobby| lobby.name.as_str()).collect();
+    let names: Vec<&str> = lobbies
+        .iter()
+        .map(|lobby| lobby.info.name.as_str())
+        .collect();
     assert_eq!(names, ["A", "C"]);
 }
 
@@ -396,15 +400,15 @@ async fn lobby_settings_default_and_reach_the_game() {
     let address = start(test_config()).await;
     let (mut client, _) = Client::welcomed(address, "Ada").await;
     let defaults = client.expect_lobby(create_with(None, None)).await;
-    assert_eq!(defaults.points_to_win, 10);
-    assert_eq!(defaults.bot_difficulty, Difficulty::Heuristic);
+    assert_eq!(defaults.info.points_to_win, 10);
+    assert_eq!(defaults.info.bot_difficulty, Difficulty::Heuristic);
     client.request(leave).await;
 
     let custom = client
         .expect_lobby(create_with(Some(4), Some(Difficulty::Random)))
         .await;
-    assert_eq!(custom.points_to_win, 4);
-    assert_eq!(custom.bot_difficulty, Difficulty::Random);
+    assert_eq!(custom.info.points_to_win, 4);
+    assert_eq!(custom.info.bot_difficulty, Difficulty::Random);
     client.expect_lobby(add_bot).await;
     client.expect_lobby(add_bot).await;
     client.expect_lobby(start_game).await;

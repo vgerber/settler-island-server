@@ -82,12 +82,12 @@ func _on_online(user: SiUser, running_lobby: Variant) -> void:
 func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 	if message.request_id == null or message.request_id != _pending_request:
 		return
-	_lobby_id = message.lobby.id
+	_lobby_id = message.lobby.info.id
 	var open_seats := message.lobby.seats.filter(func(seat: SiSeatOccupant) -> bool: return seat is SiSeatOccupantOpen)
 	if not open_seats.is_empty():
 		_pending_request = _client.send_add_bot(SiDifficulty.HEURISTIC)
 		return
-	if not message.lobby.started:
+	if not message.lobby.info.started:
 		_pending_request = _client.send_start_game()
 
 

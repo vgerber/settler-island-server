@@ -84,7 +84,7 @@ func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 	if not open_seats.is_empty():
 		_pending_request = _client.send_add_bot(SiDifficulty.RANDOM)
 		return
-	if not message.lobby.started:
+	if not message.lobby.info.started:
 		_pending_request = _client.send_start_game()
 
 

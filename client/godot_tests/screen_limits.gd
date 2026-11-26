@@ -1,7 +1,8 @@
 extends SceneTree
 ## Runs inside a copy of the game project against a real server: a name one character over the limit
 ## shows the server's HttpError message on the connect screen, the longest name the name field accepts
-## goes online, and the lobby browser offers exactly the protocol's seat and points range.
+## goes online, and the lobby browser offers exactly the protocol's seat and points range and preselects
+## its default bot difficulty.
 ## Usage: godot --headless --path <project> -s screen_limits.gd -- <fixture.json>
 ## The fixture holds `server` (http://host:port) and `invalid_name_message` (the server's text).
 
@@ -86,6 +87,7 @@ func _check_lobby_browser() -> void:
 	var points: SpinBox = browser.get_node("%PointsSpin")
 	var seats: OptionButton = browser.get_node("%SeatsOption")
 	var lobby_name: LineEdit = browser.get_node("%LobbyNameEdit")
+	var difficulty: OptionButton = browser.get_node("%DifficultyOption")
 	var problems: Array[String] = []
 	if points.min_value != SiLimits.MIN_POINTS_TO_WIN or points.max_value != SiLimits.MAX_POINTS_TO_WIN:
 		problems.append("points range %d-%d" % [points.min_value, points.max_value])
@@ -95,6 +97,8 @@ func _check_lobby_browser() -> void:
 		problems.append("%d seat choices" % seats.item_count)
 	if lobby_name.max_length != SiLimits.MAX_LOBBY_NAME_CHARS:
 		problems.append("lobby name limit %d" % lobby_name.max_length)
+	if difficulty.get_item_text(difficulty.selected) != SiLimits.DEFAULT_BOT_DIFFICULTY:
+		problems.append("difficulty default %s" % difficulty.get_item_text(difficulty.selected))
 	if not problems.is_empty():
 		_finish(1, "SCREEN_LIMITS_FAILED lobby browser: %s" % ", ".join(problems))
 		return
