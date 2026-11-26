@@ -2,22 +2,22 @@ class_name Palette
 extends RefCounted
 ## The colours of doc/design/visual-style.md section 1, shared by the board, the HUD and the theme.
 
-## Terrain fills, in `SiResource.VALUES` order: Clay, Wood, Sheep, Wheat, Ore.
-const RESOURCE_COLORS: Array[Color] = [
-	Color("#B5653D"),
-	Color("#33603D"),
-	Color("#A2C46A"),
-	Color("#EDC24F"),
-	Color("#7A8492"),
-]
-## Motif colours drawn on top of each terrain, same order.
-const RESOURCE_PATTERN_COLORS: Array[Color] = [
-	Color("#8E4A2A"),
-	Color("#244A2D"),
-	Color("#86A852"),
-	Color("#C99A2E"),
-	Color("#5A636F"),
-]
+## Terrain fills by `SiResource` value.
+const RESOURCE_COLORS := {
+	SiResource.CLAY: Color("#B5653D"),
+	SiResource.WOOD: Color("#33603D"),
+	SiResource.SHEEP: Color("#A2C46A"),
+	SiResource.WHEAT: Color("#EDC24F"),
+	SiResource.ORE: Color("#7A8492"),
+}
+## Motif colours drawn on top of each terrain, same keys.
+const RESOURCE_PATTERN_COLORS := {
+	SiResource.CLAY: Color("#8E4A2A"),
+	SiResource.WOOD: Color("#244A2D"),
+	SiResource.SHEEP: Color("#86A852"),
+	SiResource.WHEAT: Color("#C99A2E"),
+	SiResource.ORE: Color("#5A636F"),
+}
 const DESERT := Color("#EADDB6")
 const DESERT_PATTERN := Color("#D3C291")
 const FLEECE := Color("#F6F1E4")
@@ -45,6 +45,29 @@ const FOCUS_ON_DARK := Color("#E8A93A")
 const FOCUS_ON_LIGHT := Color("#8C5A0E")
 const HOT_NUMBER := Color("#B5281F")
 
+## Theme-only shades: buttons, disabled states, rules, overlays.
+const BUTTON := Color("#E2D3B2")
+const BUTTON_HOVER := Color("#EADDBE")
+const BUTTON_PRESSED := Color("#D3C29C")
+const BUTTON_HOVER_BORDER := Color("#6E5233")
+const DISABLED_FILL := Color("#D9CDB5")
+const DISABLED_BORDER := Color("#C2B597")
+const DISABLED_TEXT := Color("#7A6E5E")
+const RULE := Color("#C9B48E")
+const RULE_FAINT := Color("#C9B48E66")
+const ACCENT_HOVER := Color("#26807A")
+const ACCENT_PRESSED := Color("#15524C")
+const ACCENT_SELECTION := Color("#1E6B6366")
+const DANGER_HOVER := Color("#B8443A")
+const DANGER_PRESSED := Color("#86271F")
+const GHOST_HOVER := Color("#FFFFFF1A")
+const GHOST_PRESSED := Color("#FFFFFF26")
+const CREAM_DISABLED := Color("#BFAE9599")
+const TABLE_PANEL := Color("#3A2C23")
+const TABLE_PANEL_BORDER := Color("#4E3B2E")
+const LOG_CUT := Color("#C9A46A")
+const CLEAR := Color(0, 0, 0, 0)
+
 
 static func seat_color(seat: int) -> Color:
 	return SEAT_COLORS[seat % SEAT_COLORS.size()]
@@ -66,8 +89,14 @@ static func seat_keyline(seat: int) -> Color:
 
 
 static func resource_color(resource: String) -> Color:
-	return RESOURCE_COLORS[maxi(SiResource.VALUES.find(resource), 0)]
+	if not RESOURCE_COLORS.has(resource):
+		push_error("Palette: unknown resource '%s'" % resource)
+		return Color.MAGENTA
+	return RESOURCE_COLORS[resource]
 
 
 static func resource_pattern_color(resource: String) -> Color:
-	return RESOURCE_PATTERN_COLORS[maxi(SiResource.VALUES.find(resource), 0)]
+	if not RESOURCE_PATTERN_COLORS.has(resource):
+		push_error("Palette: unknown resource '%s'" % resource)
+		return Color.MAGENTA
+	return RESOURCE_PATTERN_COLORS[resource]

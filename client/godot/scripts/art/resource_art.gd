@@ -37,7 +37,7 @@ func _init(canvas: CanvasItem, center: Vector2, size: float) -> void:
 func _draw_log() -> void:
 	var bark := Palette.resource_pattern_color("Wood")
 	_shape(_rect_points(Vector2(-0.4, -0.18), Vector2(0.62, 0.36)), bark)
-	_disc(Vector2(0.24, 0.0), 0.2, Color("#C9A46A"))
+	_disc(Vector2(0.24, 0.0), 0.2, Palette.LOG_CUT)
 	_ring(Vector2(0.24, 0.0), 0.09, bark)
 
 

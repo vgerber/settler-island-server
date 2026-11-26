@@ -626,3 +626,22 @@ fn net_goes_online_after_a_failed_start() {
 
     assert!(output.contains("NET_RECONNECT_OK"), "{output}");
 }
+
+#[test]
+fn committed_theme_matches_a_fresh_build() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let root = prepare_game_project("theme", "game_state_test.gd");
+    let project = root.join("project");
+    run_godot(&godot, &root, &["--import"]);
+    run_godot(&godot, &root, &["-s", "tools/build_theme.gd"]);
+
+    let theme = Path::new("theme/main_theme.tres");
+    let committed = fs::read(default_client_directory().join("godot").join(theme)).unwrap();
+    let rebuilt = fs::read(project.join(theme)).unwrap();
+    assert!(
+        committed == rebuilt,
+        "client/godot/theme/main_theme.tres is stale: run `godot --headless --path client/godot -s tools/build_theme.gd`"
+    );
+}

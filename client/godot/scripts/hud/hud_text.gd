@@ -2,8 +2,6 @@ class_name HudText
 extends RefCounted
 ## Names, colours and readable lines for the HUD: resources, cards, phases and every `SiEvent`.
 
-const SEAT_COLORS: Array[Color] = Palette.SEAT_COLORS
-const RESOURCE_COLORS: Array[Color] = Palette.RESOURCE_COLORS
 const CARD_NAMES := {
 	"Knight": "Knight",
 	"RoadBuilding": "Road building",
@@ -14,11 +12,11 @@ const CARD_NAMES := {
 
 
 static func seat_color(seat: int) -> Color:
-	return SEAT_COLORS[seat % SEAT_COLORS.size()]
+	return Palette.seat_color(seat)
 
 
 static func resource_color(resource: String) -> Color:
-	return RESOURCE_COLORS[maxi(SiResource.VALUES.find(resource), 0)]
+	return Palette.resource_color(resource)
 
 
 static func seat_name(seat: int, own_seat: int) -> String:
