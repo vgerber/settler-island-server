@@ -223,6 +223,11 @@ impl Game {
         &self.phase
     }
 
+    /// The open player trade while the phase is `TradeOffered`.
+    pub fn trade(&self) -> Option<&TradeOffer> {
+        self.trade.as_ref()
+    }
+
     pub fn current_seat(&self) -> Seat {
         self.current
     }

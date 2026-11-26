@@ -155,3 +155,112 @@ async fn full_record(client: &mut Client) -> Vec<(Seat, Action)> {
         .map(|entry| (entry.seat, entry.action))
         .collect()
 }
+
+/// How long the human leaves a bot's offer unanswered before checking that it is still open.
+const UNANSWERED: Duration = Duration::from_millis(800);
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bot_offer_stays_open_until_the_asked_human_answers() {
+    let config = Config {
+        seed: Some(SEED),
+        messages_per_second: 10_000,
+        trade_answer_time: Duration::from_secs(5),
+        ..test_config()
+    };
+    let address = start(config).await;
+    let (mut client, _) = Client::welcomed(address, "Human").await;
+    client
+        .expect_lobby(|request_id| ClientMessage::CreateLobby {
+            request_id,
+            name: "Traders".to_string(),
+            password: None,
+            seats: 4,
+            points_to_win: None,
+            bot_difficulty: None,
+        })
+        .await;
+    for _ in 0..3 {
+        client
+            .expect_lobby(|request_id| ClientMessage::AddBot {
+                request_id,
+                difficulty: Difficulty::Heuristic,
+            })
+            .await;
+    }
+    client
+        .send(|request_id| ClientMessage::StartGame { request_id })
+        .await;
+    let (seat, mut view, mut legal) = loop {
+        if let ServerMessage::GameStarted {
+            seat,
+            view,
+            legal_actions,
+            ..
+        } = client.receive().await
+        {
+            break (seat, view, legal_actions);
+        }
+    };
+
+    let mut human = create_bot(Difficulty::Random, 3);
+    let mut outstanding: Option<u32> = None;
+    for _ in 0..MAX_UPDATES_PER_ATTEMPT * 4 {
+        let offered_by_bot = view.trade.as_ref().is_some_and(|offer| offer.seat != seat);
+        if offered_by_bot && legal.contains(&Action::RejectTrade) {
+            assert_offer_stays_open(&mut client).await;
+            client
+                .send(|request_id| ClientMessage::Act {
+                    request_id,
+                    action: Action::RejectTrade,
+                })
+                .await;
+            return;
+        }
+        if outstanding.is_none() && !legal.is_empty() {
+            let action = human.choose(&view, &legal);
+            outstanding = Some(
+                client
+                    .send(|request_id| ClientMessage::Act { request_id, action })
+                    .await,
+            );
+        }
+        match client.receive().await {
+            ServerMessage::GameUpdate {
+                request_id,
+                view: next_view,
+                legal_actions,
+                ..
+            } => {
+                if request_id.is_some() && request_id == outstanding {
+                    outstanding = None;
+                }
+                view = next_view;
+                legal = legal_actions;
+            }
+            ServerMessage::Error {
+                request_id,
+                code: ErrorCode::Game { .. },
+                ..
+            } if request_id.is_some() && request_id == outstanding => outstanding = None,
+            other => panic!("unexpected message during play: {other:?}"),
+        }
+        assert!(
+            !matches!(view.phase, Phase::Finished { .. }),
+            "no bot offered the human a trade"
+        );
+    }
+    panic!("no bot offered the human a trade");
+}
+
+/// Every update while the human stays silent still shows the offer.
+async fn assert_offer_stays_open(client: &mut Client) {
+    let deadline = tokio::time::Instant::now() + UNANSWERED;
+    while let Ok(message) = tokio::time::timeout_at(deadline, client.receive()).await {
+        if let ServerMessage::GameUpdate { view, .. } = message {
+            assert!(
+                view.trade.is_some(),
+                "the bot closed its offer before the human answered"
+            );
+        }
+    }
+}

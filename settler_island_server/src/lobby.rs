@@ -130,6 +130,19 @@ struct RunningGame {
     seed: u64,
 }
 
+impl RunningGame {
+    /// A human asked in the open trade who has not answered yet.
+    fn human_answer_pending(&self) -> bool {
+        let Some(offer) = self.game.trade() else {
+            return false;
+        };
+        self.game
+            .pending_seats()
+            .into_iter()
+            .any(|seat| seat != offer.seat && self.bots[usize::from(seat)].is_none())
+    }
+}
+
 struct Lobby<S> {
     id: LobbyId,
     name: String,
@@ -142,6 +155,8 @@ struct Lobby<S> {
     members: Vec<Member>,
     game: Option<RunningGame>,
     bot_deadline: Instant,
+    /// Until when a bot that offered a trade waits for the humans it asked; `None` without an open offer.
+    answers_due: Option<Instant>,
     /// When a running game with no connected human is closed; `None` while a human is connected.
     abandon_at: Option<Instant>,
     store: Arc<S>,
@@ -176,6 +191,7 @@ pub(crate) fn spawn<S: GameStore>(
         }],
         game: None,
         bot_deadline: Instant::now(),
+        answers_due: None,
         abandon_at: None,
         store,
         config,
@@ -233,6 +249,7 @@ pub(crate) fn restore<S: GameStore>(
             seed,
         }),
         bot_deadline: Instant::now(),
+        answers_due: None,
         // The time nobody was connected before the restart counts toward the deadline.
         abandon_at: Some(
             Instant::now()
@@ -269,14 +286,16 @@ impl<S: GameStore> Lobby<S> {
         }
         // A running game keeps its lobby open for its players to come back.
         while !self.members.is_empty() || self.game_running() {
-            let bot_due = self.bot_seat_to_move().is_some();
+            let bot_move_at = self.bot_move().map(|(_, at)| at);
             let abandon_at = self.abandon_at.filter(|_| self.game_running());
             tokio::select! {
                 command = commands.recv() => {
                     let Some(command) = command else { break };
                     self.handle(command).await;
                 }
-                () = sleep_until(self.bot_deadline), if bot_due => self.play_bot().await,
+                () = sleep_until(bot_move_at.unwrap_or_else(Instant::now)), if bot_move_at.is_some() => {
+                    self.play_bot().await;
+                }
                 () = sleep_until(abandon_at.unwrap_or_else(Instant::now)), if abandon_at.is_some() => {
                     if self.abandon().await {
                         break;
@@ -558,22 +577,42 @@ impl<S: GameStore> Lobby<S> {
         let events =
             apply_and_store(running, self.store.as_ref(), &self.metrics, seat, action).await?;
         self.bot_deadline = Instant::now() + self.config.bot_delay;
+        self.track_trade();
         self.note_game_end();
         self.broadcast_update(&events, Some((seat, request_id)));
         Ok(())
     }
 
-    /// Bots wait while no human is connected, so a restored or abandoned game does not play itself out.
-    fn bot_seat_to_move(&self) -> Option<Seat> {
+    /// The bot seat to move next and when. Bots wait while no human is connected, so a restored or abandoned game
+    /// does not play itself out; a bot that offered a trade waits for the humans it asked, up to `answers_due`.
+    fn bot_move(&self) -> Option<(Seat, Instant)> {
         if self.members.is_empty() {
             return None;
         }
         let running = self.game.as_ref().filter(|running| !running.stalled)?;
-        running
+        let seat = running
             .game
             .pending_seats()
             .into_iter()
-            .find(|seat| running.bots[usize::from(*seat)].is_some())
+            .find(|seat| running.bots[usize::from(*seat)].is_some())?;
+        let offering = running.game.trade().is_some_and(|offer| offer.seat == seat);
+        let at = match self.answers_due {
+            Some(due) if offering && running.human_answer_pending() => due.max(self.bot_deadline),
+            _ => self.bot_deadline,
+        };
+        Some((seat, at))
+    }
+
+    /// Starts the answer window when a trade opens and ends it when the trade closes.
+    fn track_trade(&mut self) {
+        let open = self
+            .game
+            .as_ref()
+            .is_some_and(|running| running.game.trade().is_some());
+        self.answers_due = open.then(|| {
+            self.answers_due
+                .unwrap_or_else(|| Instant::now() + self.config.trade_answer_time)
+        });
     }
 
     /// Closes the game in the store; `false` when that failed and the lobby must stay open for a retry.
@@ -592,7 +631,7 @@ impl<S: GameStore> Lobby<S> {
     }
 
     async fn play_bot(&mut self) {
-        let Some(seat) = self.bot_seat_to_move() else {
+        let Some((seat, _)) = self.bot_move() else {
             return;
         };
         let Some(running) = self.game.as_mut() else {
@@ -613,6 +652,7 @@ impl<S: GameStore> Lobby<S> {
             Ok(events) => {
                 self.metrics.bot_actions.inc();
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
+                self.track_trade();
                 self.note_game_end();
                 self.broadcast_update(&events, None);
             }

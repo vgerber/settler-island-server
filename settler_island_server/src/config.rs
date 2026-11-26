@@ -7,6 +7,7 @@ const DEFAULT_BOT_DELAY_MILLISECONDS: u64 = 600;
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_LOG_FILTER: &str = "info";
 const DEFAULT_ABANDON_AFTER_HOURS: u64 = 168;
+const DEFAULT_TRADE_ANSWER_SECONDS: u64 = 20;
 const DEFAULT_MESSAGES_PER_SECOND: u32 = 20;
 const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
 const DEFAULT_SESSION_BURST: u32 = 5;
@@ -18,6 +19,8 @@ pub struct Config {
     pub bind: SocketAddr,
     /// Pause before each bot move so humans can follow the game.
     pub bot_delay: Duration,
+    /// How long a bot that offered a trade waits for the humans it asked before it confirms or withdraws.
+    pub trade_answer_time: Duration,
     /// A connection that sends nothing (not even a ping) for this long is closed.
     pub idle_timeout: Duration,
     pub messages_per_second: u32,
@@ -128,6 +131,7 @@ impl Config {
         Config {
             bind: SocketAddr::from(([127, 0, 0, 1], 8253)),
             bot_delay: Duration::from_millis(DEFAULT_BOT_DELAY_MILLISECONDS),
+            trade_answer_time: Duration::from_secs(DEFAULT_TRADE_ANSWER_SECONDS),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             messages_per_second: DEFAULT_MESSAGES_PER_SECOND,
             abandon_after: Duration::from_secs(DEFAULT_ABANDON_AFTER_HOURS * 3600),
@@ -165,6 +169,9 @@ impl Config {
         Ok(Config {
             bind: vars.parsed("SETTLER_BIND", defaults.bind)?,
             bot_delay: Duration::from_millis(bot_delay_milliseconds),
+            trade_answer_time: Duration::from_secs(
+                vars.number("SETTLER_TRADE_ANSWER_SECONDS", DEFAULT_TRADE_ANSWER_SECONDS)?,
+            ),
             abandon_after: Duration::from_secs(abandon_after_hours.saturating_mul(3600)),
             session_requests_per_minute: vars.number(
                 "SETTLER_SESSION_REQUESTS_PER_MINUTE",

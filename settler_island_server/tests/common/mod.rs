@@ -26,6 +26,8 @@ pub fn test_config() -> Config {
     Config {
         bind: SocketAddr::from(([127, 0, 0, 1], 0)),
         bot_delay: Duration::ZERO,
+        // Scripted humans answer at once or not at all; a long wait would only slow the tests.
+        trade_answer_time: Duration::from_millis(200),
         // Tests open many sessions from one address; the limiter has its own test.
         session_burst: 10_000,
         session_requests_per_minute: 600_000,
