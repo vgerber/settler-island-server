@@ -1,5 +1,5 @@
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -13,10 +13,21 @@ const DEFAULT_TRADE_ANSWER_SECONDS: u64 = 20;
 const DEFAULT_MESSAGES_PER_SECOND: u32 = 20;
 const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
 const DEFAULT_SESSION_BURST: u32 = 5;
+/// The planning numbers of the load review: a few hundred concurrent players with large headroom.
+const DEFAULT_MAX_CONNECTIONS: usize = 1000;
+const DEFAULT_MAX_CONNECTIONS_PER_IP: usize = 20;
+const DEFAULT_AUTH_TIMEOUT_SECONDS: u64 = 10;
+const DEFAULT_MAX_RUNNING_GAMES: usize = 500;
+const DEFAULT_MAX_GAMES_PER_USER: usize = 3;
+const DEFAULT_UNATTENDED_ABANDON_MINUTES: u64 = 30;
+const DEFAULT_DB_MAX_CONNECTIONS: u32 = 8;
+const DEFAULT_DB_ACQUIRE_TIMEOUT_SECONDS: u64 = 5;
+/// One year; larger values would overflow `Instant` arithmetic in the lobby task.
+pub const MAX_ABANDON_AFTER_HOURS: u64 = 24 * 365;
 /// HMAC-SHA256 gains nothing from longer keys, and shorter ones are guessable.
 pub const MIN_SESSION_SECRET_BYTES: usize = 32;
 /// Every environment variable the server reads; a test keeps `.env.example` in step with it.
-pub const VARIABLES: [&str; 13] = [
+pub const VARIABLES: [&str; 23] = [
     "SETTLER_SESSION_SECRET",
     "SETTLER_BIND",
     "DATABASE_URL",
@@ -30,6 +41,16 @@ pub const VARIABLES: [&str; 13] = [
     "RUST_LOG",
     "SETTLER_LOG_FORMAT",
     "SETTLER_TRADE_ANSWER_SECONDS",
+    "SETTLER_MAX_CONNECTIONS",
+    "SETTLER_MAX_CONNECTIONS_PER_IP",
+    "SETTLER_AUTH_TIMEOUT_SECONDS",
+    "SETTLER_MAX_RUNNING_GAMES",
+    "SETTLER_MAX_GAMES_PER_USER",
+    "SETTLER_UNATTENDED_ABANDON_MINUTES",
+    "SETTLER_TRUSTED_PROXIES",
+    "SETTLER_METRICS_BIND",
+    "SETTLER_DB_MAX_CONNECTIONS",
+    "SETTLER_DB_ACQUIRE_TIMEOUT_SECONDS",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,12 +65,32 @@ pub struct Config {
     pub messages_per_second: u32,
     /// A running game whose lobby had no connected human for this long is closed and never restored.
     pub abandon_after: Duration,
+    /// Like `abandon_after`, for a running game whose humans all left it to the bots on purpose.
+    pub unattended_abandon_after: Duration,
+    /// Open WebSocket connections the whole server accepts.
+    pub max_connections: usize,
+    /// Open WebSocket connections one client address may hold.
+    pub max_connections_per_ip: usize,
+    /// A connection that has not authenticated within this time is closed.
+    pub auth_timeout: Duration,
+    /// Games running at once on the whole server.
+    pub max_running_games: usize,
+    /// Lobbies and running games one user may own or sit in at once.
+    pub max_games_per_user: usize,
     /// Sustained rate of `/api/v1/sessions/*` requests per client address.
     pub session_requests_per_minute: u32,
     /// Session requests a client address may send at once before the rate applies.
     pub session_burst: u32,
     /// Take the client address from `X-Forwarded-For` (set only behind a proxy that overwrites it).
     pub trust_forwarded_for: bool,
+    /// Peers whose `X-Forwarded-For` is honoured; required when `trust_forwarded_for` is on.
+    pub trusted_proxies: Vec<IpAddr>,
+    /// A separate listener for `/metrics`; `None` serves it on `bind`.
+    pub metrics_bind: Option<SocketAddr>,
+    /// Size of the Postgres connection pool.
+    pub db_max_connections: u32,
+    /// How long a store call waits for a pooled connection before it fails.
+    pub db_acquire_timeout: Duration,
     /// Fixed game seed for tests and reproductions; `None` draws a random seed per game.
     pub seed: Option<u64>,
     pub session_secret: SessionSecret,
@@ -172,6 +213,10 @@ pub enum ConfigError {
     InvalidDatabaseUrl(#[source] sqlx::Error),
     #[error("set both SETTLER_KEYCLOAK_ISSUER and SETTLER_KEYCLOAK_AUDIENCE, or neither")]
     IncompleteKeycloak,
+    #[error(
+        "SETTLER_TRUST_FORWARDED_FOR needs SETTLER_TRUSTED_PROXIES, the proxy addresses to trust"
+    )]
+    ForwardedForWithoutProxies,
 }
 
 impl Config {
@@ -183,9 +228,19 @@ impl Config {
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             messages_per_second: DEFAULT_MESSAGES_PER_SECOND,
             abandon_after: Duration::from_secs(DEFAULT_ABANDON_AFTER_HOURS * 3600),
+            unattended_abandon_after: Duration::from_secs(DEFAULT_UNATTENDED_ABANDON_MINUTES * 60),
+            max_connections: DEFAULT_MAX_CONNECTIONS,
+            max_connections_per_ip: DEFAULT_MAX_CONNECTIONS_PER_IP,
+            auth_timeout: Duration::from_secs(DEFAULT_AUTH_TIMEOUT_SECONDS),
+            max_running_games: DEFAULT_MAX_RUNNING_GAMES,
+            max_games_per_user: DEFAULT_MAX_GAMES_PER_USER,
             session_requests_per_minute: DEFAULT_SESSION_REQUESTS_PER_MINUTE,
             session_burst: DEFAULT_SESSION_BURST,
             trust_forwarded_for: false,
+            trusted_proxies: Vec::new(),
+            metrics_bind: None,
+            db_max_connections: DEFAULT_DB_MAX_CONNECTIONS,
+            db_acquire_timeout: Duration::from_secs(DEFAULT_DB_ACQUIRE_TIMEOUT_SECONDS),
             log_filter: DEFAULT_LOG_FILTER.to_string(),
             log_format: LogFormat::Text,
             seed: None,
@@ -208,8 +263,21 @@ impl Config {
             .text("SETTLER_SESSION_SECRET")
             .ok_or(ConfigError::Missing("SETTLER_SESSION_SECRET"))?;
         let defaults = Config::new(SessionSecret::new(secret)?);
-        let abandon_after_hours: u64 =
-            vars.number("SETTLER_ABANDON_AFTER_HOURS", DEFAULT_ABANDON_AFTER_HOURS)?;
+        let abandon_after_hours = vars.bounded(
+            "SETTLER_ABANDON_AFTER_HOURS",
+            DEFAULT_ABANDON_AFTER_HOURS,
+            MAX_ABANDON_AFTER_HOURS,
+        )?;
+        let unattended_abandon_minutes = vars.bounded(
+            "SETTLER_UNATTENDED_ABANDON_MINUTES",
+            DEFAULT_UNATTENDED_ABANDON_MINUTES,
+            MAX_ABANDON_AFTER_HOURS * 60,
+        )?;
+        let trust_forwarded_for = vars.parsed("SETTLER_TRUST_FORWARDED_FOR", false)?;
+        let trusted_proxies = vars.list("SETTLER_TRUSTED_PROXIES")?;
+        if trust_forwarded_for && trusted_proxies.is_empty() {
+            return Err(ConfigError::ForwardedForWithoutProxies);
+        }
         let bot_delay_milliseconds: u64 = vars.parsed(
             "SETTLER_BOT_DELAY_MILLISECONDS",
             DEFAULT_BOT_DELAY_MILLISECONDS,
@@ -220,13 +288,42 @@ impl Config {
             trade_answer_time: Duration::from_secs(
                 vars.number("SETTLER_TRADE_ANSWER_SECONDS", DEFAULT_TRADE_ANSWER_SECONDS)?,
             ),
-            abandon_after: Duration::from_secs(abandon_after_hours.saturating_mul(3600)),
+            abandon_after: Duration::from_secs(abandon_after_hours * 3600),
+            unattended_abandon_after: Duration::from_secs(unattended_abandon_minutes * 60),
+            max_connections: vars.number("SETTLER_MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS)?,
+            max_connections_per_ip: vars.number(
+                "SETTLER_MAX_CONNECTIONS_PER_IP",
+                DEFAULT_MAX_CONNECTIONS_PER_IP,
+            )?,
+            auth_timeout: Duration::from_secs(
+                vars.number("SETTLER_AUTH_TIMEOUT_SECONDS", DEFAULT_AUTH_TIMEOUT_SECONDS)?,
+            ),
+            max_running_games: vars
+                .number("SETTLER_MAX_RUNNING_GAMES", DEFAULT_MAX_RUNNING_GAMES)?,
+            max_games_per_user: vars
+                .number("SETTLER_MAX_GAMES_PER_USER", DEFAULT_MAX_GAMES_PER_USER)?,
+            metrics_bind: vars
+                .text("SETTLER_METRICS_BIND")
+                .map(|value| {
+                    value.parse().map_err(|_| ConfigError::Invalid {
+                        name: "SETTLER_METRICS_BIND",
+                        value,
+                    })
+                })
+                .transpose()?,
+            db_max_connections: vars
+                .number("SETTLER_DB_MAX_CONNECTIONS", DEFAULT_DB_MAX_CONNECTIONS)?,
+            db_acquire_timeout: Duration::from_secs(vars.number(
+                "SETTLER_DB_ACQUIRE_TIMEOUT_SECONDS",
+                DEFAULT_DB_ACQUIRE_TIMEOUT_SECONDS,
+            )?),
             session_requests_per_minute: vars.number(
                 "SETTLER_SESSION_REQUESTS_PER_MINUTE",
                 DEFAULT_SESSION_REQUESTS_PER_MINUTE,
             )?,
             session_burst: vars.number("SETTLER_SESSION_BURST", DEFAULT_SESSION_BURST)?,
-            trust_forwarded_for: vars.parsed("SETTLER_TRUST_FORWARDED_FOR", false)?,
+            trust_forwarded_for,
+            trusted_proxies,
             keycloak: keycloak_from(
                 vars.text("SETTLER_KEYCLOAK_ISSUER"),
                 vars.text("SETTLER_KEYCLOAK_AUDIENCE"),
@@ -258,6 +355,30 @@ impl Vars<'_> {
         value
             .parse()
             .map_err(|_| ConfigError::Invalid { name, value })
+    }
+
+    /// Comma-separated values; blank means an empty list.
+    fn list<T: FromStr>(&self, name: &'static str) -> Result<Vec<T>, ConfigError> {
+        let Some(value) = self.text(name) else {
+            return Ok(Vec::new());
+        };
+        value
+            .split(',')
+            .map(|item| item.trim().parse())
+            .collect::<Result<Vec<T>, _>>()
+            .map_err(|_| ConfigError::Invalid { name, value })
+    }
+
+    /// A count from one to `maximum`.
+    fn bounded(&self, name: &'static str, default: u64, maximum: u64) -> Result<u64, ConfigError> {
+        let number = self.number(name, default)?;
+        if number > maximum {
+            return Err(ConfigError::Invalid {
+                name,
+                value: number.to_string(),
+            });
+        }
+        Ok(number)
     }
 
     /// A count that must be above zero: a zero rate or burst would refuse every request.
@@ -347,8 +468,18 @@ mod tests {
             ("SETTLER_SESSION_REQUESTS_PER_MINUTE", "30"),
             ("SETTLER_SESSION_BURST", "9"),
             ("SETTLER_TRUST_FORWARDED_FOR", "true"),
+            ("SETTLER_TRUSTED_PROXIES", "192.168.178.20, ::1"),
             ("RUST_LOG", "debug"),
             ("SETTLER_LOG_FORMAT", "json"),
+            ("SETTLER_MAX_CONNECTIONS", "300"),
+            ("SETTLER_MAX_CONNECTIONS_PER_IP", "4"),
+            ("SETTLER_AUTH_TIMEOUT_SECONDS", "3"),
+            ("SETTLER_MAX_RUNNING_GAMES", "40"),
+            ("SETTLER_MAX_GAMES_PER_USER", "1"),
+            ("SETTLER_UNATTENDED_ABANDON_MINUTES", "5"),
+            ("SETTLER_METRICS_BIND", "10.0.0.2:9253"),
+            ("SETTLER_DB_MAX_CONNECTIONS", "16"),
+            ("SETTLER_DB_ACQUIRE_TIMEOUT_SECONDS", "2"),
         ]);
 
         assert_eq!(
@@ -361,6 +492,19 @@ mod tests {
                 session_requests_per_minute: 30,
                 session_burst: 9,
                 trust_forwarded_for: true,
+                trusted_proxies: vec![
+                    IpAddr::from([192, 168, 178, 20]),
+                    IpAddr::from(std::net::Ipv6Addr::LOCALHOST),
+                ],
+                max_connections: 300,
+                max_connections_per_ip: 4,
+                auth_timeout: Duration::from_secs(3),
+                max_running_games: 40,
+                max_games_per_user: 1,
+                unattended_abandon_after: Duration::from_secs(300),
+                metrics_bind: Some("10.0.0.2:9253".parse().unwrap()),
+                db_max_connections: 16,
+                db_acquire_timeout: Duration::from_secs(2),
                 keycloak: Some(KeycloakConfig {
                     issuer: "http://kc/realms/r".to_string(),
                     audience: "game".to_string(),
@@ -455,6 +599,12 @@ mod tests {
             ("SETTLER_SESSION_BURST", "0"),
             ("SETTLER_LOG_FORMAT", "xml"),
             ("SETTLER_TRUST_FORWARDED_FOR", "maybe"),
+            ("SETTLER_TRUSTED_PROXIES", "10.0.0.1,proxy"),
+            ("SETTLER_METRICS_BIND", "internal"),
+            ("SETTLER_MAX_CONNECTIONS", "0"),
+            ("SETTLER_MAX_GAMES_PER_USER", "0"),
+            ("SETTLER_AUTH_TIMEOUT_SECONDS", "0"),
+            ("SETTLER_DB_MAX_CONNECTIONS", "0"),
         ] {
             let error = load(&[SECRET, (name, value)]).unwrap_err();
             assert!(
@@ -462,6 +612,47 @@ mod tests {
                 "{name}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn abandon_times_beyond_a_year_are_refused_instead_of_overflowing_an_instant() {
+        let limit = MAX_ABANDON_AFTER_HOURS.to_string();
+        let limit_minutes = (MAX_ABANDON_AFTER_HOURS * 60).to_string();
+        assert_eq!(
+            with_secret(&[("SETTLER_ABANDON_AFTER_HOURS", &limit)]).abandon_after,
+            Duration::from_secs(MAX_ABANDON_AFTER_HOURS * 3600)
+        );
+        assert!(load(&[
+            SECRET,
+            ("SETTLER_UNATTENDED_ABANDON_MINUTES", &limit_minutes)
+        ])
+        .is_ok());
+
+        for (name, value) in [
+            ("SETTLER_ABANDON_AFTER_HOURS", "18446744073709551615"),
+            ("SETTLER_ABANDON_AFTER_HOURS", "8761"),
+            ("SETTLER_UNATTENDED_ABANDON_MINUTES", "525601"),
+        ] {
+            let error = load(&[SECRET, (name, value)]).unwrap_err();
+            assert!(
+                matches!(&error, ConfigError::Invalid { name: reported, .. } if *reported == name),
+                "{name}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn forwarded_for_trust_needs_the_proxy_addresses() {
+        assert!(matches!(
+            load(&[SECRET, ("SETTLER_TRUST_FORWARDED_FOR", "true")]),
+            Err(ConfigError::ForwardedForWithoutProxies)
+        ));
+        assert!(load(&[
+            SECRET,
+            ("SETTLER_TRUST_FORWARDED_FOR", "true"),
+            ("SETTLER_TRUSTED_PROXIES", "192.168.178.20"),
+        ])
+        .is_ok());
     }
 
     #[test]
