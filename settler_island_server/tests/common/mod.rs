@@ -246,6 +246,26 @@ impl Client {
         }
     }
 
+    /// Sends a WebSocket ping every 50 ms; true when the server closes the socket within `within`.
+    pub async fn ping_until_closed(&mut self, within: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + within;
+        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        while tokio::time::Instant::now() < deadline {
+            tokio::select! {
+                _ = interval.tick() => {
+                    if self.socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                        return true;
+                    }
+                }
+                next = self.socket.next() => match next {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return true,
+                    Some(Ok(_)) => {}
+                },
+            }
+        }
+        false
+    }
+
     /// Skips broadcasts until the message that echoes `request_id`.
     pub async fn reply(&mut self, request_id: u32) -> ServerMessage {
         loop {

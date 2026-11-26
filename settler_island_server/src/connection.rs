@@ -72,9 +72,7 @@ pub(crate) async fn run<I: IdentityStore>(
         ),
         metrics: metrics.clone(),
     };
-    connection
-        .read_loop(stream, &kick, config.idle_timeout)
-        .await;
+    connection.read_loop(stream, &kick, &config).await;
     if let (Some(lobby), Some(user)) = (connection.lobby.take(), &connection.user) {
         lobby
             .leave(user.id.clone(), connection.outbox.clone())
@@ -110,12 +108,15 @@ impl<I: IdentityStore> Connection<I> {
         &mut self,
         mut stream: SplitStream<WebSocket>,
         kick: &Notify,
-        idle_timeout: Duration,
+        config: &Config,
     ) {
+        // Fixed at connect, so nothing but `Authenticate` keeps an anonymous socket open past it.
+        let auth_deadline = tokio::time::Instant::now() + config.auth_timeout;
         loop {
+            let deadline = self.read_deadline(auth_deadline, config.idle_timeout);
             let next = tokio::select! {
                 () = kick.notified() => return,
-                next = tokio::time::timeout(idle_timeout, stream.next()) => next,
+                next = tokio::time::timeout_at(deadline, stream.next()) => next,
             };
             let Ok(Some(Ok(message))) = next else {
                 debug!("connection closed or idle");
@@ -129,6 +130,19 @@ impl<I: IdentityStore> Connection<I> {
                 Message::Ping(_) | Message::Pong(_) => {}
             }
         }
+    }
+
+    /// Pings keep an authenticated connection alive, but never an anonymous one past its auth deadline.
+    fn read_deadline(
+        &self,
+        auth_deadline: tokio::time::Instant,
+        idle_timeout: Duration,
+    ) -> tokio::time::Instant {
+        let idle_deadline = tokio::time::Instant::now() + idle_timeout;
+        if self.user.is_some() {
+            return idle_deadline;
+        }
+        idle_deadline.min(auth_deadline)
     }
 
     async fn on_message(&mut self, bytes: &[u8]) {

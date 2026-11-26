@@ -128,6 +128,18 @@ async fn rate_limited_errors_echo_the_request_id() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unauthenticated_socket_that_only_pings_is_closed_after_the_auth_timeout() {
+    let config = Config {
+        auth_timeout: Duration::from_millis(300),
+        ..test_config()
+    };
+    let address = start(config).await;
+    let mut client = Client::connect(address).await;
+
+    assert!(client.ping_until_closed(Duration::from_secs(3)).await);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_idle_connection_is_closed() {
     let config = Config {
         idle_timeout: Duration::from_millis(300),
