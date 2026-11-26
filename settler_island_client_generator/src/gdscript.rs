@@ -761,8 +761,7 @@ func poll() -> void:
 fn send_message_body() -> String {
     format!(
         "\t_last_request_id += 1
-\tif \"{REQUEST_ID}\" in message:
-\t\tmessage.set(\"{REQUEST_ID}\", _last_request_id)
+\tmessage.set(\"{REQUEST_ID}\", _last_request_id)
 \tif not _open:
 \t\tpush_warning(\"SiClient: not connected, dropping a message\")
 \t\treturn _last_request_id

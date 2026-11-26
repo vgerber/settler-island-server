@@ -71,8 +71,7 @@ func poll() -> void:
 ## Sends any client message, filling in a fresh request id; returns that id.
 func send_message(message: SiClientMessage) -> int:
 	_last_request_id += 1
-	if "request_id" in message:
-		message.set("request_id", _last_request_id)
+	message.set("request_id", _last_request_id)
 	if not _open:
 		push_warning("SiClient: not connected, dropping a message")
 		return _last_request_id
