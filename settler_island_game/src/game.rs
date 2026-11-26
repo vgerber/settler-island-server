@@ -115,8 +115,6 @@ pub struct Game {
     #[schemars(skip)]
     pub(crate) rng: ChaCha8Rng,
     pub(crate) turn_number: u32,
-    /// Whether the current seat rolled this turn; a knight before the roll returns to `Phase::Roll`.
-    pub(crate) dice_rolled: bool,
     pub(crate) longest_road: Option<Seat>,
     pub(crate) largest_army: Option<Seat>,
 }
@@ -160,7 +158,6 @@ impl Game {
             deck,
             rng,
             turn_number: 0,
-            dice_rolled: false,
             longest_road: None,
             largest_army: None,
         })
@@ -345,18 +342,9 @@ impl Game {
         })
     }
 
-    /// The phase a robber or card interruption returns to: `Main` after the roll, `Roll` before it.
-    pub(crate) fn turn_phase(&self) -> Phase {
-        if self.dice_rolled {
-            return Phase::Main;
-        }
-        Phase::Roll
-    }
-
-    /// Begins a regular turn: the one place the turn number advances and the roll resets.
+    /// Begins a regular turn: the one place the turn number advances.
     pub(crate) fn start_turn(&mut self, seat: Seat) -> Vec<Event> {
         self.turn_number += 1;
-        self.dice_rolled = false;
         let mut events = vec![
             Event::TurnEnded { seat: self.current },
             Event::TurnStarted { seat },
@@ -390,6 +378,7 @@ mod tests {
 
     use super::*;
     use crate::board::{CornerId, EdgeId, TileId};
+    use crate::phase::Resume;
     use crate::resource::Resource;
     use crate::rules::test_support::{after_setup, give, main_phase_game, new_game};
 
@@ -455,7 +444,10 @@ mod tests {
     #[test]
     fn errors_leave_the_game_unchanged() {
         let mut robber = main_phase_game(3, 8);
-        robber.phase = Phase::MoveRobber { then_steal: true };
+        robber.phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        };
         // Full hands, so a rule that pays before validating would show up.
         let mut rich = main_phase_game(4, 8);
         for seat in 0..4 {

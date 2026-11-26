@@ -21,7 +21,7 @@ pub use game::{
     DevelopmentCard, Game, GameSettings, PlayerState, Seat, TradeOffer, DEFAULT_POINTS_TO_WIN,
     MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
 };
-pub use phase::{OwedDiscard, Phase, SetupRound};
+pub use phase::{OwedDiscard, Phase, Resume, SetupRound};
 pub use record::{replay, GameRecord, RecordEntry, RecordHeader, RecordSettings, ReplayError};
 pub use resource::{Resource, ResourceCounts};
 pub use rules::production::CITY_PRODUCTION_FACTOR;

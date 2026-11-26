@@ -148,7 +148,6 @@ mod tests {
             ]
         );
         assert_eq!(game.turn_number, 1);
-        assert!(!game.dice_rolled);
     }
 
     #[test]

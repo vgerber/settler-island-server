@@ -356,7 +356,6 @@ mod tests {
             let seat = live.pending_seats()[0];
             let action = live.legal_actions(seat).pop().unwrap();
             let events = live.apply(seat, action.clone()).unwrap();
-            record.push(seat, action.clone(), events.clone());
             let snapshot = wants_snapshot(index).then(|| live.clone());
             let stored = RecordEntry {
                 index,
@@ -364,6 +363,7 @@ mod tests {
                 action,
                 events,
             };
+            record.push_entry(stored.clone());
             store.append_action(id, stored, snapshot).await.unwrap();
         }
 

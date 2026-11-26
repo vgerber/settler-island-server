@@ -14,7 +14,6 @@ pub(crate) fn roll_dice(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameE
         return Err(GameError::WrongPhase);
     }
 
-    game.dice_rolled = true;
     let first: u8 = game.rng.random_range(1..=6);
     let second: u8 = game.rng.random_range(1..=6);
     let mut events = vec![Event::DiceRolled {
@@ -42,6 +41,7 @@ pub(crate) fn end_turn(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameEr
 mod tests {
     use super::*;
     use crate::action::Action;
+    use crate::phase::Resume;
     use crate::rules::test_support::after_setup;
 
     /// Rolls until `wanted` accepts the total, resetting the phase after each roll.
@@ -66,7 +66,13 @@ mod tests {
         let game = after_setup(4, 6);
         let (game, events) = roll_until(&game, |total| total == 7);
 
-        assert_eq!(game.phase, Phase::MoveRobber { then_steal: true });
+        assert_eq!(
+            game.phase,
+            Phase::MoveRobber {
+                then_steal: true,
+                resume: Resume::Main
+            }
+        );
         assert!(!events
             .iter()
             .any(|event| matches!(event, Event::ResourcesProduced { .. })));

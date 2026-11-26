@@ -2255,6 +2255,9 @@
         {
           "description": "After a 7 or a knight.",
           "properties": {
+            "resume": {
+              "$ref": "#/$defs/Resume"
+            },
             "then_steal": {
               "type": "boolean"
             },
@@ -2265,13 +2268,17 @@
           },
           "required": [
             "type",
-            "then_steal"
+            "then_steal",
+            "resume"
           ],
           "type": "object"
         },
         {
           "description": "Step 2d.",
           "properties": {
+            "resume": {
+              "$ref": "#/$defs/Resume"
+            },
             "tile": {
               "$ref": "#/$defs/TileId"
             },
@@ -2282,13 +2289,17 @@
           },
           "required": [
             "type",
-            "tile"
+            "tile",
+            "resume"
           ],
           "type": "object"
         },
         {
           "description": "Step 2b.",
           "properties": {
+            "resume": {
+              "$ref": "#/$defs/Resume"
+            },
             "roads_left": {
               "format": "uint8",
               "maximum": 255,
@@ -2302,7 +2313,8 @@
           },
           "required": [
             "type",
-            "roads_left"
+            "roads_left",
+            "resume"
           ],
           "type": "object"
         },
@@ -2616,6 +2628,14 @@
       "maxItems": 5,
       "minItems": 5,
       "type": "array"
+    },
+    "Resume": {
+      "description": "The turn phase an interruption returns to; a card played before the roll returns to `Roll`.",
+      "enum": [
+        "Roll",
+        "Main"
+      ],
+      "type": "string"
     },
     "SeatOccupant": {
       "oneOf": [

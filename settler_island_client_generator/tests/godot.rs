@@ -19,7 +19,7 @@ use settler_island_bot::{create_bot, play_game, Difficulty};
 use settler_island_client_generator::{default_client_directory, API_DIRECTORY};
 use settler_island_game::{
     replay, Action, CornerId, DevelopmentCard, EdgeId, Event, Game, GameError, GameSettings, Phase,
-    Port, Resource, ResourceCounts, TileId,
+    Port, Resource, ResourceCounts, Resume, TileId,
 };
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
@@ -375,7 +375,10 @@ fn event_samples() -> Vec<Event> {
             knights: 0,
         },
         Event::PhaseChanged {
-            phase: Phase::RoadBuilding { roads_left: 2 },
+            phase: Phase::RoadBuilding {
+                roads_left: 2,
+                resume: Resume::Main,
+            },
         },
         Event::TurnStarted { seat: 2 },
         Event::TurnEnded { seat: 2 },

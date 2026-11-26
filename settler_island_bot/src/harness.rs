@@ -1,5 +1,5 @@
 use settler_island_game::{
-    Action, Game, GameError, GameRecord, GameSettings, Phase, PlayerView, Seat,
+    Action, Game, GameError, GameRecord, GameSettings, Phase, PlayerView, RecordEntry, Seat,
 };
 
 use crate::Bot;
@@ -62,7 +62,12 @@ pub fn play_game(
                     action: Box::new(action.clone()),
                     error,
                 })?;
-        record.push(seat, action, events);
+        record.push_entry(RecordEntry {
+            index: u32::try_from(record.entries.len()).unwrap_or(u32::MAX),
+            seat,
+            action,
+            events,
+        });
         actions += 1;
     }
     let winner = match game.phase() {

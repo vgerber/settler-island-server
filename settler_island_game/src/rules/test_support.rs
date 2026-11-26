@@ -31,7 +31,6 @@ pub(crate) fn main_phase_game(seats: u8, seed: u64) -> Game {
         player.hand = ResourceCounts::default();
     }
     game.phase = Phase::Main;
-    game.dice_rolled = true;
     game
 }
 

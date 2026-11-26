@@ -59,7 +59,6 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
         let seat = live.pending_seats()[0];
         let action = live.legal_actions(seat).pop().unwrap();
         let events = live.apply(seat, action.clone()).unwrap();
-        record.push(seat, action.clone(), events.clone());
         let snapshot = wants_snapshot(index).then(|| live.clone());
         let stored = RecordEntry {
             index,
@@ -67,6 +66,7 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
             action,
             events,
         };
+        record.push_entry(stored.clone());
         store.append_action(id, stored, snapshot).await.unwrap();
     }
     let duplicate = RecordEntry {

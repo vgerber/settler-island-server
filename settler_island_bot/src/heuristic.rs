@@ -348,7 +348,9 @@ fn helps_goal(view: &PlayerView, own: &OwnView, offer: &TradeOffer) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, OwedDiscard, TileId};
+    use settler_island_game::{
+        BuildingKind, CornerId, Game, GameSettings, OwedDiscard, Resume, TileId,
+    };
 
     /// A real board after four heuristic bots placed their setup pieces.
     fn after_setup(seed: u64) -> Game {
@@ -434,7 +436,10 @@ mod tests {
     #[test]
     fn robber_hits_the_leader_and_spares_own_tiles() {
         let game = after_setup(3);
-        let phase = Phase::MoveRobber { then_steal: true };
+        let phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        };
         let mut view = view_with(&game, phase, ResourceCounts::default());
         view.players[2].points = 6;
         let legal: Vec<Action> = view
@@ -456,7 +461,10 @@ mod tests {
     #[test]
     fn steals_from_the_seat_with_most_points() {
         let game = after_setup(1);
-        let phase = Phase::Steal { tile: TileId(0) };
+        let phase = Phase::Steal {
+            tile: TileId(0),
+            resume: Resume::Main,
+        };
         let mut view = view_with(&game, phase, ResourceCounts::default());
         view.players[3].points = 5;
         let legal = vec![Action::Steal { victim: 1 }, Action::Steal { victim: 3 }];

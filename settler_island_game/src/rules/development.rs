@@ -3,7 +3,7 @@ use crate::board::EdgeId;
 use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{DevelopmentCard, Game, Holder, Seat};
-use crate::phase::Phase;
+use crate::phase::{Phase, Resume};
 use crate::resource::{Resource, ResourceCounts};
 use crate::rules::building;
 use crate::rules::purchase::Purchase;
@@ -31,14 +31,19 @@ pub(crate) fn play_knight(game: &mut Game, seat: Seat) -> Result<Vec<Event>, Gam
     let mut events = vec![spend_card(game, seat, DevelopmentCard::Knight)?];
     let player = game.player_mut(seat)?;
     player.knights_played = player.knights_played.saturating_add(1);
-    events.push(game.enter(Phase::MoveRobber { then_steal: true }));
+    let resume = Resume::from_phase(&game.phase);
+    events.push(game.enter(Phase::MoveRobber {
+        then_steal: true,
+        resume,
+    }));
     Ok(events)
 }
 
 pub(crate) fn play_road_building(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
     check_play(game, seat, DevelopmentCard::RoadBuilding)?;
+    let resume = Resume::from_phase(&game.phase);
     let mut events = vec![spend_card(game, seat, DevelopmentCard::RoadBuilding)?];
-    let phase = road_phase(game, seat, FREE_ROADS);
+    let phase = road_phase(game, seat, FREE_ROADS, resume);
     events.push(game.enter(phase));
     Ok(events)
 }
@@ -97,12 +102,12 @@ pub(crate) fn build_free_road(
     seat: Seat,
     edge: EdgeId,
 ) -> Result<Vec<Event>, GameError> {
-    let Phase::RoadBuilding { roads_left } = game.phase else {
+    let Phase::RoadBuilding { roads_left, resume } = game.phase else {
         return Err(GameError::WrongPhase);
     };
     check_free_road(game, seat, edge)?;
     let mut events = vec![building::place_road(game, seat, edge)];
-    let phase = road_phase(game, seat, roads_left.saturating_sub(1));
+    let phase = road_phase(game, seat, roads_left.saturating_sub(1), resume);
     events.push(game.enter(phase));
     Ok(events)
 }
@@ -236,17 +241,17 @@ fn year_of_plenty_choices(game: &Game) -> Vec<Action> {
     actions
 }
 
-/// Continues road building while pieces and legal edges remain, else back to `Main`.
-fn road_phase(game: &Game, seat: Seat, roads_left: u8) -> Phase {
+/// Continues road building while pieces and legal edges remain, else resumes the turn.
+fn road_phase(game: &Game, seat: Seat, roads_left: u8, resume: Resume) -> Phase {
     let can_continue = roads_left > 0
         && game
             .board
             .edge_ids()
             .any(|edge| building::check_road_placement(game, seat, edge).is_ok());
     if can_continue {
-        return Phase::RoadBuilding { roads_left };
+        return Phase::RoadBuilding { roads_left, resume };
     }
-    Phase::Main
+    resume.phase()
 }
 
 fn check_free_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
@@ -391,7 +396,13 @@ mod tests {
                 card: DevelopmentCard::Knight
             }
         );
-        assert_eq!(game.phase, Phase::MoveRobber { then_steal: true });
+        assert_eq!(
+            game.phase,
+            Phase::MoveRobber {
+                then_steal: true,
+                resume: Resume::Main
+            }
+        );
         assert_eq!(game.players[0].knights_played, 1);
         assert!(game.players[0].development_cards.is_empty());
     }
@@ -417,7 +428,13 @@ mod tests {
             vec![Action::RollDice, Action::PlayKnight]
         );
         game.apply(0, Action::PlayKnight).unwrap();
-        assert_eq!(game.phase, Phase::MoveRobber { then_steal: true });
+        assert_eq!(
+            game.phase,
+            Phase::MoveRobber {
+                then_steal: true,
+                resume: Resume::Roll
+            }
+        );
     }
 
     #[test]
@@ -425,7 +442,13 @@ mod tests {
         let mut game = main_phase_game(4, 5);
         hold(&mut game, 0, DevelopmentCard::RoadBuilding);
         game.apply(0, Action::PlayRoadBuilding).unwrap();
-        assert_eq!(game.phase, Phase::RoadBuilding { roads_left: 2 });
+        assert_eq!(
+            game.phase,
+            Phase::RoadBuilding {
+                roads_left: 2,
+                resume: Resume::Main
+            }
+        );
         let roads_before = game.players[0].roads_left;
 
         let legal = game.legal_actions(0);
@@ -442,7 +465,13 @@ mod tests {
         assert_eq!(game, before);
 
         game.apply(0, legal[0].clone()).unwrap();
-        assert_eq!(game.phase, Phase::RoadBuilding { roads_left: 1 });
+        assert_eq!(
+            game.phase,
+            Phase::RoadBuilding {
+                roads_left: 1,
+                resume: Resume::Main
+            }
+        );
         let second = game.legal_actions(0)[0].clone();
         game.apply(0, second).unwrap();
 
@@ -458,7 +487,13 @@ mod tests {
         hold(&mut game, 0, DevelopmentCard::RoadBuilding);
         game.players[0].roads_left = 1;
         game.apply(0, Action::PlayRoadBuilding).unwrap();
-        assert_eq!(game.phase, Phase::RoadBuilding { roads_left: 2 });
+        assert_eq!(
+            game.phase,
+            Phase::RoadBuilding {
+                roads_left: 2,
+                resume: Resume::Main
+            }
+        );
 
         let road = game.legal_actions(0)[0].clone();
         game.apply(0, road).unwrap();
@@ -477,6 +512,23 @@ mod tests {
 
         assert_eq!(game.phase, Phase::Main);
         assert!(game.players[0].played_development_card_this_turn);
+    }
+
+    #[test]
+    fn road_building_before_the_roll_returns_to_the_roll() {
+        let mut game = after_setup(4, 5);
+        game.phase = Phase::RoadBuilding {
+            roads_left: 2,
+            resume: Resume::Roll,
+        };
+
+        for _ in 0..2 {
+            let road = game.legal_actions(0)[0].clone();
+            game.apply(0, road).unwrap();
+        }
+
+        assert_eq!(game.phase, Phase::Roll);
+        assert!(game.legal_actions(0).contains(&Action::RollDice));
     }
 
     #[test]
@@ -579,7 +631,10 @@ mod tests {
         hold(&mut played, 0, DevelopmentCard::Monopoly);
         played.players[0].played_development_card_this_turn = true;
         let mut no_free_road = rich.clone();
-        no_free_road.phase = Phase::RoadBuilding { roads_left: 2 };
+        no_free_road.phase = Phase::RoadBuilding {
+            roads_left: 2,
+            resume: Resume::Main,
+        };
         let actions = [
             Action::BuyDevelopmentCard,
             Action::PlayKnight,

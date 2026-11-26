@@ -23,14 +23,17 @@ pub enum Phase {
     /// After a 7 or a knight.
     MoveRobber {
         then_steal: bool,
+        resume: Resume,
     },
     /// Step 2d.
     Steal {
         tile: TileId,
+        resume: Resume,
     },
     /// Step 2b.
     RoadBuilding {
         roads_left: u8,
+        resume: Resume,
     },
     /// A player trade is open (step 2a).
     TradeOffered {
@@ -46,6 +49,30 @@ pub enum Phase {
 pub enum SetupRound {
     First,
     Second,
+}
+
+/// The turn phase an interruption returns to; a card played before the roll returns to `Roll`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum Resume {
+    Roll,
+    Main,
+}
+
+impl Resume {
+    /// The resume point for an interruption that starts in `phase`.
+    pub(crate) fn from_phase(phase: &Phase) -> Resume {
+        match phase {
+            Phase::Roll => Resume::Roll,
+            _ => Resume::Main,
+        }
+    }
+
+    pub(crate) fn phase(self) -> Phase {
+        match self {
+            Resume::Roll => Phase::Roll,
+            Resume::Main => Phase::Main,
+        }
+    }
 }
 
 /// A seat that has to discard `cards` cards after a 7.

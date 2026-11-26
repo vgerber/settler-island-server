@@ -3,7 +3,7 @@ use crate::board::TileId;
 use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Holder, Seat};
-use crate::phase::{OwedDiscard, Phase};
+use crate::phase::{OwedDiscard, Phase, Resume};
 use rand::Rng;
 
 use crate::resource::{Resource, ResourceCounts};
@@ -12,19 +12,21 @@ use crate::resource::{Resource, ResourceCounts};
 pub const DISCARD_ABOVE_CARDS: u32 = 7;
 
 /// Moves the robber to another tile. With `then_steal` and a victim on the tile the turn goes to `Steal`;
-/// otherwise the steal is skipped and the turn continues in `Main`.
+/// otherwise the steal is skipped and the turn resumes.
 pub(crate) fn move_robber(
     game: &mut Game,
     seat: Seat,
     tile: TileId,
 ) -> Result<Vec<Event>, GameError> {
     check_move(game, seat, tile)?;
-    let then_steal = matches!(game.phase, Phase::MoveRobber { then_steal: true });
+    let Phase::MoveRobber { then_steal, resume } = game.phase else {
+        return Err(GameError::WrongPhase);
+    };
     game.board.set_robber(tile);
     let next = if then_steal && !victims(game, seat, tile).is_empty() {
-        Phase::Steal { tile }
+        Phase::Steal { tile, resume }
     } else {
-        game.turn_phase()
+        resume.phase()
     };
     Ok(vec![Event::RobberMoved { seat, tile }, game.enter(next)])
 }
@@ -49,7 +51,10 @@ pub(crate) fn on_seven(game: &mut Game, _seat: Seat) -> Vec<Event> {
         })
         .collect();
     let phase = if owed.is_empty() {
-        Phase::MoveRobber { then_steal: true }
+        Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        }
     } else {
         Phase::Discard { owed }
     };
@@ -81,7 +86,10 @@ pub(crate) fn discard(
 
     let mut events = vec![Event::CardsDiscarded { seat, resources }];
     let next = if left.is_empty() {
-        Phase::MoveRobber { then_steal: true }
+        Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        }
     } else {
         Phase::Discard { owed: left }
     };
@@ -92,7 +100,7 @@ pub(crate) fn discard(
 /// Takes one random card from the victim; the roller or knight player is `game.current`.
 pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Event>, GameError> {
     game.require_turn(seat)?;
-    let Phase::Steal { tile } = game.phase else {
+    let Phase::Steal { tile, resume } = game.phase else {
         return Err(GameError::WrongPhase);
     };
     if !victims(game, seat, tile).contains(&victim) {
@@ -122,7 +130,7 @@ pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Eve
             victim,
             resource: Some(resource),
         },
-        game.enter(game.turn_phase()),
+        game.enter(resume.phase()),
     ])
 }
 
@@ -164,7 +172,7 @@ fn sub_multisets(
 }
 
 pub(crate) fn legal_steals(game: &Game, seat: Seat) -> Vec<Action> {
-    let Phase::Steal { tile } = game.phase else {
+    let Phase::Steal { tile, .. } = game.phase else {
         return Vec::new();
     };
     victims(game, seat, tile)
@@ -235,14 +243,20 @@ mod tests {
         put_settlement(&mut game, 1, corners[0]);
         put_settlement(&mut game, 2, corners[2]);
         put_settlement(&mut game, 0, corners[4]);
-        game.phase = Phase::MoveRobber { then_steal: true };
+        game.phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        };
         (game, tile)
     }
 
     #[test]
     fn robber_must_leave_its_tile() {
         let mut game = main_phase_game(4, 12);
-        game.phase = Phase::MoveRobber { then_steal: true };
+        game.phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Main,
+        };
         let seat = game.current;
         let start = game.board.robber();
 
@@ -273,7 +287,13 @@ mod tests {
 
         on_seven(&mut game, 0);
 
-        assert_eq!(game.phase, Phase::MoveRobber { then_steal: true });
+        assert_eq!(
+            game.phase,
+            Phase::MoveRobber {
+                then_steal: true,
+                resume: Resume::Main
+            }
+        );
         assert_eq!(game.pending_seats(), vec![0]);
     }
 
@@ -341,7 +361,13 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(game.phase, Phase::MoveRobber { then_steal: true });
+        assert_eq!(
+            game.phase,
+            Phase::MoveRobber {
+                then_steal: true,
+                resume: Resume::Main
+            }
+        );
         assert_eq!(game.pending_seats(), vec![0]);
         assert_eq!(total_cards(&game), 95);
     }
@@ -440,11 +466,20 @@ mod tests {
 
         let events = game.apply(0, Action::MoveRobber { tile }).unwrap();
 
-        assert_eq!(game.phase, Phase::Steal { tile });
+        assert_eq!(
+            game.phase,
+            Phase::Steal {
+                tile,
+                resume: Resume::Main
+            }
+        );
         assert_eq!(
             events.last(),
             Some(&Event::PhaseChanged {
-                phase: Phase::Steal { tile }
+                phase: Phase::Steal {
+                    tile,
+                    resume: Resume::Main
+                }
             })
         );
         // Seat 2 has no cards and seat 0 is the mover: only seat 1 is offered.
@@ -495,7 +530,10 @@ mod tests {
     #[test]
     fn knight_before_the_roll_returns_to_the_roll() {
         let (mut game, tile) = robber_game(3);
-        game.dice_rolled = false;
+        game.phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Roll,
+        };
         give(&mut game, 1, cards([0, 0, 0, 0, 1]));
         game.apply(0, Action::MoveRobber { tile }).unwrap();
         let victim = game.legal_actions(0)[0].clone();
@@ -503,7 +541,10 @@ mod tests {
         assert_eq!(game.phase, Phase::Roll);
 
         let (mut game, tile) = robber_game(3);
-        game.dice_rolled = false;
+        game.phase = Phase::MoveRobber {
+            then_steal: true,
+            resume: Resume::Roll,
+        };
         game.apply(0, Action::MoveRobber { tile }).unwrap();
         assert_eq!(game.phase, Phase::Roll);
     }
@@ -512,7 +553,10 @@ mod tests {
     fn without_then_steal_the_turn_continues() {
         let (mut game, tile) = robber_game(3);
         give(&mut game, 1, cards([0, 0, 0, 0, 1]));
-        game.phase = Phase::MoveRobber { then_steal: false };
+        game.phase = Phase::MoveRobber {
+            then_steal: false,
+            resume: Resume::Main,
+        };
 
         game.apply(0, Action::MoveRobber { tile }).unwrap();
 

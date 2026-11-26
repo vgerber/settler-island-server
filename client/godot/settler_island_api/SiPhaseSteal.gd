@@ -6,15 +6,18 @@ extends SiPhase
 const VARIANT := "Steal"
 
 var tile: int = 0
+var resume: String = ""
 
 static func from_dict(data: Variant) -> SiPhaseSteal:
 	var decoded := SiPhaseSteal.new()
 	decoded.tile = int(data.get("tile"))
+	decoded.resume = str(data.get("resume"))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
 		"type": "Steal",
 		"tile": tile,
+		"resume": resume,
 	}
 	return encoded

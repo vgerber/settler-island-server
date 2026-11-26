@@ -10,7 +10,8 @@ use crate::game::{Game, Seat};
 // 2: the open trade moved into `Phase::TradeOffered { offer }`, so phase events carry the offer.
 // 3: setup rounds are `First`/`Second`, discard entries are `{ seat, cards }`, and the first turn starts with
 // `TurnEnded` like every other.
-const FORMAT_VERSION: u16 = 3;
+// 4: `MoveRobber`, `Steal` and `RoadBuilding` carry the phase they resume (`Roll` or `Main`).
+const FORMAT_VERSION: u16 = 4;
 const RULES_VERSION: u16 = 1;
 
 /// A game as header plus ordered entries; random outcomes are in the events, the seed is never stored.
@@ -60,15 +61,6 @@ impl GameRecord {
         }
     }
 
-    pub fn push(&mut self, seat: Seat, action: Action, events: Vec<Event>) {
-        self.push_entry(RecordEntry {
-            index: self.entries.len() as u32,
-            seat,
-            action,
-            events,
-        });
-    }
-
     pub fn push_entry(&mut self, entry: RecordEntry) {
         self.entries.push(entry);
     }
@@ -114,7 +106,12 @@ mod tests {
             let seat = game.pending_seats()[0];
             let action = game.legal_actions(seat).pop().unwrap();
             let events = game.apply(seat, action.clone()).unwrap();
-            record.push(seat, action, events);
+            record.push_entry(RecordEntry {
+                index: record.entries.len() as u32,
+                seat,
+                action,
+                events,
+            });
         }
         (game, record)
     }

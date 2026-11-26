@@ -6,15 +6,18 @@ extends SiPhase
 const VARIANT := "RoadBuilding"
 
 var roads_left: int = 0
+var resume: String = ""
 
 static func from_dict(data: Variant) -> SiPhaseRoadBuilding:
 	var decoded := SiPhaseRoadBuilding.new()
 	decoded.roads_left = int(data.get("roads_left"))
+	decoded.resume = str(data.get("resume"))
 	return decoded
 
 func to_dict() -> Dictionary:
 	var encoded := {
 		"type": "RoadBuilding",
 		"roads_left": roads_left,
+		"resume": resume,
 	}
 	return encoded
