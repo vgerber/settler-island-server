@@ -44,3 +44,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
   client_address to rate_limit::forwarded_client(peer, x-forwarded-for, trusted proxies or &[] when
   trust_forwarded_for is off); the gate fails on dead code until then.
 - 2D follow-up: test that a request after the JWKS failure back-off expires fetches again (make the back-off a constructor parameter so a test can use a short window).
+- Security L10 restore tail: restore loads the full action log because RunningGame keeps the whole GameRecord for GetRecord; a tail-only restore needs the lobby to load the record prefix lazily from the store (0.31 s for 100 games today, low priority).
