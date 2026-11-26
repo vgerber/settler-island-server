@@ -6,7 +6,8 @@
 #   quick          clippy and the tests of the crates whose files changed against main (falls back to full when none).
 #   fmt            cargo fmt --check only.
 #   db             the full gate plus the Postgres-backed server tests: starts this project's own container
-#                  settler-island-db (docker compose, port 6436) if it is not running and stops it again afterwards.
+#                  settler-island-db (docker compose, port 6436) if it is not running and stops it again afterwards;
+#                  concurrent db gates from several worktrees take turns (a lock in the git common dir).
 #                Fails fast, with the docker output, when docker or the container does not come up.
 # Full mode exports SETTLER_REQUIRE_GODOT=1: the Godot tests must run, a missing Godot is a failure, not a skip.
 # The repository is the git top level of the current directory, so running this inside an agent worktree gates (and
@@ -112,6 +113,12 @@ case "$mode" in
     test_totals
     ;;
   db)
+    # Worktrees share one settler-island-db: a second db gate waits, so neither stops the container under the other.
+    exec 9>"$(git rev-parse --git-common-dir)/settler-db-gate.lock"
+    if ! flock -n 9; then
+      echo "db mode: another db gate holds the database, waiting"
+      flock 9
+    fi
     started_database=0
     if [ "$(docker inspect -f '{{.State.Running}}' settler-island-db 2>/dev/null)" != "true" ]; then
       if ! docker_output="$(docker compose up -d db 2>&1)"; then
