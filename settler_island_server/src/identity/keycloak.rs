@@ -12,6 +12,8 @@ use crate::config::KeycloakConfig;
 
 /// Bounds how often an unknown `kid` (rotation, or a forger guessing) makes us refetch the realm keys.
 const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+/// After a failed fetch every request gets the same error for this long, so a down realm is not hammered.
+const FAILURE_BACKOFF: Duration = Duration::from_secs(5);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The claims we read from a Keycloak access token.
@@ -40,7 +42,7 @@ struct KeyCache {
     last_fetch: Option<Instant>,
 }
 
-/// Held by the refresh lock, so requests that waited on a failing fetch get its error instead of fetching again.
+/// Held by the refresh lock, so requests during the back-off get the last failure instead of fetching again.
 #[derive(Default)]
 struct RefreshState {
     last_failure: Option<(Instant, Arc<reqwest::Error>)>,
@@ -63,6 +65,7 @@ impl KeycloakVerifier {
         validation.set_issuer(&[&config.issuer]);
         validation.set_audience(&[&config.audience]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
+        validation.validate_nbf = true;
         KeycloakVerifier {
             jwks_url: config.jwks_url(),
             validation,
@@ -84,13 +87,12 @@ impl KeycloakVerifier {
         if let Some(key) = self.cached(kid) {
             return Ok(key);
         }
-        let waiting_since = Instant::now();
         let mut refresh = self.refresh.lock().await;
         if let Some(key) = self.cached(kid) {
             return Ok(key);
         }
         if let Some((failed_at, error)) = &refresh.last_failure {
-            if *failed_at >= waiting_since {
+            if failed_at.elapsed() < FAILURE_BACKOFF {
                 return Err(AccountTokenError::KeysUnavailable(error.clone()));
             }
         }

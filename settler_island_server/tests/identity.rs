@@ -184,6 +184,8 @@ async fn account_tokens_must_be_signed_by_the_realm_for_us_and_unexpired() {
     wrong_issuer["iss"] = json!("http://127.0.0.1:1/realms/other");
     let mut wrong_audience = realm.claims("sub-1", "kim");
     wrong_audience["aud"] = json!(["account", "some-other-api"]);
+    let mut not_yet_valid = realm.claims("sub-1", "kim");
+    not_yet_valid["nbf"] = json!(now() + 600);
     let forged = sign(&KEYS[1], KID, &realm.claims("sub-1", "kim"));
     let unsigned = format!(
         "{}.{}.",
@@ -194,6 +196,7 @@ async fn account_tokens_must_be_signed_by_the_realm_for_us_and_unexpired() {
         sign(&KEYS[0], KID, &expired),
         sign(&KEYS[0], KID, &wrong_issuer),
         sign(&KEYS[0], KID, &wrong_audience),
+        sign(&KEYS[0], KID, &not_yet_valid),
         forged,
         unsigned,
     ] {
@@ -220,7 +223,7 @@ async fn realm_keys_are_cached_and_unknown_key_ids_cannot_force_refetches() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_failed_key_fetch_is_a_server_error_and_the_next_request_fetches_again() {
+async fn a_failed_key_fetch_is_a_server_error_and_backs_off_further_fetches() {
     let (address, realm) = start_with_misbehaving_realm(RealmBehaviour {
         failures: 1,
         ..RealmBehaviour::default()
@@ -229,9 +232,9 @@ async fn a_failed_key_fetch_is_a_server_error_and_the_next_request_fetches_again
     let token = realm.token("sub-1", "kim");
 
     assert_eq!(rejection(address, &token).await, ErrorCode::Internal);
-    Client::authenticated(address, &token).await;
+    assert_eq!(rejection(address, &token).await, ErrorCode::Internal);
 
-    assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 2);
+    assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
