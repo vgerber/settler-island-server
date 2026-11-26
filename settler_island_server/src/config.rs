@@ -415,7 +415,7 @@ mod tests {
         let asked = std::cell::RefCell::new(Vec::new());
         let _ = Config::from_vars(|name| {
             asked.borrow_mut().push(name.to_string());
-            Some(SECRET.1.to_string()).filter(|_| name == SECRET.0)
+            (name == SECRET.0).then(|| SECRET.1.to_string())
         });
 
         let mut asked = asked.into_inner();
