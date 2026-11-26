@@ -20,6 +20,7 @@ use crate::metrics::Metrics;
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
 use crate::password;
+use crate::rate_limit::TokenBucket;
 use crate::registry::{LobbyEntry, NewLobby, RegistryHandle};
 
 /// The unvalidated settings of a `CreateLobby` request.
@@ -27,33 +28,6 @@ struct LobbyOptions {
     seats: u8,
     points_to_win: Option<u8>,
     bot_difficulty: Option<Difficulty>,
-}
-
-/// Counts messages in fixed one-second windows.
-#[derive(Debug)]
-struct RateLimiter {
-    limit: u32,
-    window_start: Instant,
-    count: u32,
-}
-
-impl RateLimiter {
-    fn new(limit: u32, now: Instant) -> RateLimiter {
-        RateLimiter {
-            limit,
-            window_start: now,
-            count: 0,
-        }
-    }
-
-    fn allow(&mut self, now: Instant) -> bool {
-        if now.duration_since(self.window_start) >= Duration::from_secs(1) {
-            self.window_start = now;
-            self.count = 0;
-        }
-        self.count += 1;
-        self.count <= self.limit
-    }
 }
 
 /// Recovers the request id of a message that failed to parse, so the error still reaches the right request.
@@ -68,7 +42,7 @@ struct Connection<I> {
     identity: Arc<Identity<I>>,
     user: Option<User>,
     lobby: Option<LobbyHandle>,
-    limiter: RateLimiter,
+    limiter: TokenBucket,
     metrics: Arc<Metrics>,
 }
 
@@ -91,7 +65,11 @@ pub(crate) async fn run<I: IdentityStore>(
         identity,
         user: None,
         lobby: None,
-        limiter: RateLimiter::new(config.messages_per_second, Instant::now()),
+        limiter: TokenBucket::new(
+            f64::from(config.messages_per_second),
+            config.messages_per_second,
+            Instant::now(),
+        ),
         metrics: metrics.clone(),
     };
     connection
@@ -154,7 +132,7 @@ impl<I: IdentityStore> Connection<I> {
     }
 
     async fn on_message(&mut self, bytes: &[u8]) {
-        if !self.limiter.allow(Instant::now()) {
+        if self.limiter.take(Instant::now()).is_err() {
             self.send_error(None, ErrorCode::RateLimited);
             return;
         }
@@ -416,19 +394,4 @@ async fn hash_password(password: String) -> Result<String, ErrorCode> {
         error!(%error, "hashing a lobby password failed");
         ErrorCode::Internal
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rate_limiter_allows_the_limit_per_second_then_resets() {
-        let start = Instant::now();
-        let mut limiter = RateLimiter::new(3, start);
-
-        assert!((0..3).all(|_| limiter.allow(start)));
-        assert!(!limiter.allow(start + Duration::from_millis(999)));
-        assert!(limiter.allow(start + Duration::from_secs(1)));
-    }
 }
