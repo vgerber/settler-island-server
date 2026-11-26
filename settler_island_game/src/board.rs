@@ -60,6 +60,17 @@ pub struct Edge {
     pub port: Option<Port>,
 }
 
+impl Edge {
+    /// The corner at the other end, or `None` when `corner` is not an end of this edge.
+    pub fn other_end(&self, corner: CornerId) -> Option<CornerId> {
+        let [first, second] = self.corners;
+        if corner == first {
+            return Some(second);
+        }
+        (corner == second).then_some(first)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum BuildingKind {
     Settlement,
@@ -124,6 +135,24 @@ impl Board {
                 .all(|neighbor| self.building(*neighbor).is_none())
     }
 
+    /// The seat's buildings with their corners, in corner order.
+    pub fn buildings_of(&self, seat: Seat) -> impl Iterator<Item = (CornerId, Building)> + '_ {
+        self.corner_ids().filter_map(move |corner| {
+            let building = self.building(corner)?;
+            (building.seat == seat).then_some((corner, building))
+        })
+    }
+
+    /// The corner exists and one of its edges holds a road of `seat`.
+    pub fn touches_road(&self, seat: Seat, id: CornerId) -> bool {
+        self.corner(id).is_some_and(|location| {
+            location
+                .edges
+                .iter()
+                .any(|edge| self.road(*edge) == Some(seat))
+        })
+    }
+
     pub fn road(&self, id: EdgeId) -> Option<Seat> {
         self.roads.get(usize::from(id.0)).copied().flatten()
     }
@@ -160,5 +189,52 @@ impl Board {
 
     pub(crate) fn set_robber(&mut self, id: TileId) {
         self.robber = id;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::test_support::{new_game, put_road, put_settlement};
+
+    #[test]
+    fn other_end_returns_the_far_corner_only_for_an_end() {
+        let game = new_game(3, 7);
+        let edge = &game.board.edges()[0];
+        let [first, second] = edge.corners;
+        assert_eq!(edge.other_end(first), Some(second));
+        assert_eq!(edge.other_end(second), Some(first));
+        let stranger = game
+            .board
+            .corner_ids()
+            .find(|corner| *corner != first && *corner != second)
+            .unwrap();
+        assert_eq!(edge.other_end(stranger), None);
+    }
+
+    #[test]
+    fn buildings_of_lists_only_the_seats_buildings() {
+        let mut game = new_game(3, 7);
+        let corners: Vec<CornerId> = game.board.corner_ids().take(20).step_by(7).collect();
+        put_settlement(&mut game, 0, corners[0]);
+        put_settlement(&mut game, 1, corners[1]);
+        put_settlement(&mut game, 0, corners[2]);
+        let own: Vec<CornerId> = game
+            .board
+            .buildings_of(0)
+            .map(|(corner, _)| corner)
+            .collect();
+        assert_eq!(own, vec![corners[0], corners[2]]);
+    }
+
+    #[test]
+    fn touches_road_needs_the_seats_own_road_at_the_corner() {
+        let mut game = new_game(3, 7);
+        let edge = game.board.edges()[0].clone();
+        let [first, second] = edge.corners;
+        put_road(&mut game, 0, first, second);
+        assert!(game.board.touches_road(0, first));
+        assert!(game.board.touches_road(0, second));
+        assert!(!game.board.touches_road(1, first));
     }
 }

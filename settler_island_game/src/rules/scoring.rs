@@ -12,10 +12,8 @@ const AWARD_POINTS: u8 = 2;
 pub(crate) fn public_points(game: &Game, seat: Seat) -> u8 {
     let buildings: u8 = game
         .board
-        .corner_ids()
-        .filter_map(|corner| game.board.building(corner))
-        .filter(|building| building.seat == seat)
-        .map(|building| match building.kind {
+        .buildings_of(seat)
+        .map(|(_, building)| match building.kind {
             BuildingKind::Settlement => 1,
             BuildingKind::City => 2,
         })
@@ -125,15 +123,7 @@ fn longest_trail_from(board: &Board, seat: Seat, corner: CornerId, used: u128) -
     data.edges
         .iter()
         .filter(|edge| board.road(**edge) == Some(seat) && used & edge_bit(**edge) == 0)
-        .filter_map(|edge| {
-            let corners = board.edge(*edge)?.corners;
-            let next = if corners[0] == corner {
-                corners[1]
-            } else {
-                corners[0]
-            };
-            Some((*edge, next))
-        })
+        .filter_map(|edge| Some((*edge, board.edge(*edge)?.other_end(corner)?)))
         .map(|(edge, next)| {
             if blocks(board, seat, next) {
                 return 1;

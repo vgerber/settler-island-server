@@ -54,13 +54,7 @@ pub(crate) fn corner_production(board: &Board, corner: CornerId) -> Production {
 /// Cities count twice.
 pub(crate) fn seat_production(board: &Board, seat: Seat) -> Production {
     let mut total = [0; 5];
-    for corner in board.corner_ids() {
-        let Some(building) = board
-            .building(corner)
-            .filter(|building| building.seat == seat)
-        else {
-            continue;
-        };
+    for (corner, building) in board.buildings_of(seat) {
         let factor = if building.kind == BuildingKind::City {
             u32::from(CITY_PRODUCTION_FACTOR)
         } else {
@@ -104,29 +98,17 @@ fn port_value(port: Port, production: &Production, existing: &Production) -> f64
 }
 
 fn in_network(board: &Board, seat: Seat, corner: CornerId) -> bool {
-    let Some(location) = board.corner(corner) else {
-        return false;
-    };
     board
         .building(corner)
         .is_some_and(|building| building.seat == seat)
-        || location
-            .edges
-            .iter()
-            .any(|edge| board.road(*edge) == Some(seat))
+        || board.touches_road(seat, corner)
 }
 
 /// A free site touching an own road: a settlement can go there once it is paid.
 pub(crate) fn has_open_site(board: &Board, seat: Seat) -> bool {
-    board.corner_ids().any(|corner| {
-        board.is_settlement_site(corner)
-            && board.corner(corner).is_some_and(|location| {
-                location
-                    .edges
-                    .iter()
-                    .any(|edge| board.road(*edge) == Some(seat))
-            })
-    })
+    board
+        .corner_ids()
+        .any(|corner| board.is_settlement_site(corner) && board.touches_road(seat, corner))
 }
 
 /// Worth of the best free site reachable from the new end of `edge`, halved per extra road.
@@ -197,7 +179,7 @@ fn open_neighbors(board: &Board, corner: CornerId, built: EdgeId) -> Vec<CornerI
         .iter()
         .filter(|edge| **edge != built && board.road(**edge).is_none())
         .filter_map(|edge| board.edge(*edge))
-        .filter_map(|edge| edge.corners.iter().copied().find(|end| *end != corner))
+        .filter_map(|edge| edge.other_end(corner))
         .collect()
 }
 
