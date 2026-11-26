@@ -657,7 +657,7 @@ fn start_server(runtime: &tokio::runtime::Runtime, seed: Option<u64>) -> String 
             // Scripted clients answer every update at once; the limiter has its own server tests.
             messages_per_second: 10_000,
             seed,
-            ..Config::new(SessionSecret::new(vec![7; 32]).unwrap())
+            ..Config::new(SessionSecret::new((0..32).collect::<Vec<u8>>()).unwrap())
         };
         tokio::spawn(serve(
             listener,

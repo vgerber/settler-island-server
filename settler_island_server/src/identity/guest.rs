@@ -96,8 +96,10 @@ mod tests {
 
     const NOW: u64 = 1_800_000_000;
 
-    fn signer(fill: u8) -> GuestTokens {
-        GuestTokens::new(SessionSecret::new(vec![fill; 32]).unwrap())
+    fn signer(first_byte: u8) -> GuestTokens {
+        GuestTokens::new(
+            SessionSecret::new((first_byte..first_byte + 32).collect::<Vec<u8>>()).unwrap(),
+        )
     }
 
     fn ada() -> User {

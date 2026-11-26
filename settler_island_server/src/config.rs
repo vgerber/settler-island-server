@@ -26,6 +26,10 @@ const DEFAULT_DB_ACQUIRE_TIMEOUT_SECONDS: u64 = 5;
 pub const MAX_ABANDON_AFTER_HOURS: u64 = 24 * 365;
 /// HMAC-SHA256 gains nothing from longer keys, and shorter ones are guessable.
 pub const MIN_SESSION_SECRET_BYTES: usize = 32;
+/// Even a hex secret has about 16 distinct bytes; fewer means a typed pattern, not a generated key.
+const MIN_SESSION_SECRET_DISTINCT_BYTES: usize = 8;
+/// Marks a placeholder from an example file, which is public.
+const PLACEHOLDER_MARKER: &[u8] = b"change-me";
 /// Every environment variable the server reads; a test keeps `.env.example` in step with it.
 pub const VARIABLES: [&str; 23] = [
     "SETTLER_SESSION_SECRET",
@@ -169,12 +173,23 @@ impl SessionSecret {
         if bytes.len() < MIN_SESSION_SECRET_BYTES {
             return Err(ConfigError::SessionSecretTooShort);
         }
+        if is_weak_secret(&bytes) {
+            return Err(ConfigError::WeakSessionSecret);
+        }
         Ok(SessionSecret(bytes))
     }
 
     pub(crate) fn bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+fn is_weak_secret(bytes: &[u8]) -> bool {
+    let is_placeholder = bytes
+        .windows(PLACEHOLDER_MARKER.len())
+        .any(|window| window.eq_ignore_ascii_case(PLACEHOLDER_MARKER));
+    let distinct: std::collections::BTreeSet<u8> = bytes.iter().copied().collect();
+    is_placeholder || distinct.len() < MIN_SESSION_SECRET_DISTINCT_BYTES
 }
 
 impl fmt::Debug for SessionSecret {
@@ -209,6 +224,8 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("SETTLER_SESSION_SECRET needs at least {MIN_SESSION_SECRET_BYTES} bytes")]
     SessionSecretTooShort,
+    #[error("SETTLER_SESSION_SECRET is a placeholder or too regular; generate one with: openssl rand -base64 48")]
+    WeakSessionSecret,
     #[error("DATABASE_URL is not a valid Postgres URL: {0}")]
     InvalidDatabaseUrl(#[source] sqlx::Error),
     #[error("set both SETTLER_KEYCLOAK_ISSUER and SETTLER_KEYCLOAK_AUDIENCE, or neither")]
@@ -416,10 +433,29 @@ mod tests {
     #[test]
     fn short_session_secrets_are_refused() {
         assert!(matches!(
-            SessionSecret::new(vec![7; 31]),
+            SessionSecret::new(&SECRET.1.as_bytes()[..31]),
             Err(ConfigError::SessionSecretTooShort)
         ));
-        assert!(SessionSecret::new(vec![7; 32]).is_ok());
+        assert!(SessionSecret::new(&SECRET.1.as_bytes()[..32]).is_ok());
+    }
+
+    #[test]
+    fn placeholder_and_low_entropy_session_secrets_are_refused() {
+        for weak in [
+            "local-development-secret-change-me-0123456789".to_string(),
+            "my-production-secret-CHANGE-ME-please-0123456789".to_string(),
+            "a".repeat(64),
+            "abcabcab".repeat(8),
+        ] {
+            assert!(
+                matches!(
+                    SessionSecret::new(weak.clone()),
+                    Err(ConfigError::WeakSessionSecret)
+                ),
+                "{weak}"
+            );
+        }
+        assert!(SessionSecret::new("q3Vb9xT2LmZ8rKp4Wc7yHn1sFd6gJe0A").is_ok());
     }
 
     fn load(pairs: &[(&str, &str)]) -> Result<Config, ConfigError> {
@@ -577,8 +613,17 @@ mod tests {
             .filter_map(|line| line.split_once('='))
             .filter(|(name, _)| VARIABLES.contains(name))
             .collect();
+        // The example leaves the secret blank so nobody deploys a published one.
+        assert!(uncommented.contains(&("SETTLER_SESSION_SECRET", "")));
+        let with_a_secret: Vec<(&str, &str)> = std::iter::once(SECRET)
+            .chain(
+                uncommented
+                    .into_iter()
+                    .filter(|(_, value)| !value.is_empty()),
+            )
+            .collect();
 
-        let config = load(&uncommented).unwrap();
+        let config = load(&with_a_secret).unwrap();
 
         assert_eq!(
             config,

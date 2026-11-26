@@ -1027,7 +1027,7 @@ mod tests {
             points_to_win: 10,
             bot_difficulty: Difficulty::Random,
         };
-        let mut config = Config::new(SessionSecret::new(vec![7; 64]).unwrap());
+        let mut config = Config::new(SessionSecret::new((0..64).collect::<Vec<u8>>()).unwrap());
         config.seed = Some(5);
         let store = Arc::new(MemoryStore::default());
         let mut lobby = open(setup, store, Arc::new(config), metrics, notices);
