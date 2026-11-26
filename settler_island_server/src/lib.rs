@@ -232,8 +232,7 @@ async fn upgrade<I: IdentityStore>(
     extensions: Extensions,
     upgrade: WebSocketUpgrade,
 ) -> Response {
-    let Some(address) = client_address(&headers, &extensions, state.config.trust_forwarded_for)
-    else {
+    let Some(address) = client_address(&headers, &extensions, &state.config) else {
         // Only reachable when the router is served without connect info.
         tracing::error!("upgrade request without a client address");
         return HttpFailure(ErrorCode::Internal).into_response();
@@ -288,26 +287,23 @@ async fn upgrade_session<I: IdentityStore>(
     Ok(Json(Upgraded { user }))
 }
 
-/// The caller's address: the socket peer, or the last `X-Forwarded-For` entry (the one the trusted proxy appended;
-/// earlier entries come from the client and can be forged).
-fn client_address(
-    headers: &HeaderMap,
-    extensions: &Extensions,
-    trust_forwarded_for: bool,
-) -> Option<IpAddr> {
-    if trust_forwarded_for {
-        let forwarded = headers
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.rsplit(',').next())
-            .and_then(|value| value.trim().parse().ok());
-        if forwarded.is_some() {
-            return forwarded;
-        }
-    }
-    extensions
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ConnectInfo(peer)| peer.ip())
+/// The caller's address: the socket peer, or the last `X-Forwarded-For` entry when forwarding is trusted and the peer
+/// is one of the trusted proxies (earlier entries come from the client and can be forged).
+fn client_address(headers: &HeaderMap, extensions: &Extensions, config: &Config) -> Option<IpAddr> {
+    let ConnectInfo(peer) = extensions.get::<ConnectInfo<SocketAddr>>()?;
+    let trusted: &[IpAddr] = if config.trust_forwarded_for {
+        &config.trusted_proxies
+    } else {
+        &[]
+    };
+    let forwarded_for = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok());
+    Some(rate_limit::forwarded_client(
+        peer.ip(),
+        forwarded_for,
+        trusted,
+    ))
 }
 
 async fn limit_sessions<I: IdentityStore>(
@@ -315,9 +311,7 @@ async fn limit_sessions<I: IdentityStore>(
     request: Request,
     next: Next,
 ) -> Response {
-    let trust_forwarded_for = state.config.trust_forwarded_for;
-    let Some(address) =
-        client_address(request.headers(), request.extensions(), trust_forwarded_for)
+    let Some(address) = client_address(request.headers(), request.extensions(), &state.config)
     else {
         // Only reachable when the router is served without connect info.
         tracing::error!("session request without a client address");

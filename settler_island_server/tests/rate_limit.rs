@@ -57,6 +57,7 @@ async fn forwarded_for_is_ignored_unless_trusted_and_then_separates_clients() {
 
     let trusted = start(Config {
         trust_forwarded_for: true,
+        trusted_proxies: vec![std::net::IpAddr::from([127, 0, 0, 1])],
         ..limits
     })
     .await;
@@ -69,6 +70,7 @@ async fn forwarded_for_is_ignored_unless_trusted_and_then_separates_clients() {
 async fn forged_forwarded_for_entries_do_not_escape_the_limit() {
     let address = start(Config {
         trust_forwarded_for: true,
+        trusted_proxies: vec![std::net::IpAddr::from([127, 0, 0, 1])],
         session_burst: 1,
         session_requests_per_minute: 1,
         ..test_config()
