@@ -23,18 +23,17 @@ var _done := false
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	if arguments.is_empty():
+	_server_http = SiTestSupport.argument(0)
+	if _server_http.is_empty():
 		_finish(1, "FULL_GAME_FAILED missing server url")
 		return
-	_server_http = arguments[0]
-	_deadline = Time.get_ticks_msec() + TIMEOUT_MILLISECONDS
+	_deadline = SiTestSupport.deadline_in(TIMEOUT_MILLISECONDS)
 
 
 func _process(_delta: float) -> bool:
 	if _done:
 		return true
-	if Time.get_ticks_msec() > _deadline:
+	if SiTestSupport.expired(_deadline):
 		_finish(1, "FULL_GAME_FAILED timed out after %d updates" % _updates)
 		return false
 	# Autoloads enter the tree after `_init`, so the first frame wires them up.
@@ -58,13 +57,12 @@ func _finish(code: int, line: String) -> void:
 	if _done:
 		return
 	_done = true
-	print(line)
 	if _state != null:
 		_state.release()
 		_state = null
 	if _net != null:
 		_net.call("stop")
-	quit(code)
+	SiTestSupport.finish(self, code, line)
 
 
 func _on_online(user: SiUser, running_lobby: Variant) -> void:

@@ -9,11 +9,9 @@ const OWN_SEAT := 1
 func _init() -> void:
 	var failures := _check_lines()
 	if failures.is_empty():
-		print("HUD_EVENT_LOG_OK")
-		quit(0)
+		SiTestSupport.finish(self, 0, "HUD_EVENT_LOG_OK")
 		return
-	print("HUD_EVENT_LOG_FAILED %s" % ", ".join(failures))
-	quit(1)
+	SiTestSupport.finish(self, 1, "HUD_EVENT_LOG_FAILED %s" % ", ".join(failures))
 
 
 func _check_lines() -> PackedStringArray:

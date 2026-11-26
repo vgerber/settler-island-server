@@ -19,11 +19,11 @@ var _done := false
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	if arguments.is_empty():
+	_base_url = SiTestSupport.argument(0)
+	if _base_url.is_empty():
 		_finish(1, "LIVE_FAILED missing server url")
 		return
-	_deadline = Time.get_ticks_msec() + TIMEOUT_MILLISECONDS
+	_deadline = SiTestSupport.deadline_in(TIMEOUT_MILLISECONDS)
 	# In the tree the client polls itself in `_process` and is freed when the tree quits.
 	root.add_child.call_deferred(_client)
 	_client.connected.connect(_on_connected)
@@ -33,7 +33,6 @@ func _init() -> void:
 	_client.game_started_received.connect(_on_game_started)
 	_client.game_update_received.connect(_on_game_update)
 	_client.error_received.connect(_on_error)
-	_base_url = arguments[0]
 	root.add_child.call_deferred(_session)
 	_session.succeeded.connect(_on_session)
 	_session.failed.connect(func(reason: String): _finish(1, "LIVE_FAILED %s" % reason))
@@ -52,7 +51,7 @@ func _on_session(token: String, user: SiUser) -> void:
 func _process(_delta: float) -> bool:
 	if _done:
 		return true
-	if Time.get_ticks_msec() > _deadline:
+	if SiTestSupport.expired(_deadline):
 		_finish(1, "LIVE_FAILED timed out after %d updates" % _updates)
 	return false
 
@@ -61,9 +60,8 @@ func _finish(code: int, line: String) -> void:
 	if _done:
 		return
 	_done = true
-	print(line)
 	_client.close()
-	quit(code)
+	SiTestSupport.finish(self, code, line)
 
 
 func _on_connected() -> void:

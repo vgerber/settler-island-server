@@ -2,12 +2,14 @@
 //! short game against a real server, the game project in `client/godot` playing a full game (once
 //! through `GameState`, once through mouse clicks on its main scene), its board placing corners and
 //! sending the clicked action, `GameState` after a dropped act, and the HUD's discard dialog and event log.
-//! Skipped with a notice when no Godot binary is found; the
-//! binary is `$SETTLER_GODOT` or the default install path below.
+//! Each project is copied and imported once per test binary. Skipped with a notice when no Godot binary
+//! is found, or a panic when `SETTLER_REQUIRE_GODOT=1`; the binary is `$SETTLER_GODOT` or
+//! `$HOME/Software/godot/godot`.
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -20,18 +22,27 @@ use settler_island_protocol::{
 };
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
-const DEFAULT_GODOT: &str = "/home/vincent/Software/godot/godot";
-const GODOT_TIMEOUT: Duration = Duration::from_secs(120);
+const GODOT_TIMEOUT: Duration = Duration::from_secs(240);
 /// The one hand-written script of `client/godot` the API test project needs.
 const GUEST_SESSION: &str = "SiGuestSession.gd";
 
 fn godot_binary() -> Option<PathBuf> {
     let path = std::env::var_os("SETTLER_GODOT")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_GODOT));
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| Path::new(&home).join("Software/godot/godot"))
+        })
+        .unwrap_or_default();
     if path.is_file() {
         return Some(path);
     }
+    // A gate that must cover the game client sets this, so a missing binary cannot pass silently.
+    let required = std::env::var("SETTLER_REQUIRE_GODOT").is_ok_and(|value| value == "1");
+    assert!(
+        !required,
+        "SETTLER_REQUIRE_GODOT=1 but there is no Godot binary at {}",
+        path.display()
+    );
     println!(
         "notice: no Godot binary at {}, skipping the headless Godot test",
         path.display()
@@ -39,20 +50,54 @@ fn godot_binary() -> Option<PathBuf> {
     None
 }
 
-/// An empty test directory with a private Godot home; the project goes into `project/`.
+#[derive(Clone, Copy)]
+enum Project {
+    /// `client/godot_tests` with the generated API and the guest session helper only.
+    Api,
+    /// The game project `client/godot` plus every script of `client/godot_tests`.
+    Game,
+}
+
+impl Project {
+    fn name(self) -> &'static str {
+        match self {
+            Project::Api => "api",
+            Project::Game => "game",
+        }
+    }
+}
+
+/// A prepared and imported project, built once per test binary and shared by all tests, which
+/// give every run its own Godot home.
+fn project_root(godot: &Path, project: Project) -> &'static Path {
+    static API: OnceLock<PathBuf> = OnceLock::new();
+    static GAME: OnceLock<PathBuf> = OnceLock::new();
+    let cell = match project {
+        Project::Api => &API,
+        Project::Game => &GAME,
+    };
+    cell.get_or_init(|| {
+        let root = fresh_root(project.name());
+        match project {
+            Project::Api => prepare_test_project(&root),
+            Project::Game => prepare_game_project(&root),
+        }
+        run_godot(godot, &root, &root.join("import-home"), &["--import"]);
+        root
+    })
+}
+
+/// An empty directory; the project goes into `project/`.
 fn fresh_root(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("godot-{name}"));
     if root.exists() {
         fs::remove_dir_all(&root).unwrap();
     }
-    fs::create_dir_all(root.join("home")).unwrap();
+    fs::create_dir_all(&root).unwrap();
     root
 }
 
-/// A fresh copy of `client/godot_tests` with the generated API and the guest session helper, but
-/// none of the game project in `client/godot`.
-fn prepare_test_project(name: &str) -> PathBuf {
-    let root = fresh_root(name);
+fn prepare_test_project(root: &Path) {
     let project = root.join("project");
     let api = project.join("settler_island_api");
     fs::create_dir_all(&api).unwrap();
@@ -64,21 +109,19 @@ fn prepare_test_project(name: &str) -> PathBuf {
         project.join(GUEST_SESSION),
     )
     .unwrap();
-    root
 }
 
-/// A fresh copy of the game project `client/godot` plus one script from `client/godot_tests`.
-fn prepare_game_project(name: &str, script: &str) -> PathBuf {
-    let root = fresh_root(name);
+fn prepare_game_project(root: &Path) {
     let project = root.join("project");
     let client = default_client_directory();
-    copy_tree(&client.join("godot"), &project);
-    fs::copy(
-        client.join("godot_tests").join(script),
-        project.join(script),
-    )
-    .unwrap();
-    root
+    copy_tree(&client.join("godot"), &project, false);
+    for entry in fs::read_dir(client.join("godot_tests")).unwrap() {
+        let path = entry.unwrap().path();
+        // The test project's own project.godot must not replace the game's.
+        if path.extension().is_some_and(|extension| extension == "gd") {
+            fs::copy(&path, project.join(path.file_name().unwrap())).unwrap();
+        }
+    }
 }
 
 fn copy_sources(from: &Path, to: &Path) {
@@ -93,36 +136,37 @@ fn copy_sources(from: &Path, to: &Path) {
     }
 }
 
-/// Copies a Godot project without the editor cache `.godot/`, which belongs to the checkout.
-fn copy_tree(from: &Path, to: &Path) {
+/// Copies a Godot project; the editor cache `.godot/` belongs to the checkout, so it is kept only
+/// when copying an already imported project.
+fn copy_tree(from: &Path, to: &Path, keep_cache: bool) {
     fs::create_dir_all(to).unwrap();
     for entry in fs::read_dir(from).unwrap() {
         let path = entry.unwrap().path();
         let name = path.file_name().unwrap();
-        if name == ".godot" {
+        if name == ".godot" && !keep_cache {
             continue;
         }
         if path.is_dir() {
-            copy_tree(&path, &to.join(name));
+            copy_tree(&path, &to.join(name), keep_cache);
             continue;
         }
         fs::copy(&path, to.join(name)).unwrap();
     }
 }
 
-/// Runs Godot headless with its data and config redirected; returns stdout plus stderr.
-fn run_godot(godot: &Path, root: &Path, arguments: &[&str]) -> String {
-    let log = root.join("godot.log");
+/// Runs Godot headless on `root/project` with its data and config in `home`; returns stdout plus stderr.
+fn run_godot(godot: &Path, root: &Path, home: &Path, arguments: &[&str]) -> String {
+    fs::create_dir_all(home).unwrap();
+    let log = home.join("godot.log");
     let output = File::create(&log).unwrap();
-    let home = root.join("home");
     let mut child = Command::new(godot)
         .arg("--headless")
         .arg("--path")
         .arg(root.join("project"))
         .args(arguments)
-        .env("XDG_DATA_HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
-        .env("XDG_CACHE_HOME", &home)
+        .env("XDG_DATA_HOME", home)
+        .env("XDG_CONFIG_HOME", home)
+        .env("XDG_CACHE_HOME", home)
         .stdin(Stdio::null())
         .stdout(output.try_clone().unwrap())
         .stderr(output)
@@ -156,10 +200,13 @@ fn run_godot(godot: &Path, root: &Path, arguments: &[&str]) -> String {
     text
 }
 
-/// Imports the project so Godot knows the `class_name`s, then runs one test script.
-fn run_script(godot: &Path, root: &Path, script: &str, argument: &str) -> String {
-    run_godot(godot, root, &["--import"]);
-    run_godot(godot, root, &["-s", script, "--", argument])
+/// Runs one test script of `project` in a Godot home of its own and checks that the output has
+/// `marker`.
+fn run_script(godot: &Path, project: Project, script: &str, argument: &str, marker: &str) {
+    let root = project_root(godot, project);
+    let home = root.join("homes").join(script);
+    let output = run_godot(godot, root, &home, &["-s", script, "--", argument]);
+    assert!(output.contains(marker), "{output}");
 }
 
 fn user(id: &str, name: &str) -> User {
@@ -350,14 +397,13 @@ fn generated_classes_round_trip_every_message() {
         Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-round-trip-fixtures.json");
     fs::write(&fixtures_path, fixtures().to_string()).unwrap();
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_test_project("round-trip"),
+        Project::Api,
         "round_trip.gd",
         fixtures_path.to_str().unwrap(),
+        "ROUND_TRIP_OK",
     );
-
-    assert!(output.contains("ROUND_TRIP_OK"), "{output}");
 }
 
 /// A server with instant bots on an ephemeral port, running on `runtime` until the test ends; `seed`
@@ -391,14 +437,7 @@ fn generated_client_plays_against_a_real_server() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = start_server(&runtime, None);
 
-    let output = run_script(
-        &godot,
-        &prepare_test_project("live-game"),
-        "live_game.gd",
-        &server,
-    );
-
-    assert!(output.contains("LIVE_OK"), "{output}");
+    run_script(&godot, Project::Api, "live_game.gd", &server, "LIVE_OK");
 }
 
 #[test]
@@ -409,14 +448,13 @@ fn game_client_plays_a_full_game_and_rejoins_it() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = start_server(&runtime, None);
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("full-game", "full_game.gd"),
+        Project::Game,
         "full_game.gd",
         &server,
+        "FULL_GAME_OK",
     );
-
-    assert!(output.contains("FULL_GAME_OK"), "{output}");
 }
 
 #[test]
@@ -427,14 +465,7 @@ fn main_scene_plays_a_full_game_with_mouse_clicks_only() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = start_server(&runtime, Some(4));
 
-    let output = run_script(
-        &godot,
-        &prepare_game_project("ui-game", "ui_game.gd"),
-        "ui_game.gd",
-        &server,
-    );
-
-    assert!(output.contains("UI_GAME_OK"), "{output}");
+    run_script(&godot, Project::Game, "ui_game.gd", &server, "UI_GAME_OK");
 }
 
 /// `GameStarted` for `seat` at the current state of `game`.
@@ -506,14 +537,13 @@ fn board_places_shared_corners_once_and_sends_the_clicked_action() {
     let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-board-fixtures.json");
     fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("board", "board_test.gd"),
+        Project::Game,
         "board_test.gd",
         fixtures_path.to_str().unwrap(),
+        "BOARD_OK",
     );
-
-    assert!(output.contains("BOARD_OK"), "{output}");
 }
 
 /// `GameStarted` for a seat that must discard and has more than one way to do it, from a bot game.
@@ -559,14 +589,13 @@ fn hud_discard_dialog_sends_exactly_the_picked_legal_discard() {
     let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-hud-discard.json");
     fs::write(&fixture_path, discard_fixture().to_string()).unwrap();
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("hud-discard", "hud_discard.gd"),
+        Project::Game,
         "hud_discard.gd",
         fixture_path.to_str().unwrap(),
+        "HUD_DISCARD_OK",
     );
-
-    assert!(output.contains("HUD_DISCARD_OK"), "{output}");
 }
 
 #[test]
@@ -583,14 +612,13 @@ fn game_state_offers_a_rate_limited_act_again() {
     let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-game-state.json");
     fs::write(&fixture_path, game_started(&game, 0).to_string()).unwrap();
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("game-state", "game_state_test.gd"),
+        Project::Game,
         "game_state_test.gd",
         fixture_path.to_str().unwrap(),
+        "GAME_STATE_OK",
     );
-
-    assert!(output.contains("GAME_STATE_OK"), "{output}");
 }
 
 #[test]
@@ -599,14 +627,13 @@ fn hud_event_log_has_a_line_for_every_event() {
         return;
     };
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("hud-event-log", "hud_event_log.gd"),
+        Project::Game,
         "hud_event_log.gd",
         "-",
+        "HUD_EVENT_LOG_OK",
     );
-
-    assert!(output.contains("HUD_EVENT_LOG_OK"), "{output}");
 }
 
 #[test]
@@ -617,14 +644,13 @@ fn net_goes_online_after_a_failed_start() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let server = start_server(&runtime, None);
 
-    let output = run_script(
+    run_script(
         &godot,
-        &prepare_game_project("net-reconnect", "net_reconnect.gd"),
+        Project::Game,
         "net_reconnect.gd",
         &server,
+        "NET_RECONNECT_OK",
     );
-
-    assert!(output.contains("NET_RECONNECT_OK"), "{output}");
 }
 
 #[test]
@@ -632,10 +658,20 @@ fn committed_theme_matches_a_fresh_build() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let root = prepare_game_project("theme", "game_state_test.gd");
+    // The build overwrites the theme, so it runs in a copy of the imported project.
+    let root = fresh_root("theme");
     let project = root.join("project");
-    run_godot(&godot, &root, &["--import"]);
-    run_godot(&godot, &root, &["-s", "tools/build_theme.gd"]);
+    copy_tree(
+        &project_root(&godot, Project::Game).join("project"),
+        &project,
+        true,
+    );
+    run_godot(
+        &godot,
+        &root,
+        &root.join("home"),
+        &["-s", "tools/build_theme.gd"],
+    );
 
     let theme = Path::new("theme/main_theme.tres");
     let committed = fs::read(default_client_directory().join("godot").join(theme)).unwrap();

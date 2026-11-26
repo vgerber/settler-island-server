@@ -14,8 +14,7 @@ class RecordingClient:
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	var text := FileAccess.get_file_as_string(arguments[0]) if not arguments.is_empty() else ""
+	var text := FileAccess.get_file_as_string(SiTestSupport.argument(0))
 	var started := SiServerMessage.from_dict(JSON.parse_string(text)) as SiServerMessageGameStarted
 	var client := RecordingClient.new()
 	var state := GameState.new(client, started)
@@ -23,11 +22,9 @@ func _init() -> void:
 	state.release()
 	client.free()
 	if not failure.is_empty():
-		printerr("GAME_STATE_FAILED ", failure)
-		quit(1)
+		SiTestSupport.finish(self, 1, "GAME_STATE_FAILED %s" % failure)
 		return
-	print("GAME_STATE_OK")
-	quit(0)
+	SiTestSupport.finish(self, 0, "GAME_STATE_OK")
 
 
 func _check(state: GameState, client: RecordingClient) -> String:

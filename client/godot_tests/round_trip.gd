@@ -5,11 +5,11 @@ extends SceneTree
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	if arguments.is_empty():
+	var path := SiTestSupport.argument(0)
+	if path.is_empty():
 		_finish(1, "ROUND_TRIP_FAILED missing fixtures path")
 		return
-	var fixtures: Variant = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
+	var fixtures: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not fixtures is Dictionary:
 		_finish(1, "ROUND_TRIP_FAILED fixtures are not a JSON object")
 		return
@@ -28,8 +28,7 @@ func _init() -> void:
 
 
 func _finish(code: int, line: String) -> void:
-	print(line)
-	quit(code)
+	SiTestSupport.finish(self, code, line)
 
 
 func _check(input: Variant, output: Variant) -> int:

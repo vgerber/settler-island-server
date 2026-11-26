@@ -14,11 +14,10 @@ var _done := false
 
 
 func _initialize() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	if arguments.is_empty():
+	_server_http = SiTestSupport.argument(0)
+	if _server_http.is_empty():
 		_finish(1, "NET_RECONNECT_FAILED missing server address")
 		return
-	_server_http = arguments[0]
 	_net = root.get_node("Net")
 	_net.failed.connect(_on_failed)
 	_net.online.connect(_on_online)
@@ -52,5 +51,4 @@ func _finish(code: int, line: String) -> void:
 	if _done:
 		return
 	_done = true
-	print(line)
-	quit(code)
+	SiTestSupport.finish(self, code, line)

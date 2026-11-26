@@ -38,18 +38,17 @@ var _recent: PackedStringArray = []
 
 func _init() -> void:
 	_random.seed = SEED
-	var arguments := OS.get_cmdline_user_args()
-	if arguments.is_empty():
+	_server_http = SiTestSupport.argument(0)
+	if _server_http.is_empty():
 		_finish(1, "UI_GAME_FAILED missing server url")
 		return
-	_server_http = arguments[0]
-	_deadline = Time.get_ticks_msec() + TIMEOUT_MILLISECONDS
+	_deadline = SiTestSupport.deadline_in(TIMEOUT_MILLISECONDS)
 
 
 func _process(_delta: float) -> bool:
 	if _stage == Stage.DONE:
 		return true
-	if Time.get_ticks_msec() > _deadline:
+	if SiTestSupport.expired(_deadline):
 		_finish(1, "UI_GAME_FAILED timed out in stage %s %s" % [Stage.keys()[_stage], _describe_state()])
 		return false
 	if _main == null:
@@ -86,11 +85,10 @@ func _finish(code: int, line: String) -> void:
 			var button := node as Button
 			if button.is_visible_in_tree():
 				print("  shown: '%s' at %s%s" % [button.text, _centre(button), " disabled" if button.disabled else ""])
-	print(line)
 	if _main != null:
 		root.get_node("Net").call("stop")
 		_main.queue_free()
-	quit(code)
+	SiTestSupport.finish(self, code, line)
 
 
 func _screen() -> Node:

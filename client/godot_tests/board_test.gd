@@ -24,8 +24,7 @@ var _clients: Array[RecordingClient] = []
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	var text := FileAccess.get_file_as_string(arguments[0]) if not arguments.is_empty() else ""
+	var text := FileAccess.get_file_as_string(SiTestSupport.argument(0))
 	_fixtures = JSON.parse_string(text) if not text.is_empty() else {}
 
 
@@ -42,16 +41,14 @@ func _process(_delta: float) -> bool:
 		failure = _check_middle()
 	if not failure.is_empty():
 		return _fail(failure)
-	print("BOARD_OK")
 	_release()
-	quit(0)
+	SiTestSupport.finish(self, 0, "BOARD_OK")
 	return true
 
 
 func _fail(reason: String) -> bool:
-	printerr("BOARD_FAILED ", reason)
 	_release()
-	quit(1)
+	SiTestSupport.finish(self, 1, "BOARD_FAILED %s" % reason)
 	return true
 
 

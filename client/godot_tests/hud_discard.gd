@@ -8,8 +8,7 @@ var _failures: PackedStringArray = []
 
 
 func _init() -> void:
-	var arguments := OS.get_cmdline_user_args()
-	var text := FileAccess.get_file_as_string(arguments[0]) if not arguments.is_empty() else ""
+	var text := FileAccess.get_file_as_string(SiTestSupport.argument(0))
 	var started := SiServerMessage.from_dict(JSON.parse_string(text)) as SiServerMessageGameStarted
 	if started == null:
 		_finish(["no GameStarted fixture"])
@@ -85,8 +84,6 @@ func _expect(condition: bool, what: String) -> void:
 
 func _finish(failures: PackedStringArray) -> void:
 	if failures.is_empty():
-		print("HUD_DISCARD_OK")
-		quit(0)
+		SiTestSupport.finish(self, 0, "HUD_DISCARD_OK")
 		return
-	print("HUD_DISCARD_FAILED %s" % ", ".join(failures))
-	quit(1)
+	SiTestSupport.finish(self, 1, "HUD_DISCARD_FAILED %s" % ", ".join(failures))
