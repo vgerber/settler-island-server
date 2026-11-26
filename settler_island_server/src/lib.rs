@@ -2,6 +2,7 @@
 
 mod config;
 mod connection;
+mod connection_limit;
 mod identity;
 mod lobby;
 mod metrics;
@@ -20,14 +21,14 @@ use std::time::Instant;
 
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::{header, Extensions, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use settler_island_protocol::{
-    ErrorCode, GuestSession, GuestSessionRequest, HttpError, UpgradeRequest, Upgraded,
+    ErrorCode, GuestSession, GuestSessionRequest, HttpError, ServerLimit, UpgradeRequest, Upgraded,
     GUEST_SESSION_ROUTE, HEALTH_ROUTE, MAX_MESSAGE_BYTES, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
 };
 use tokio::net::TcpListener;
@@ -44,6 +45,7 @@ pub use store::{
     StoreError, StoredGame, SNAPSHOT_INTERVAL,
 };
 
+use connection_limit::ConnectionLimiter;
 use identity::Identity;
 use metrics::Metrics;
 use rate_limit::IpLimiter;
@@ -60,6 +62,7 @@ struct AppState<I> {
     config: Arc<Config>,
     metrics: Arc<Metrics>,
     session_limiter: Arc<IpLimiter>,
+    connection_limiter: Arc<ConnectionLimiter>,
 }
 
 // Derived `Clone` would needlessly require `I: Clone`.
@@ -71,6 +74,7 @@ impl<I> Clone for AppState<I> {
             config: self.config.clone(),
             metrics: self.metrics.clone(),
             session_limiter: self.session_limiter.clone(),
+            connection_limiter: self.connection_limiter.clone(),
         }
     }
 }
@@ -84,6 +88,10 @@ impl IntoResponse for HttpFailure {
             ErrorCode::InvalidToken => StatusCode::UNAUTHORIZED,
             ErrorCode::AccountAlreadyLinked => StatusCode::CONFLICT,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            ErrorCode::LimitReached {
+                limit: ServerLimit::Connections | ServerLimit::RunningGames,
+            } => StatusCode::SERVICE_UNAVAILABLE,
+            ErrorCode::LimitReached { .. } => StatusCode::TOO_MANY_REQUESTS,
             ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
         };
@@ -125,6 +133,10 @@ pub async fn router<S: GameStore, I: IdentityStore>(
         session_limiter: Arc::new(IpLimiter::new(
             config.session_requests_per_minute,
             config.session_burst,
+        )),
+        connection_limiter: Arc::new(ConnectionLimiter::new(
+            config.max_connections,
+            config.max_connections_per_ip,
         )),
         config,
         metrics,
@@ -174,16 +186,33 @@ async fn metrics_page<I>(State(state): State<AppState<I>>) -> Result<String, Htt
     })
 }
 
+/// Refuses a connection over the caps with an HTTP error before upgrading, so a refused client costs no socket state.
 async fn upgrade<I: IdentityStore>(
     State(state): State<AppState<I>>,
+    headers: HeaderMap,
+    extensions: Extensions,
     upgrade: WebSocketUpgrade,
 ) -> Response {
+    let Some(address) = client_address(&headers, &extensions, state.config.trust_forwarded_for)
+    else {
+        // Only reachable when the router is served without connect info.
+        tracing::error!("upgrade request without a client address");
+        return HttpFailure(ErrorCode::Internal).into_response();
+    };
+    let permit = match state.connection_limiter.acquire(address) {
+        Ok(permit) => permit,
+        Err(limit) => {
+            let code = ErrorCode::LimitReached { limit };
+            state.metrics.error(&code);
+            return HttpFailure(code).into_response();
+        }
+    };
     upgrade
         .max_message_size(MAX_FRAME_BYTES)
         .max_frame_size(MAX_FRAME_BYTES)
         .read_buffer_size(SOCKET_BUFFER_BYTES)
         .write_buffer_size(SOCKET_BUFFER_BYTES)
-        .on_upgrade(move |socket| {
+        .on_upgrade(move |socket| async move {
             connection::run(
                 socket,
                 state.registry,
@@ -191,6 +220,9 @@ async fn upgrade<I: IdentityStore>(
                 state.config,
                 state.metrics,
             )
+            .await;
+            // Moved in and dropped here so the slot stays taken for the socket's whole lifetime.
+            drop(permit);
         })
 }
 
@@ -219,10 +251,13 @@ async fn upgrade_session<I: IdentityStore>(
 
 /// The caller's address: the socket peer, or the last `X-Forwarded-For` entry (the one the trusted proxy appended;
 /// earlier entries come from the client and can be forged).
-fn client_address(request: &Request, trust_forwarded_for: bool) -> Option<IpAddr> {
+fn client_address(
+    headers: &HeaderMap,
+    extensions: &Extensions,
+    trust_forwarded_for: bool,
+) -> Option<IpAddr> {
     if trust_forwarded_for {
-        let forwarded = request
-            .headers()
+        let forwarded = headers
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.rsplit(',').next())
@@ -231,8 +266,7 @@ fn client_address(request: &Request, trust_forwarded_for: bool) -> Option<IpAddr
             return forwarded;
         }
     }
-    request
-        .extensions()
+    extensions
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(peer)| peer.ip())
 }
@@ -242,7 +276,10 @@ async fn limit_sessions<I: IdentityStore>(
     request: Request,
     next: Next,
 ) -> Response {
-    let Some(address) = client_address(&request, state.config.trust_forwarded_for) else {
+    let trust_forwarded_for = state.config.trust_forwarded_for;
+    let Some(address) =
+        client_address(request.headers(), request.extensions(), trust_forwarded_for)
+    else {
         // Only reachable when the router is served without connect info.
         tracing::error!("session request without a client address");
         return HttpFailure(ErrorCode::Internal).into_response();

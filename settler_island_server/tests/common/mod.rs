@@ -16,7 +16,7 @@ use settler_island_server::{
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{ConnectOptions, Executor};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 /// Long enough for a debug build under load, short enough that a deadlock fails the test.
@@ -180,12 +180,17 @@ pub fn echoed_request_id(message: &ServerMessage) -> Option<u32> {
 
 impl Client {
     pub async fn connect(address: SocketAddr) -> Client {
+        Client::try_connect(address).await.unwrap()
+    }
+
+    /// The handshake result, so a test can inspect a refused upgrade.
+    pub async fn try_connect(address: SocketAddr) -> Result<Client, tungstenite::Error> {
         let url = format!("ws://{address}/api/v1/ws");
-        let (socket, _) = connect_async(url).await.unwrap();
-        Client {
+        let (socket, _) = connect_async(url).await?;
+        Ok(Client {
             socket,
             next_request: 0,
-        }
+        })
     }
 
     /// A new guest session on a new connection.
