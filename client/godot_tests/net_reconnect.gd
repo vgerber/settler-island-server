@@ -22,7 +22,8 @@ func _initialize() -> void:
 	_net = root.get_node("Net")
 	_net.failed.connect(_on_failed)
 	_net.online.connect(_on_online)
-	_net.start(DEAD_SERVER, "reconnect-test")
+	# The autoload connects its session signals in `_ready`, which runs after `_initialize`.
+	_net.start.call_deferred(DEAD_SERVER, "reconnect-test")
 
 
 func _process(delta: float) -> bool:

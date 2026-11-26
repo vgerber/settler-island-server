@@ -608,3 +608,21 @@ fn hud_event_log_has_a_line_for_every_event() {
 
     assert!(output.contains("HUD_EVENT_LOG_OK"), "{output}");
 }
+
+#[test]
+fn net_goes_online_after_a_failed_start() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime, None);
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("net-reconnect", "net_reconnect.gd"),
+        "net_reconnect.gd",
+        &server,
+    );
+
+    assert!(output.contains("NET_RECONNECT_OK"), "{output}");
+}
