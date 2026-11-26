@@ -414,6 +414,8 @@ fn start_server(runtime: &tokio::runtime::Runtime, seed: Option<u64>) -> String 
         let address = listener.local_addr().unwrap();
         let config = Config {
             bot_delay: Duration::ZERO,
+            // Scripted clients answer every update at once; the limiter has its own server tests.
+            messages_per_second: 10_000,
             seed,
             ..Config::new(SessionSecret::new(vec![7; 32]).unwrap())
         };
