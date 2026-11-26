@@ -22,6 +22,16 @@ async fn refused_upgrade(address: SocketAddr) -> (u16, HttpError) {
     )
 }
 
+async fn post_guest_body(address: SocketAddr, body: String) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("http://{address}/api/v1/sessions/guest"))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_frame_far_above_the_message_limit_closes_the_socket() {
     let address = start(test_config()).await;
@@ -67,4 +77,27 @@ async fn a_connection_beyond_the_server_limit_is_refused() {
     assert_eq!(status, 503);
     let server = ServerLimit::Connections;
     assert_eq!(error.code, ErrorCode::LimitReached { limit: server });
+}
+
+#[tokio::test]
+async fn a_guest_body_above_the_limit_gets_a_json_413() {
+    let address = start(test_config()).await;
+
+    let body = format!(r#"{{"name":"{}"}}"#, "x".repeat(10 * 1024));
+    let response = post_guest_body(address, body).await;
+
+    assert_eq!(response.status().as_u16(), 413);
+    let error: HttpError = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::MessageTooLarge);
+}
+
+#[tokio::test]
+async fn a_malformed_guest_body_gets_a_json_error() {
+    let address = start(test_config()).await;
+
+    let response = post_guest_body(address, r#"{"name":5}"#.to_string()).await;
+
+    assert_eq!(response.status().as_u16(), 400);
+    let error: HttpError = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::InvalidMessage);
 }

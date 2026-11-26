@@ -19,13 +19,15 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
 
+use axum::extract::rejection::JsonRejection;
 use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, FromRequest, Request, State};
 use axum::http::{header, Extensions, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use settler_island_protocol::{
     ErrorCode, GuestSession, GuestSessionRequest, HttpError, ServerLimit, UpgradeRequest, Upgraded,
@@ -55,6 +57,8 @@ use registry::RegistryHandle;
 const MAX_FRAME_BYTES: usize = MAX_MESSAGE_BYTES + 8 * 1024;
 /// tungstenite's 128 KiB defaults cost about 146 KB per idle socket; frames grow the read buffer on demand.
 const SOCKET_BUFFER_BYTES: usize = 4 * 1024;
+/// Session bodies are a name or two tokens; a Keycloak access token can reach a few KB.
+const MAX_SESSION_BODY_BYTES: usize = 8 * 1024;
 
 struct AppState<I> {
     registry: RegistryHandle,
@@ -88,6 +92,7 @@ impl IntoResponse for HttpFailure {
             ErrorCode::InvalidToken => StatusCode::UNAUTHORIZED,
             ErrorCode::AccountAlreadyLinked => StatusCode::CONFLICT,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            ErrorCode::MessageTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ErrorCode::LimitReached {
                 limit: ServerLimit::Connections | ServerLimit::RunningGames,
             } => StatusCode::SERVICE_UNAVAILABLE,
@@ -101,6 +106,28 @@ impl IntoResponse for HttpFailure {
         };
         (status, Json(body)).into_response()
     }
+}
+
+/// `Json` whose rejections (too large, malformed, wrong content type) answer in the `HttpError` shape.
+struct JsonBody<T>(T);
+
+impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for JsonBody<T> {
+    type Rejection = HttpFailure;
+
+    async fn from_request(request: Request, state: &S) -> Result<JsonBody<T>, HttpFailure> {
+        Json::<T>::from_request(request, state)
+            .await
+            .map(|Json(value)| JsonBody(value))
+            .map_err(rejected_body)
+    }
+}
+
+fn rejected_body(rejection: JsonRejection) -> HttpFailure {
+    tracing::debug!(%rejection, "session request body rejected");
+    if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        return HttpFailure(ErrorCode::MessageTooLarge);
+    }
+    HttpFailure(ErrorCode::InvalidMessage)
 }
 
 #[derive(Serialize)]
@@ -147,7 +174,8 @@ pub async fn router<S: GameStore, I: IdentityStore>(
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             limit_sessions::<I>,
-        ));
+        ))
+        .layer(DefaultBodyLimit::max(MAX_SESSION_BODY_BYTES));
     let router = Router::new()
         .route(HEALTH_ROUTE, get(health))
         .route("/metrics", get(metrics_page::<I>))
@@ -228,7 +256,7 @@ async fn upgrade<I: IdentityStore>(
 
 async fn guest_session<I: IdentityStore>(
     State(state): State<AppState<I>>,
-    Json(request): Json<GuestSessionRequest>,
+    JsonBody(request): JsonBody<GuestSessionRequest>,
 ) -> Result<Json<GuestSession>, HttpFailure> {
     state
         .identity
@@ -239,7 +267,7 @@ async fn guest_session<I: IdentityStore>(
 
 async fn upgrade_session<I: IdentityStore>(
     State(state): State<AppState<I>>,
-    Json(request): Json<UpgradeRequest>,
+    JsonBody(request): JsonBody<UpgradeRequest>,
 ) -> Result<Json<Upgraded>, HttpFailure> {
     let user = state
         .identity
