@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use settler_island_bot::{bot_seed, create_bot, Bot, Difficulty};
 use settler_island_game::{
@@ -147,6 +148,8 @@ struct RunningGame {
     record: GameRecord,
     /// Indexed by seat; `Some` where a bot plays.
     bots: Vec<Option<Box<dyn Bot>>>,
+    /// The seats humans were dealt, whoever plays them now.
+    human_seats: Vec<Seat>,
     /// Set when neither a bot's move nor its fallback was accepted; bots stop instead of retrying forever.
     stalled: bool,
     seed: u64,
@@ -160,6 +163,14 @@ enum GameEnd {
 }
 
 impl RunningGame {
+    /// A human seat has moved, by its player or by the bot standing in while another human was connected.
+    fn humans_played(&self) -> bool {
+        self.record
+            .entries
+            .iter()
+            .any(|entry| self.human_seats.contains(&entry.seat))
+    }
+
     /// A human asked in the open trade who has not answered yet.
     fn human_answer_pending(&self) -> bool {
         let Some(offer) = self.game.phase().trade_offer() else {
@@ -185,7 +196,8 @@ struct Lobby<S> {
     bot_deadline: Instant,
     /// Until when a bot that offered a trade waits for the humans it asked; `None` without an open offer.
     answers_due: Option<Instant>,
-    /// When a running game with no connected human is closed; `None` while a human is connected.
+    /// When a running game with no connected human is closed; `None` while a human is connected, or when the grace
+    /// is too long for an `Instant`, which means never.
     abandon_at: Option<Instant>,
     store: Arc<S>,
     config: Arc<Config>,
@@ -256,11 +268,15 @@ pub(crate) fn restore<S: GameStore>(
     let seed = stored.game.settings.seed;
     let mut seats = Vec::with_capacity(stored.game.seats.len());
     let mut bots = Vec::with_capacity(stored.game.seats.len());
+    let mut human_seats = Vec::new();
     for (seat, player) in stored.game.seats.iter().enumerate() {
         let (difficulty, reserved_for) = match player {
             SeatPlayer::Human(user) => (away, Some(user.clone())),
             SeatPlayer::Bot(difficulty) => (*difficulty, None),
         };
+        if reserved_for.is_some() {
+            human_seats.extend(Seat::try_from(seat).ok());
+        }
         bots.push(Some(create_bot(difficulty, bot_seed(seed, seat))));
         seats.push(SeatOccupant::Bot {
             difficulty,
@@ -271,7 +287,7 @@ pub(crate) fn restore<S: GameStore>(
         SeatPlayer::Human(user) => Some(user.clone()),
         SeatPlayer::Bot(_) => None,
     })?;
-    let lobby = Lobby {
+    let mut lobby = Lobby {
         id: stored.game.lobby,
         name: stored.game.lobby_name.clone(),
         owner,
@@ -285,24 +301,23 @@ pub(crate) fn restore<S: GameStore>(
             game,
             record,
             bots,
+            human_seats,
             stalled: false,
             seed,
             in_progress: metrics.game_started(),
         }),
         bot_deadline: Instant::now(),
         answers_due: None,
-        // The time nobody was connected before the restart counts toward the deadline.
-        abandon_at: Some(
-            Instant::now()
-                + config
-                    .abandon_after
-                    .saturating_sub(stored.unattended_for.unwrap_or_default()),
-        ),
+        abandon_at: None,
         store,
         config,
         metrics,
         notices,
     };
+    // The time nobody was connected before the restart counts toward the deadline.
+    let unattended_for = stored.unattended_for.unwrap_or_default();
+    lobby.abandon_at =
+        Instant::now().checked_add(lobby.abandon_grace().saturating_sub(unattended_for));
     Some(lobby.spawn(None))
 }
 
@@ -453,7 +468,7 @@ impl<S: GameStore> Lobby<S> {
         };
         let member = self.members.remove(index);
         if self.members.is_empty() {
-            self.abandon_at = Some(Instant::now() + self.config.abandon_after);
+            self.abandon_at = Instant::now().checked_add(self.abandon_grace());
         }
         self.note_membership(LobbyNotice::Left {
             lobby: self.id,
@@ -589,11 +604,17 @@ impl<S: GameStore> Lobby<S> {
                 _ => None,
             })
             .collect();
+        let human_seats = (0..)
+            .zip(&self.seats)
+            .filter(|(_, occupant)| matches!(occupant, SeatOccupant::Human { .. }))
+            .map(|(seat, _)| seat)
+            .collect();
         self.game = Some(RunningGame {
             id,
             record: GameRecord::new(&game),
             game,
             bots,
+            human_seats,
             stalled: false,
             seed: settings.seed,
             in_progress: self.metrics.game_started(),
@@ -617,6 +638,18 @@ impl<S: GameStore> Lobby<S> {
             reply,
         });
         answer
+    }
+
+    /// How long a running game may go without a connected human. A game no human has moved in was most likely started
+    /// only to be left, so it gets the short `unattended_abandon_after`; one that humans played keeps `abandon_after`.
+    fn abandon_grace(&self) -> Duration {
+        let played = self.game.as_ref().is_some_and(RunningGame::humans_played);
+        if played {
+            return self.config.abandon_after;
+        }
+        self.config
+            .abandon_after
+            .min(self.config.unattended_abandon_after)
     }
 
     async fn act(&mut self, seat: Seat, request_id: u32, action: Action) -> Result<(), ErrorCode> {
@@ -1005,6 +1038,7 @@ fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use settler_island_bot::{Bot, Difficulty};
     use settler_island_game::{Action, PlayerView, ResourceCounts};
@@ -1028,7 +1062,13 @@ mod tests {
         }
     }
 
-    async fn started_lobby(metrics: Arc<Metrics>) -> Lobby<MemoryStore> {
+    fn config() -> Config {
+        let mut config = Config::new(SessionSecret::new((0..64).collect::<Vec<u8>>()).unwrap());
+        config.seed = Some(5);
+        config
+    }
+
+    async fn started_lobby(metrics: Arc<Metrics>, config: Config) -> Lobby<MemoryStore> {
         let owner = User {
             id: UserId("ada".to_string()),
             name: "Ada".to_string(),
@@ -1055,8 +1095,6 @@ mod tests {
             points_to_win: 10,
             bot_difficulty: Difficulty::Random,
         };
-        let mut config = Config::new(SessionSecret::new((0..64).collect::<Vec<u8>>()).unwrap());
-        config.seed = Some(5);
         let store = Arc::new(MemoryStore::default());
         let mut lobby = open(setup, store, Arc::new(config), metrics, notices);
         for _ in 0..2 {
@@ -1076,7 +1114,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_rejected_bot_move_falls_back_instead_of_stalling_the_game() {
-        let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap())).await;
+        let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap()), config()).await;
         let running = lobby.game.as_mut().unwrap();
         running.bots = (0..3)
             .map(|_| Some(Box::new(IllegalBot) as Box<dyn Bot>))
@@ -1093,10 +1131,27 @@ mod tests {
     #[tokio::test]
     async fn an_abandoned_game_is_counted_down_once_when_its_lobby_closes() {
         let metrics = Arc::new(Metrics::new().unwrap());
-        let mut lobby = started_lobby(metrics.clone()).await;
+        let mut lobby = started_lobby(metrics.clone(), config()).await;
         assert_eq!(running_games(&metrics), "settler_running_games 1");
         assert!(lobby.abandon().await);
         drop(lobby);
         assert_eq!(running_games(&metrics), "settler_running_games 0");
+    }
+
+    #[tokio::test]
+    async fn a_grace_too_long_for_an_instant_never_comes_instead_of_panicking() {
+        let config = Config {
+            abandon_after: Duration::MAX,
+            unattended_abandon_after: Duration::MAX,
+            ..config()
+        };
+        let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap()), config).await;
+        let member = &lobby.members[0];
+        let (owner, outbox) = (member.user.id.clone(), member.outbox.clone());
+
+        lobby.leave(&owner, &outbox);
+
+        assert!(lobby.members.is_empty());
+        assert_eq!(lobby.abandon_at, None);
     }
 }

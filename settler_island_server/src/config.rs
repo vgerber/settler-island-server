@@ -69,7 +69,7 @@ pub struct Config {
     pub messages_per_second: u32,
     /// A running game whose lobby had no connected human for this long is closed and never restored.
     pub abandon_after: Duration,
-    /// Like `abandon_after`, for a running game whose humans all left it to the bots on purpose.
+    /// Like `abandon_after` (and never longer), for a running game in which no human seat has moved yet.
     pub unattended_abandon_after: Duration,
     /// Open WebSocket connections the whole server accepts.
     pub max_connections: usize,
