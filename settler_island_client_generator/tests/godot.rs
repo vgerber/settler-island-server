@@ -549,6 +549,30 @@ fn hud_discard_dialog_sends_exactly_the_picked_legal_discard() {
 }
 
 #[test]
+fn game_state_offers_a_rate_limited_act_again() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let game = Game::new(GameSettings {
+        seats: 4,
+        points_to_win: 10,
+        seed: 5,
+    })
+    .unwrap();
+    let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-game-state.json");
+    fs::write(&fixture_path, game_started(&game, 0).to_string()).unwrap();
+
+    let output = run_script(
+        &godot,
+        &prepare_game_project("game-state", "game_state_test.gd"),
+        "game_state_test.gd",
+        fixture_path.to_str().unwrap(),
+    );
+
+    assert!(output.contains("GAME_STATE_OK"), "{output}");
+}
+
+#[test]
 fn hud_event_log_has_a_line_for_every_event() {
     let Some(godot) = godot_binary() else {
         return;

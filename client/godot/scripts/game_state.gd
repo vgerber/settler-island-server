@@ -15,6 +15,8 @@ var events: Array[SiEvent] = []
 
 ## The Act request whose reply is outstanding; legal actions of updates sent before it are stale.
 var _awaiting_act: int = 0
+## The legal actions the outstanding Act was chosen from, given back when the server drops the Act.
+var _legal_before_act: Array[SiAction] = []
 
 
 func _init(game_client: SiClient, started: SiServerMessageGameStarted) -> void:
@@ -49,6 +51,7 @@ func offer_trade(action: SiActionOfferTrade) -> void:
 ## Until the server answers, no further action may be sent from the now stale legal actions.
 func _send(action: SiAction) -> void:
 	_awaiting_act = client.send_act(action)
+	_legal_before_act = legal_actions
 	legal_actions = []
 	changed.emit([] as Array[SiEvent])
 
@@ -91,9 +94,20 @@ func _on_game_update(message: SiServerMessageGameUpdate) -> void:
 
 
 func _on_error(message: SiServerMessageError) -> void:
+	if message.code is SiErrorCodeRateLimited and _awaiting_act != 0:
+		_take_back_dropped_act()
+		return
 	if message.request_id == null or message.request_id != _awaiting_act:
 		return
 	_awaiting_act = 0
 	refused.emit(message.message)
 	# The refused action came from stale legal actions; `GameStarted` brings the current ones.
 	client.send_get_state()
+
+
+## The rate limiter drops a message unread and names no request; when that was our Act, nothing else
+## would ever arrive, so the seat gets its choices back. An update for the Act, should it come, still wins.
+func _take_back_dropped_act() -> void:
+	_awaiting_act = 0
+	legal_actions = _legal_before_act
+	changed.emit([] as Array[SiEvent])
