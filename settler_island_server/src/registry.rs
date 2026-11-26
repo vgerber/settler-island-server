@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use settler_island_protocol::{
@@ -63,7 +63,9 @@ enum RegistryCommand {
         user: UserId,
         reply: oneshot::Sender<Option<LobbyId>>,
     },
+    /// Started lobbies without members are left out unless `viewer` holds a seat in them.
     List {
+        viewer: UserId,
         page: u32,
         per_page: u32,
         reply: oneshot::Sender<LobbyPage>,
@@ -101,8 +103,14 @@ impl RegistryHandle {
             .await
     }
 
-    pub(crate) async fn list(&self, page: u32, per_page: u32) -> Result<LobbyPage, ErrorCode> {
+    pub(crate) async fn list(
+        &self,
+        viewer: UserId,
+        page: u32,
+        per_page: u32,
+    ) -> Result<LobbyPage, ErrorCode> {
         self.call(|reply| RegistryCommand::List {
+            viewer,
             page,
             per_page,
             reply,
@@ -201,11 +209,12 @@ impl<S: GameStore> Registry<S> {
                 let _ = reply.send(self.running_lobby(&user));
             }
             RegistryCommand::List {
+                viewer,
                 page,
                 per_page,
                 reply,
             } => {
-                let _ = reply.send(self.page(page, per_page));
+                let _ = reply.send(self.page(&viewer, page, per_page));
             }
         }
     }
@@ -386,13 +395,26 @@ impl<S: GameStore> Registry<S> {
             .set(i64::try_from(self.lobbies.len()).unwrap_or(i64::MAX));
     }
 
-    fn page(&self, page: u32, per_page: u32) -> LobbyPage {
+    fn page(&self, viewer: &UserId, page: u32, per_page: u32) -> LobbyPage {
+        let attended: HashSet<LobbyId> = self.memberships.values().copied().collect();
+        let visible: Vec<&Listing> = self
+            .lobbies
+            .iter()
+            .filter(|(id, listing)| {
+                !listing.summary.info.started
+                    || attended.contains(id)
+                    || self
+                        .seated
+                        .get(id)
+                        .is_some_and(|users| users.contains(viewer))
+            })
+            .map(|(_, listing)| listing)
+            .collect();
         let skip = (page as usize).saturating_mul(per_page as usize);
         LobbyPage {
-            total: self.lobbies.len() as u32,
-            lobbies: self
-                .lobbies
-                .values()
+            total: visible.len() as u32,
+            lobbies: visible
+                .into_iter()
                 .skip(skip)
                 .take(per_page as usize)
                 .map(|listing| listing.summary.clone())

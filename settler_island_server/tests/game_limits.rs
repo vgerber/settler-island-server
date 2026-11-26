@@ -40,6 +40,21 @@ async fn refused_start(client: &mut Client, name: &str) -> ErrorCode {
         .await
 }
 
+async fn listed(client: &mut Client) -> Vec<LobbyId> {
+    let reply = client
+        .request(|request_id| ClientMessage::ListLobbies {
+            request_id,
+            page: 0,
+            per_page: 10,
+        })
+        .await;
+    let ServerMessage::Lobbies { total, lobbies, .. } = reply else {
+        panic!("expected Lobbies, got {reply:?}");
+    };
+    assert_eq!(total as usize, lobbies.len());
+    lobbies.into_iter().map(|summary| summary.info.id).collect()
+}
+
 #[tokio::test]
 async fn starting_and_leaving_games_in_a_loop_stops_at_the_per_user_cap() {
     let config = Config {
@@ -79,4 +94,15 @@ async fn a_start_beyond_the_server_wide_cap_is_refused() {
         limit: ServerLimit::RunningGames,
     };
     assert_eq!(refusal, expected);
+}
+
+#[tokio::test]
+async fn a_started_lobby_without_members_is_listed_only_to_its_seated_players() {
+    let address = start(test_config()).await;
+    let (mut watcher, _) = Client::welcomed(address, "Watcher").await;
+    let (mut leaver, _) = Client::welcomed(address, "Leaver").await;
+    let lobby = start_and_leave(&mut leaver, "Left to the bots").await;
+
+    assert_eq!(listed(&mut watcher).await, Vec::<LobbyId>::new());
+    assert_eq!(listed(&mut leaver).await, vec![lobby]);
 }

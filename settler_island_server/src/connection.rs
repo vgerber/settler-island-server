@@ -193,7 +193,7 @@ impl<I: IdentityStore> Connection<I> {
                 request_id,
                 page,
                 per_page,
-            } => self.list(request_id, page, per_page).await,
+            } => self.list(user.id, request_id, page, per_page).await,
             ClientMessage::CreateLobby {
                 request_id,
                 name,
@@ -262,11 +262,17 @@ impl<I: IdentityStore> Connection<I> {
         Ok(())
     }
 
-    async fn list(&self, request_id: u32, page: u32, per_page: u32) -> Result<(), ErrorCode> {
+    async fn list(
+        &self,
+        viewer: UserId,
+        request_id: u32,
+        page: u32,
+        per_page: u32,
+    ) -> Result<(), ErrorCode> {
         if !(1..=MAX_LOBBIES_PER_PAGE).contains(&per_page) {
             return Err(ErrorCode::InvalidPage);
         }
-        let listing = self.registry.list(page, per_page).await?;
+        let listing = self.registry.list(viewer, page, per_page).await?;
         self.outbox.send(ServerMessage::Lobbies {
             request_id,
             page,
