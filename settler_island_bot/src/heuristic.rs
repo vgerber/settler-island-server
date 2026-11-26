@@ -1,14 +1,16 @@
 mod evaluation;
 mod hand;
 
-use settler_island_game::{Action, OwnView, Phase, PlayerView, Resource, ResourceCounts, Seat};
+use settler_island_game::{
+    Action, OwnView, Phase, PlayerView, Purchase, Resource, ResourceCounts, Seat,
+};
 
 use crate::Bot;
 use evaluation::{
     corner_production, has_open_site, road_value, robber_blocks, robber_value, seat_production,
     site_value,
 };
-use hand::{bank_trade_toward, goal, keep_score, missing, offer_toward, trade_rates, Build};
+use hand::{bank_trade_toward, goal, keep_score, missing, offer_toward};
 
 /// No trade partner this many points short of winning or closer.
 const LEADER_MARGIN: u8 = 2;
@@ -78,7 +80,7 @@ impl HeuristicBot {
             monopoly(view, seat, &hand, target, legal),
             expansion(view, seat, legal),
             buy_card(&hand, target, legal),
-            bank_trade(view, seat, &hand, target, legal),
+            bank_trade(view, own, &hand, target, legal),
         ];
         // The offer is tried last because it records the turn.
         choices
@@ -95,7 +97,7 @@ impl HeuristicBot {
         view: &PlayerView,
         seat: Seat,
         hand: &ResourceCounts,
-        target: Build,
+        target: Purchase,
     ) -> Option<Action> {
         let points = view.players.get(usize::from(seat))?.points;
         if self.offered_on_turn == Some(view.turn_number) || near_win(view, points) {
@@ -120,7 +122,11 @@ impl Bot for HeuristicBot {
         match self.decide(view, own, legal) {
             Some(action @ Action::OfferTrade { .. }) => action,
             Some(action) if legal.contains(&action) => action,
-            _ => fallback,
+            decision => {
+                // A decision outside the legal list means the bot's model of the rules drifted.
+                debug_assert!(decision.is_none(), "illegal bot decision {decision:?}");
+                fallback
+            }
         }
     }
 }
@@ -169,7 +175,7 @@ fn knight(view: &PlayerView, seat: Seat, legal: &[Action]) -> Option<Action> {
 }
 
 /// Only when the two cards complete the goal.
-fn year_of_plenty(hand: &ResourceCounts, target: Build, legal: &[Action]) -> Option<Action> {
+fn year_of_plenty(hand: &ResourceCounts, target: Purchase, legal: &[Action]) -> Option<Action> {
     legal
         .iter()
         .find(|action| {
@@ -189,7 +195,7 @@ fn monopoly(
     view: &PlayerView,
     seat: Seat,
     hand: &ResourceCounts,
-    target: Build,
+    target: Purchase,
     legal: &[Action],
 ) -> Option<Action> {
     let others: u32 = view
@@ -228,29 +234,33 @@ fn expansion(view: &PlayerView, seat: Seat, legal: &[Action]) -> Option<Action> 
 }
 
 /// When the card is the goal, or when paying for it leaves the goal no further away.
-fn buy_card(hand: &ResourceCounts, target: Build, legal: &[Action]) -> Option<Action> {
+fn buy_card(hand: &ResourceCounts, target: Purchase, legal: &[Action]) -> Option<Action> {
     if !legal.contains(&Action::BuyDevelopmentCard) {
         return None;
     }
     let mut after = *hand;
-    after.try_remove(&Build::DevelopmentCard.cost()).ok()?;
+    after.try_remove(&Purchase::DevelopmentCard.cost()).ok()?;
     let keeps_goal =
         missing(&after, &target.cost()).total() == missing(hand, &target.cost()).total();
-    (target == Build::DevelopmentCard || keeps_goal).then_some(Action::BuyDevelopmentCard)
+    (target == Purchase::DevelopmentCard || keeps_goal).then_some(Action::BuyDevelopmentCard)
 }
 
 /// Trades that finish the goal, or any step toward it while a seven would cost cards.
 fn bank_trade(
     view: &PlayerView,
-    seat: Seat,
+    own: &OwnView,
     hand: &ResourceCounts,
-    target: Build,
+    target: Purchase,
     legal: &[Action],
 ) -> Option<Action> {
-    let rates = trade_rates(view, seat);
     let complete_only = hand.total() <= hand::SAFE_HAND;
-    let (give, receive) =
-        bank_trade_toward(hand, &target.cost(), &rates, &view.bank, complete_only)?;
+    let (give, receive) = bank_trade_toward(
+        hand,
+        &target.cost(),
+        &own.bank_rates,
+        &view.bank,
+        complete_only,
+    )?;
     let action = Action::BankTrade { give, receive };
     legal.contains(&action).then_some(action)
 }

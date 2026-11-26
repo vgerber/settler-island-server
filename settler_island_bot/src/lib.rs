@@ -20,6 +20,11 @@ pub enum Difficulty {
     Heuristic,
 }
 
+/// Distinct per seat and per game, reproducible from the game seed.
+pub fn bot_seed(game_seed: u64, seat: usize) -> u64 {
+    game_seed.wrapping_add(seat as u64 + 1)
+}
+
 pub fn create_bot(difficulty: Difficulty, seed: u64) -> Box<dyn Bot> {
     match difficulty {
         Difficulty::Random => Box::new(random::RandomBot::new(seed)),

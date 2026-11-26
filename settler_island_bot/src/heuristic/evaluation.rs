@@ -1,8 +1,6 @@
 use std::collections::VecDeque;
 
-use settler_island_game::{
-    Board, BuildingKind, CornerId, EdgeId, PlayerView, Port, Resource, Seat, TileId,
-};
+use settler_island_game::{Board, BuildingKind, CornerId, EdgeId, PlayerView, Port, Seat, TileId};
 
 /// Pips are summed across corners; one new resource is worth about a mid-sized number.
 const DIVERSITY_BONUS: f64 = 2.5;
@@ -18,13 +16,6 @@ const OWN_TILE_PENALTY: f64 = 1000.0;
 
 /// Pips per resource, indexed like `Resource::ALL`.
 pub(crate) type Production = [u32; 5];
-
-pub(crate) fn slot(resource: Resource) -> usize {
-    Resource::ALL
-        .iter()
-        .position(|candidate| *candidate == resource)
-        .unwrap_or(0)
-}
 
 /// How many of the 36 dice outcomes roll this number.
 pub(crate) fn pips(number: u8) -> u32 {
@@ -52,7 +43,7 @@ pub(crate) fn corner_production(board: &Board, corner: CornerId) -> Production {
     };
     for tile in location.tiles.iter().filter_map(|tile| board.tile(*tile)) {
         if let (Some(resource), Some(number)) = (tile.resource, tile.number) {
-            production[slot(resource)] += pips(number);
+            production[resource.index()] += pips(number);
         }
     }
     production
@@ -100,7 +91,7 @@ fn port_value(port: Port, production: &Production, existing: &Production) -> f64
     match port {
         Port::Generic => GENERIC_PORT_BONUS,
         Port::Specific(resource) => {
-            let produced = production[slot(resource)] + existing[slot(resource)];
+            let produced = production[resource.index()] + existing[resource.index()];
             if produced >= SPECIFIC_PORT_MIN_PIPS {
                 SPECIFIC_PORT_BONUS
             } else {

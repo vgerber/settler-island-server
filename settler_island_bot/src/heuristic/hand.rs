@@ -1,42 +1,19 @@
-use settler_island_game::{BuildingKind, PlayerView, Port, Resource, ResourceCounts, Seat};
+use settler_island_game::{BuildingKind, PlayerView, Purchase, Resource, ResourceCounts, Seat};
 
-use super::evaluation::{has_open_site, slot};
+use super::evaluation::has_open_site;
 
-const BANK_RATE: u8 = 4;
-const GENERIC_PORT_RATE: u8 = 3;
-const SPECIFIC_PORT_RATE: u8 = 2;
 /// A seven takes half of a hand above this size.
 pub(crate) const SAFE_HAND: u32 = 7;
 /// The goal's missing cards weigh more than those of the other builds when discarding.
 const GOAL_WEIGHT: u32 = 10;
 const OTHER_WEIGHT: u32 = 2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Build {
-    City,
-    Settlement,
-    Road,
-    DevelopmentCard,
-}
-
-impl Build {
-    const ALL: [Build; 4] = [
-        Build::City,
-        Build::Settlement,
-        Build::Road,
-        Build::DevelopmentCard,
-    ];
-
-    /// Ordered clay, wood, sheep, wheat, ore.
-    pub(crate) fn cost(self) -> ResourceCounts {
-        match self {
-            Build::City => ResourceCounts::new([0, 0, 0, 2, 3]),
-            Build::Settlement => ResourceCounts::new([1, 1, 1, 1, 0]),
-            Build::Road => ResourceCounts::new([1, 1, 0, 0, 0]),
-            Build::DevelopmentCard => ResourceCounts::new([0, 0, 1, 1, 1]),
-        }
-    }
-}
+const PURCHASES: [Purchase; 4] = [
+    Purchase::City,
+    Purchase::Settlement,
+    Purchase::Road,
+    Purchase::DevelopmentCard,
+];
 
 pub(crate) fn missing(hand: &ResourceCounts, cost: &ResourceCounts) -> ResourceCounts {
     let mut result = ResourceCounts::default();
@@ -54,9 +31,9 @@ pub(crate) fn spare(hand: &ResourceCounts, cost: &ResourceCounts) -> ResourceCou
 }
 
 /// The build to save for: the cheaper of city and settlement, else a road to a new site, else a card.
-pub(crate) fn goal(view: &PlayerView, seat: Seat, hand: &ResourceCounts) -> Build {
+pub(crate) fn goal(view: &PlayerView, seat: Seat, hand: &ResourceCounts) -> Purchase {
     let Some(player) = view.players.get(usize::from(seat)) else {
-        return Build::DevelopmentCard;
+        return Purchase::DevelopmentCard;
     };
     let has_settlement = view.board.corner_ids().any(|corner| {
         view.board.building(corner).is_some_and(|building| {
@@ -66,10 +43,10 @@ pub(crate) fn goal(view: &PlayerView, seat: Seat, hand: &ResourceCounts) -> Buil
     let open_site = player.settlements_left > 0 && has_open_site(&view.board, seat);
     let mut candidates = Vec::new();
     if player.cities_left > 0 && has_settlement {
-        candidates.push(Build::City);
+        candidates.push(Purchase::City);
     }
     if open_site {
-        candidates.push(Build::Settlement);
+        candidates.push(Purchase::Settlement);
     }
     let cheapest = candidates
         .into_iter()
@@ -78,40 +55,16 @@ pub(crate) fn goal(view: &PlayerView, seat: Seat, hand: &ResourceCounts) -> Buil
         return build;
     }
     if player.settlements_left > 0 && player.roads_left > 0 {
-        return Build::Road;
+        return Purchase::Road;
     }
-    Build::DevelopmentCard
-}
-
-/// Bank rate per resource from the ports at the seat's buildings.
-pub(crate) fn trade_rates(view: &PlayerView, seat: Seat) -> [u8; 5] {
-    let mut rates = [BANK_RATE; 5];
-    for corner in view.board.corner_ids() {
-        if view
-            .board
-            .building(corner)
-            .is_none_or(|building| building.seat != seat)
-        {
-            continue;
-        }
-        match view.board.corner(corner).and_then(|location| location.port) {
-            Some(Port::Generic) => {
-                for rate in rates.iter_mut() {
-                    *rate = (*rate).min(GENERIC_PORT_RATE);
-                }
-            }
-            Some(Port::Specific(resource)) => rates[slot(resource)] = SPECIFIC_PORT_RATE,
-            None => {}
-        }
-    }
-    rates
+    Purchase::DevelopmentCard
 }
 
 /// One bank trade of spare cards toward `cost`; with `complete_only`, only when trades can cover all of it.
 pub(crate) fn bank_trade_toward(
     hand: &ResourceCounts,
     cost: &ResourceCounts,
-    rates: &[u8; 5],
+    rates: &ResourceCounts,
     bank: &ResourceCounts,
     complete_only: bool,
 ) -> Option<(Resource, Resource)> {
@@ -119,15 +72,15 @@ pub(crate) fn bank_trade_toward(
     let extra = spare(hand, cost);
     let tradeable: u32 = Resource::ALL
         .iter()
-        .map(|resource| u32::from(extra.get(*resource) / rates[slot(*resource)]))
+        .map(|resource| u32::from(extra.get(*resource) / rates.get(*resource)))
         .sum();
     if needed.is_empty() || (complete_only && tradeable < needed.total()) {
         return None;
     }
     let give = Resource::ALL
         .into_iter()
-        .filter(|resource| extra.get(*resource) >= rates[slot(*resource)])
-        .max_by_key(|resource| extra.get(*resource) / rates[slot(*resource)])?;
+        .filter(|resource| extra.get(*resource) >= rates.get(*resource))
+        .max_by_key(|resource| extra.get(*resource) / rates.get(*resource))?;
     let receive = Resource::ALL
         .into_iter()
         .filter(|resource| needed.get(*resource) > 0 && bank.get(*resource) > 0)
@@ -156,8 +109,8 @@ pub(crate) fn offer_toward(
 }
 
 /// Higher is better: few missing cards for the goal, then for the other builds.
-pub(crate) fn keep_score(kept: &ResourceCounts, goal: Build) -> i64 {
-    let penalty: u32 = Build::ALL
+pub(crate) fn keep_score(kept: &ResourceCounts, goal: Purchase) -> i64 {
+    let penalty: u32 = PURCHASES
         .iter()
         .map(|build| {
             let weight = if *build == goal {
@@ -175,12 +128,12 @@ pub(crate) fn keep_score(kept: &ResourceCounts, goal: Build) -> i64 {
 mod tests {
     use super::*;
 
-    const NO_PORTS: [u8; 5] = [BANK_RATE; 5];
+    const NO_PORTS: ResourceCounts = ResourceCounts::new([4; 5]);
     const FULL_BANK: ResourceCounts = ResourceCounts::new([19; 5]);
 
     #[test]
     fn bank_trade_only_when_it_completes_the_build() {
-        let city = Build::City.cost();
+        let city = Purchase::City.cost();
         let one_short = ResourceCounts::new([0, 4, 0, 2, 2]);
         let two_short = ResourceCounts::new([0, 4, 0, 1, 2]);
 
@@ -197,10 +150,9 @@ mod tests {
 
     #[test]
     fn bank_trade_never_gives_cards_the_build_needs_and_uses_port_rates() {
-        let settlement = Build::Settlement.cost();
+        let settlement = Purchase::Settlement.cost();
         let hand = ResourceCounts::new([1, 1, 3, 0, 0]);
-        let mut sheep_port = NO_PORTS;
-        sheep_port[slot(Resource::Sheep)] = SPECIFIC_PORT_RATE;
+        let sheep_port = NO_PORTS.with(Resource::Sheep, 2);
 
         assert_eq!(
             bank_trade_toward(&hand, &settlement, &NO_PORTS, &FULL_BANK, false),
@@ -219,7 +171,7 @@ mod tests {
 
     #[test]
     fn offer_gives_a_spare_card_for_the_single_missing_one() {
-        let settlement = Build::Settlement.cost();
+        let settlement = Purchase::Settlement.cost();
 
         assert_eq!(
             offer_toward(&ResourceCounts::new([1, 1, 1, 0, 2]), &settlement),
@@ -240,7 +192,7 @@ mod tests {
         let city_kept = ResourceCounts::new([0, 0, 0, 2, 3]);
         let road_kept = ResourceCounts::new([1, 1, 0, 1, 2]);
 
-        assert!(keep_score(&city_kept, Build::City) > keep_score(&road_kept, Build::City));
-        assert!(keep_score(&road_kept, Build::Road) > keep_score(&city_kept, Build::Road));
+        assert!(keep_score(&city_kept, Purchase::City) > keep_score(&road_kept, Purchase::City));
+        assert!(keep_score(&road_kept, Purchase::Road) > keep_score(&city_kept, Purchase::Road));
     }
 }

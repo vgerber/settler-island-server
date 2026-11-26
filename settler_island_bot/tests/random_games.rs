@@ -1,17 +1,12 @@
 use proptest::prelude::*;
-use settler_island_bot::{create_bot, play_game, Bot, Difficulty};
+use settler_island_bot::{bot_seed, create_bot, play_game, Bot, Difficulty};
 use settler_island_game::{GameSettings, Resource};
 
 const CARDS_IN_PLAY: u32 = 95;
 
 fn bots(seats: u8, seed: u64) -> Vec<Box<dyn Bot>> {
     (0..seats)
-        .map(|seat| {
-            create_bot(
-                Difficulty::Random,
-                seed.wrapping_mul(31).wrapping_add(u64::from(seat)),
-            )
-        })
+        .map(|seat| create_bot(Difficulty::Random, bot_seed(seed, usize::from(seat))))
         .collect()
 }
 

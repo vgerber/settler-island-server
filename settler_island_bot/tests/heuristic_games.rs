@@ -1,4 +1,4 @@
-use settler_island_bot::{create_bot, play_game, Bot, Difficulty, GameOutcome};
+use settler_island_bot::{bot_seed, create_bot, play_game, Bot, Difficulty, GameOutcome};
 use settler_island_game::{GameSettings, Seat};
 
 const MAX_ACTIONS: u32 = 3000;
@@ -21,10 +21,7 @@ fn play(seed: u64) -> GameOutcome {
             } else {
                 Difficulty::Random
             };
-            create_bot(
-                difficulty,
-                seed.wrapping_mul(31).wrapping_add(u64::from(seat)),
-            )
+            create_bot(difficulty, bot_seed(seed, usize::from(seat)))
         })
         .collect();
     // A rejected action, offers included, is an error and fails the test.
