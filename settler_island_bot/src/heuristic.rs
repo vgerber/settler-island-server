@@ -348,7 +348,7 @@ fn helps_goal(view: &PlayerView, own: &OwnView, offer: &TradeOffer) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, TileId};
+    use settler_island_game::{BuildingKind, CornerId, Game, GameSettings, OwedDiscard, TileId};
 
     /// A real board after four heuristic bots placed their setup pieces.
     fn after_setup(seed: u64) -> Game {
@@ -472,7 +472,7 @@ mod tests {
         let game = after_setup(2);
         let hand = ResourceCounts::new([0, 2, 2, 2, 3]);
         let phase = Phase::Discard {
-            remaining: vec![(0, 4)],
+            owed: vec![OwedDiscard { seat: 0, cards: 4 }],
         };
         let view = view_with(&game, phase, hand);
         let legal: Vec<Action> = [

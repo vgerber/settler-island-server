@@ -52,11 +52,15 @@ static func total(resources: Array[int]) -> int:
 	return sum
 
 
+static func setup_round_number(round: String) -> int:
+	return 2 if round == SiSetupRound.SECOND else 1
+
+
 static func phase_text(phase: SiPhase, own_seat: int) -> String:
 	if phase is SiPhaseSetupSettlement:
-		return "Setup round %d: place a settlement" % ((phase as SiPhaseSetupSettlement).round)
+		return "Setup round %d: place a settlement" % setup_round_number((phase as SiPhaseSetupSettlement).round)
 	if phase is SiPhaseSetupRoad:
-		return "Setup round %d: place a road" % ((phase as SiPhaseSetupRoad).round)
+		return "Setup round %d: place a road" % setup_round_number((phase as SiPhaseSetupRoad).round)
 	if phase is SiPhaseRoll:
 		return "Roll the dice"
 	if phase is SiPhaseMain:

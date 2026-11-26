@@ -35,10 +35,7 @@ pub(crate) fn end_turn(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameEr
     game.require_main_turn(seat)?;
 
     development::on_turn_end(game, seat)?;
-    game.dice_rolled = false;
-    let next = (seat + 1) % game.settings.seats;
-    game.turn_number += 1;
-    Ok(game.pass_to(next, Phase::Roll))
+    Ok(game.start_turn((seat + 1) % game.settings.seats))
 }
 
 #[cfg(test)]

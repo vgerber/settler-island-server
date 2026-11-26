@@ -4,13 +4,12 @@ extends SiPhase
 
 const VARIANT := "SetupRoad"
 
-## 1 or 2, as in `SetupSettlement`.
-var round: int = 0
+var round: String = ""
 var settlement: int = 0
 
 static func from_dict(data: Variant) -> SiPhaseSetupRoad:
 	var decoded := SiPhaseSetupRoad.new()
-	decoded.round = int(data.get("round"))
+	decoded.round = str(data.get("round"))
 	decoded.settlement = int(data.get("settlement"))
 	return decoded
 

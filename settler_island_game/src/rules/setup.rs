@@ -3,10 +3,10 @@ use crate::board::{CornerId, EdgeId};
 use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Seat};
-use crate::phase::Phase;
+use crate::phase::{Phase, SetupRound};
 use crate::rules::{building, production};
 
-/// Setup order: round 1 seats `0..n`, round 2 seats `n-1..=0`, then seat 0 rolls.
+/// Setup order: the first round seats `0..n`, the second `n-1..=0`, then seat 0 rolls.
 pub(crate) fn place_settlement(
     game: &mut Game,
     seat: Seat,
@@ -14,7 +14,7 @@ pub(crate) fn place_settlement(
 ) -> Result<Vec<Event>, GameError> {
     let round = check_settlement(game, seat, corner)?;
     let mut events = vec![building::place_settlement(game, seat, corner)];
-    if round == 2 {
+    if round == SetupRound::Second {
         let mut owed = vec![Default::default(); game.players.len()];
         owed[usize::from(seat)] = production::settlement_yield(game, corner);
         events.extend(production::distribute(game, &owed));
@@ -34,17 +34,18 @@ pub(crate) fn place_road(
     let round = check_road(game, seat, edge)?;
     let mut events = vec![building::place_road(game, seat, edge)];
     let last_seat = game.settings.seats - 1;
-    let (next_seat, next_phase) = match (round, seat) {
-        (1, seat) if seat < last_seat => (seat + 1, Phase::SetupSettlement { round: 1 }),
-        (1, seat) => (seat, Phase::SetupSettlement { round: 2 }),
-        (_, 0) => (0, Phase::Roll),
-        (_, seat) => (seat - 1, Phase::SetupSettlement { round: 2 }),
+    let next = match round {
+        SetupRound::First if seat < last_seat => Some((seat + 1, SetupRound::First)),
+        SetupRound::First => Some((seat, SetupRound::Second)),
+        SetupRound::Second if seat > 0 => Some((seat - 1, SetupRound::Second)),
+        SetupRound::Second => None,
     };
-    if next_phase == Phase::Roll {
-        game.turn_number = 1;
-        events.push(Event::TurnStarted { seat: 0 });
+    match next {
+        Some((next_seat, round)) => {
+            events.extend(game.pass_to(next_seat, Phase::SetupSettlement { round }))
+        }
+        None => events.extend(game.start_turn(0)),
     }
-    events.extend(game.pass_to(next_seat, next_phase));
     Ok(events)
 }
 
@@ -65,7 +66,7 @@ pub(crate) fn legal_roads(game: &Game, seat: Seat) -> Vec<Action> {
 }
 
 /// Returns the setup round.
-fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<u8, GameError> {
+fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<SetupRound, GameError> {
     game.require_turn(seat)?;
     let Phase::SetupSettlement { round } = game.phase else {
         return Err(GameError::WrongPhase);
@@ -75,7 +76,7 @@ fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<u8, Gam
 }
 
 /// Returns the setup round. The road must touch the settlement just placed.
-fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<u8, GameError> {
+fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<SetupRound, GameError> {
     game.require_turn(seat)?;
     let Phase::SetupRoad { round, settlement } = game.phase else {
         return Err(GameError::WrongPhase);
@@ -118,6 +119,36 @@ mod tests {
             assert_eq!(game.current, 0);
             assert_eq!(game.legal_actions(0), vec![Action::RollDice]);
         }
+    }
+
+    #[test]
+    fn the_last_setup_road_starts_the_first_turn_like_any_other() {
+        let mut game = new_game(3, 1);
+        for _ in 0..5 {
+            place_first(&mut game);
+        }
+        assert_eq!(
+            game.phase,
+            Phase::SetupSettlement {
+                round: SetupRound::Second
+            }
+        );
+        let settlement = game.legal_actions(0)[0].clone();
+        game.apply(0, settlement).unwrap();
+        let road = game.legal_actions(0)[0].clone();
+
+        let events = game.apply(0, road).unwrap();
+
+        assert_eq!(
+            events[1..],
+            [
+                Event::TurnEnded { seat: 0 },
+                Event::TurnStarted { seat: 0 },
+                Event::PhaseChanged { phase: Phase::Roll }
+            ]
+        );
+        assert_eq!(game.turn_number, 1);
+        assert!(!game.dice_rolled);
     }
 
     #[test]

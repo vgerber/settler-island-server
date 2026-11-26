@@ -8,7 +8,7 @@ use crate::action::Action;
 use crate::board::{self, Board};
 use crate::error::GameError;
 use crate::event::Event;
-use crate::phase::Phase;
+use crate::phase::{Phase, SetupRound};
 use crate::resource::ResourceCounts;
 use crate::rules::{building, development, robber, scoring, setup, trade, turn};
 use crate::view::PlayerView;
@@ -152,7 +152,9 @@ impl Game {
             players: vec![player; usize::from(settings.seats)],
             settings,
             board,
-            phase: Phase::SetupSettlement { round: 1 },
+            phase: Phase::SetupSettlement {
+                round: SetupRound::First,
+            },
             current: 0,
             bank: ResourceCounts::new([BANK_PER_RESOURCE; 5]),
             deck,
@@ -236,11 +238,7 @@ impl Game {
     pub fn pending_seats(&self) -> Vec<Seat> {
         match &self.phase {
             Phase::Finished { .. } => Vec::new(),
-            Phase::Discard { remaining } => remaining
-                .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(seat, _)| *seat)
-                .collect(),
+            Phase::Discard { owed } => owed.iter().map(|entry| entry.seat).collect(),
             Phase::TradeOffered { offer } => trade::pending_seats(self, offer),
             _ => vec![self.current],
         }
@@ -355,7 +353,20 @@ impl Game {
         Phase::Roll
     }
 
-    /// Hands the turn to `seat` (if it changes) and enters `phase`.
+    /// Begins a regular turn: the one place the turn number advances and the roll resets.
+    pub(crate) fn start_turn(&mut self, seat: Seat) -> Vec<Event> {
+        self.turn_number += 1;
+        self.dice_rolled = false;
+        let mut events = vec![
+            Event::TurnEnded { seat: self.current },
+            Event::TurnStarted { seat },
+        ];
+        self.current = seat;
+        events.push(self.enter(Phase::Roll));
+        events
+    }
+
+    /// Hands a setup turn to `seat` (if it changes) and enters `phase`.
     pub(crate) fn pass_to(&mut self, seat: Seat, phase: Phase) -> Vec<Event> {
         let mut events = Vec::new();
         if seat != self.current {

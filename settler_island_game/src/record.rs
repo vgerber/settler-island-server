@@ -8,7 +8,9 @@ use crate::event::Event;
 use crate::game::{Game, Seat};
 
 // 2: the open trade moved into `Phase::TradeOffered { offer }`, so phase events carry the offer.
-const FORMAT_VERSION: u16 = 2;
+// 3: setup rounds are `First`/`Second`, discard entries are `{ seat, cards }`, and the first turn starts with
+// `TurnEnded` like every other.
+const FORMAT_VERSION: u16 = 3;
 const RULES_VERSION: u16 = 1;
 
 /// A game as header plus ordered entries; random outcomes are in the events, the seed is never stored.

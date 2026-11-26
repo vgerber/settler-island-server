@@ -2127,6 +2127,28 @@
       ],
       "type": "object"
     },
+    "OwedDiscard": {
+      "description": "A seat that has to discard `cards` cards after a 7.",
+      "properties": {
+        "cards": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seat": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seat",
+        "cards"
+      ],
+      "type": "object"
+    },
     "OwnView": {
       "properties": {
         "bank_rates": {
@@ -2170,11 +2192,7 @@
         {
           "properties": {
             "round": {
-              "description": "1 in seat order, then 2 in reverse order.",
-              "format": "uint8",
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/$defs/SetupRound"
             },
             "type": {
               "const": "SetupSettlement",
@@ -2190,11 +2208,7 @@
         {
           "properties": {
             "round": {
-              "description": "1 or 2, as in `SetupSettlement`.",
-              "format": "uint8",
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
+              "$ref": "#/$defs/SetupRound"
             },
             "settlement": {
               "$ref": "#/$defs/CornerId"
@@ -2236,27 +2250,11 @@
           "type": "object"
         },
         {
-          "description": "Seats that still have to discard and how many cards each (step 2d).",
+          "description": "Seats that still have to discard, one entry per seat (step 2d).",
           "properties": {
-            "remaining": {
+            "owed": {
               "items": {
-                "maxItems": 2,
-                "minItems": 2,
-                "prefixItems": [
-                  {
-                    "format": "uint8",
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  {
-                    "format": "uint8",
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                ],
-                "type": "array"
+                "$ref": "#/$defs/OwedDiscard"
               },
               "type": "array"
             },
@@ -2267,7 +2265,7 @@
           },
           "required": [
             "type",
-            "remaining"
+            "owed"
           ],
           "type": "object"
         },
@@ -2940,6 +2938,14 @@
           "type": "object"
         }
       ]
+    },
+    "SetupRound": {
+      "description": "The first round places in seat order, the second in reverse order and yields resources.",
+      "enum": [
+        "First",
+        "Second"
+      ],
+      "type": "string"
     },
     "Tile": {
       "properties": {

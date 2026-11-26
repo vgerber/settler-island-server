@@ -3,7 +3,7 @@ use crate::board::TileId;
 use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Holder, Seat};
-use crate::phase::Phase;
+use crate::phase::{OwedDiscard, Phase};
 use rand::Rng;
 
 use crate::resource::{Resource, ResourceCounts};
@@ -39,17 +39,19 @@ pub(crate) fn legal_moves(game: &Game, seat: Seat) -> Vec<Action> {
 
 /// A rolled 7: seats above the hand limit discard half (rounded down), then the roller moves the robber.
 pub(crate) fn on_seven(game: &mut Game, _seat: Seat) -> Vec<Event> {
-    let remaining: Vec<(Seat, u8)> = (0..game.settings.seats)
+    let owed: Vec<OwedDiscard> = (0..game.settings.seats)
         .filter_map(|seat| {
             let total = game.player(seat).ok()?.hand.total();
-            (total > DISCARD_ABOVE_CARDS)
-                .then(|| (seat, u8::try_from(total / 2).unwrap_or(u8::MAX)))
+            (total > DISCARD_ABOVE_CARDS).then(|| OwedDiscard {
+                seat,
+                cards: u8::try_from(total / 2).unwrap_or(u8::MAX),
+            })
         })
         .collect();
-    let phase = if remaining.is_empty() {
+    let phase = if owed.is_empty() {
         Phase::MoveRobber { then_steal: true }
     } else {
-        Phase::Discard { remaining }
+        Phase::Discard { owed }
     };
     vec![game.enter(phase)]
 }
@@ -60,29 +62,28 @@ pub(crate) fn discard(
     seat: Seat,
     resources: ResourceCounts,
 ) -> Result<Vec<Event>, GameError> {
-    let Phase::Discard { remaining } = &game.phase else {
+    let Phase::Discard { owed } = &game.phase else {
         return Err(GameError::WrongPhase);
     };
-    let owed = remaining
-        .iter()
-        .find(|(owing, _)| *owing == seat)
-        .map(|(_, count)| *count)
+    let cards = game
+        .phase
+        .owed_discard(seat)
         .ok_or(GameError::NotYourTurn)?;
-    if resources.total() != u32::from(owed) {
+    if resources.total() != u32::from(cards) {
         return Err(GameError::InvalidDiscard);
     }
-    let left = remaining
+    let left: Vec<OwedDiscard> = owed
         .iter()
-        .filter(|(owing, _)| *owing != seat)
+        .filter(|entry| entry.seat != seat)
         .copied()
-        .collect::<Vec<_>>();
+        .collect();
     game.move_resources(Holder::Seat(seat), Holder::Bank, resources)?;
 
     let mut events = vec![Event::CardsDiscarded { seat, resources }];
     let next = if left.is_empty() {
         Phase::MoveRobber { then_steal: true }
     } else {
-        Phase::Discard { remaining: left }
+        Phase::Discard { owed: left }
     };
     events.push(game.enter(next));
     Ok(events)
@@ -127,10 +128,7 @@ pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Eve
 
 /// Every exact-count sub-multiset of the hand.
 pub(crate) fn legal_discards(game: &Game, seat: Seat) -> Vec<Action> {
-    let Phase::Discard { remaining } = &game.phase else {
-        return Vec::new();
-    };
-    let Some((_, owed)) = remaining.iter().find(|(owing, _)| *owing == seat) else {
+    let Some(cards) = game.phase.owed_discard(seat) else {
         return Vec::new();
     };
     let Ok(player) = game.player(seat) else {
@@ -138,7 +136,7 @@ pub(crate) fn legal_discards(game: &Game, seat: Seat) -> Vec<Action> {
     };
     let hand = player.hand;
     let mut found = Vec::new();
-    sub_multisets(&hand, 0, *owed, ResourceCounts::default(), &mut found);
+    sub_multisets(&hand, 0, cards, ResourceCounts::default(), &mut found);
     found
         .into_iter()
         .map(|resources| Action::Discard { resources })
@@ -292,7 +290,11 @@ mod tests {
         assert_eq!(
             game.phase,
             Phase::Discard {
-                remaining: vec![(0, 4), (1, 4), (2, 6)]
+                owed: vec![
+                    OwedDiscard { seat: 0, cards: 4 },
+                    OwedDiscard { seat: 1, cards: 4 },
+                    OwedDiscard { seat: 2, cards: 6 },
+                ]
             }
         );
         assert_eq!(events.len(), 1);
@@ -327,7 +329,7 @@ mod tests {
         assert_eq!(
             game.phase,
             Phase::Discard {
-                remaining: vec![(1, 4)]
+                owed: vec![OwedDiscard { seat: 1, cards: 4 }]
             }
         );
         assert_eq!(game.pending_seats(), vec![1]);

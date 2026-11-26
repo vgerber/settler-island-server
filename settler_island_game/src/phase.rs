@@ -8,19 +8,17 @@ use crate::game::{Seat, TradeOffer};
 #[serde(tag = "type")]
 pub enum Phase {
     SetupSettlement {
-        /// 1 in seat order, then 2 in reverse order.
-        round: u8,
+        round: SetupRound,
     },
     SetupRoad {
-        /// 1 or 2, as in `SetupSettlement`.
-        round: u8,
+        round: SetupRound,
         settlement: CornerId,
     },
     Roll,
     Main,
-    /// Seats that still have to discard and how many cards each (step 2d).
+    /// Seats that still have to discard, one entry per seat (step 2d).
     Discard {
-        remaining: Vec<(Seat, u8)>,
+        owed: Vec<OwedDiscard>,
     },
     /// After a 7 or a knight.
     MoveRobber {
@@ -43,7 +41,31 @@ pub enum Phase {
     },
 }
 
+/// The first round places in seat order, the second in reverse order and yields resources.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum SetupRound {
+    First,
+    Second,
+}
+
+/// A seat that has to discard `cards` cards after a 7.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OwedDiscard {
+    pub seat: Seat,
+    pub cards: u8,
+}
+
 impl Phase {
+    /// How many cards `seat` still has to discard, if any.
+    pub fn owed_discard(&self, seat: Seat) -> Option<u8> {
+        let Phase::Discard { owed } = self else {
+            return None;
+        };
+        owed.iter()
+            .find(|entry| entry.seat == seat)
+            .map(|entry| entry.cards)
+    }
+
     /// The open player trade, which exists only in `TradeOffered`.
     pub fn trade_offer(&self) -> Option<&TradeOffer> {
         match self {

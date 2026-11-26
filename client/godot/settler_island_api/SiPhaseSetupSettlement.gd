@@ -4,12 +4,11 @@ extends SiPhase
 
 const VARIANT := "SetupSettlement"
 
-## 1 in seat order, then 2 in reverse order.
-var round: int = 0
+var round: String = ""
 
 static func from_dict(data: Variant) -> SiPhaseSetupSettlement:
 	var decoded := SiPhaseSetupSettlement.new()
-	decoded.round = int(data.get("round"))
+	decoded.round = str(data.get("round"))
 	return decoded
 
 func to_dict() -> Dictionary:
