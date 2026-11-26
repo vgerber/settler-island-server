@@ -91,6 +91,15 @@ test_totals() {
   grep -E "^test result:" "$log" | awk '{passed += $4; failed += $6; ignored += $8} END {printf "tests: %d passed, %d failed, %d ignored\n", passed, failed, ignored}'
 }
 
+# The Postgres tests run exactly when SETTLER_TEST_DATABASE_URL is set (they skip with a captured notice otherwise).
+postgres_note() {
+  if [ -n "${SETTLER_TEST_DATABASE_URL:-}" ]; then
+    echo "postgres tests: ran against $SETTLER_TEST_DATABASE_URL"
+  else
+    echo "postgres tests: skipped (tools/check.sh db runs them)"
+  fi
+}
+
 changed_packages() {
   { git diff --name-only "$main_branch"...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } \
     | { grep -oE '^settler_island_[a-z_]+' || true; } | sort -u
@@ -150,6 +159,7 @@ case "$mode" in
     run_step "clippy" cargo clippy --workspace --all-targets -- -D warnings
     run_step "tests" cargo test --workspace
     test_totals
+    postgres_note
     echo "full $hash" >> "$stamps"
     ;;
 esac
