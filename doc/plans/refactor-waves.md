@@ -27,3 +27,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - ui-layout: switch hud_discard_dialog/resource_picker/trade_builder/hud_ui to `Palette` and delete the
   `HudText.seat_color`/`resource_color` wrappers.
 - 1a leftover (optional): back-off after a failed JWKS fetch while the realm is down.
+- 2k leftover: board_painter passes resource strings like "Wood" to Palette.resource_pattern_color; switch to SiResource constants (fold into ui-layout).
