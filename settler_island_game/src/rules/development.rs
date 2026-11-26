@@ -121,21 +121,24 @@ pub(crate) fn on_turn_end(game: &mut Game, seat: Seat) -> Result<(), GameError> 
     Ok(())
 }
 
-/// A knight before rolling.
+/// Any playable card before rolling (the base rules allow one card at any time of the own turn).
 pub(crate) fn legal_before_roll(game: &Game, seat: Seat) -> Vec<Action> {
-    if check_play(game, seat, DevelopmentCard::Knight).is_ok() {
-        return vec![Action::PlayKnight];
-    }
-    Vec::new()
+    legal_plays(game, seat)
 }
 
 /// Buy and play in `Phase::Main`.
 pub(crate) fn legal_main(game: &Game, seat: Seat) -> Vec<Action> {
-    let playable = |card| check_play(game, seat, card).is_ok();
     let mut actions = Vec::new();
     if check_buy(game, seat).is_ok() {
         actions.push(Action::BuyDevelopmentCard);
     }
+    actions.extend(legal_plays(game, seat));
+    actions
+}
+
+fn legal_plays(game: &Game, seat: Seat) -> Vec<Action> {
+    let playable = |card| check_play(game, seat, card).is_ok();
+    let mut actions = Vec::new();
     if playable(DevelopmentCard::Knight) {
         actions.push(Action::PlayKnight);
     }
@@ -182,8 +185,7 @@ fn check_buy(game: &Game, seat: Seat) -> Result<(), GameError> {
 /// Turn, phase, one card per turn, and the card was bought on an earlier turn.
 fn check_play(game: &Game, seat: Seat, card: DevelopmentCard) -> Result<(), GameError> {
     game.require_turn(seat)?;
-    let before_roll = card == DevelopmentCard::Knight && game.phase == Phase::Roll;
-    if game.phase != Phase::Main && !before_roll {
+    if game.phase != Phase::Main && game.phase != Phase::Roll {
         return Err(GameError::WrongPhase);
     }
     let player = game.player(seat)?;
@@ -408,33 +410,36 @@ mod tests {
     }
 
     #[test]
-    fn only_a_knight_may_be_played_before_rolling() {
+    fn any_development_card_may_be_played_before_rolling() {
         let mut game = after_setup(4, 3);
         hold(&mut game, 0, DevelopmentCard::Monopoly);
         hold(&mut game, 0, DevelopmentCard::Knight);
+        hold(&mut game, 0, DevelopmentCard::RoadBuilding);
+        hold(&mut game, 0, DevelopmentCard::YearOfPlenty);
         assert_eq!(game.phase, Phase::Roll);
 
-        assert_eq!(
-            game.apply(
-                0,
-                Action::PlayMonopoly {
-                    resource: Resource::Ore
-                }
-            ),
-            Err(GameError::WrongPhase)
-        );
-        assert_eq!(
-            game.legal_actions(0),
-            vec![Action::RollDice, Action::PlayKnight]
-        );
-        game.apply(0, Action::PlayKnight).unwrap();
-        assert_eq!(
-            game.phase,
-            Phase::MoveRobber {
-                then_steal: true,
-                resume: Resume::Roll
-            }
-        );
+        let legal = game.legal_actions(0);
+        assert!(legal.contains(&Action::RollDice));
+        assert!(legal.contains(&Action::PlayKnight));
+        assert!(legal.contains(&Action::PlayRoadBuilding));
+        assert!(legal.contains(&Action::PlayMonopoly {
+            resource: Resource::Ore
+        }));
+        assert!(legal
+            .iter()
+            .any(|action| matches!(action, Action::PlayYearOfPlenty { .. })));
+        assert!(!legal.contains(&Action::BuyDevelopmentCard));
+
+        game.apply(
+            0,
+            Action::PlayMonopoly {
+                resource: Resource::Ore,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.phase, Phase::Roll);
+        // One card per turn, before or after the roll.
+        assert_eq!(game.legal_actions(0), vec![Action::RollDice]);
     }
 
     #[test]
