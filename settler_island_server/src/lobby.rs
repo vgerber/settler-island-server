@@ -898,14 +898,14 @@ async fn apply_and_store<S: GameStore>(
         .map_err(|error| ErrorCode::Game { error })?;
     let index = running.record.entries.len() as u32;
     let snapshot = wants_snapshot(index).then(|| next.clone());
-    let stored = RecordEntry {
+    let entry = RecordEntry {
         index,
         seat,
-        action: action.clone(),
+        action,
         events: events.clone(),
     };
     store
-        .append_action(running.id, stored, snapshot)
+        .append_action(running.id, entry.clone(), snapshot)
         .await
         .map_err(|error| {
             error!(game = running.id.0, %error, "storing an action failed");
@@ -913,7 +913,7 @@ async fn apply_and_store<S: GameStore>(
         })?;
     metrics.actions_applied.inc();
     running.game = next;
-    running.record.push(seat, action, events.clone());
+    running.record.push_entry(entry);
     if let Some(winner) = running.game.winner() {
         info!(game = running.id.0, winner, "game finished");
         if let Err(error) = end_game(running, store, GameEnd::Finished { winner }).await {
