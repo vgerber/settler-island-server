@@ -2,7 +2,7 @@ use crate::action::Action;
 use crate::board::TileId;
 use crate::error::GameError;
 use crate::event::Event;
-use crate::game::{Game, Seat};
+use crate::game::{Game, Holder, Seat};
 use crate::phase::Phase;
 use rand::Rng;
 
@@ -41,7 +41,7 @@ pub(crate) fn legal_moves(game: &Game, seat: Seat) -> Vec<Action> {
 pub(crate) fn on_seven(game: &mut Game, _seat: Seat) -> Vec<Event> {
     let remaining: Vec<(Seat, u8)> = (0..game.settings.seats)
         .filter_map(|seat| {
-            let total = game.players[usize::from(seat)].hand.total();
+            let total = game.player(seat).ok()?.hand.total();
             (total > DISCARD_ABOVE).then(|| (seat, u8::try_from(total / 2).unwrap_or(u8::MAX)))
         })
         .collect();
@@ -70,13 +70,14 @@ pub(crate) fn discard(
     if resources.total() != u32::from(owed) {
         return Err(GameError::InvalidDiscard);
     }
-    let hand = &mut game.players[usize::from(seat)].hand;
-    hand.try_remove(&resources)?;
-    game.bank.deposit(&resources);
+    let left = remaining
+        .iter()
+        .filter(|(owing, _)| *owing != seat)
+        .copied()
+        .collect::<Vec<_>>();
+    game.move_resources(Holder::Seat(seat), Holder::Bank, resources)?;
 
     let mut events = vec![Event::CardsDiscarded { seat, resources }];
-    let mut left = remaining.clone();
-    left.retain(|(owing, _)| *owing != seat);
     let next = if left.is_empty() {
         Phase::MoveRobber { then_steal: true }
     } else {
@@ -95,7 +96,7 @@ pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Eve
     if !victims(game, seat, tile).contains(&victim) {
         return Err(GameError::InvalidVictim);
     }
-    let hand = game.players[usize::from(victim)].hand;
+    let hand = game.player(victim)?.hand;
     let mut pick = game.rng.random_range(0..hand.total());
     let resource = Resource::ALL
         .into_iter()
@@ -108,9 +109,11 @@ pub(crate) fn steal(game: &mut Game, seat: Seat, victim: Seat) -> Result<Vec<Eve
             false
         })
         .ok_or(GameError::InvalidVictim)?;
-    let one = ResourceCounts::single(resource, 1);
-    game.players[usize::from(victim)].hand.try_remove(&one)?;
-    game.players[usize::from(seat)].hand.deposit(&one);
+    game.move_resources(
+        Holder::Seat(victim),
+        Holder::Seat(seat),
+        ResourceCounts::single(resource, 1),
+    )?;
     Ok(vec![
         Event::ResourceStolen {
             thief: seat,
@@ -129,7 +132,10 @@ pub(crate) fn legal_discards(game: &Game, seat: Seat) -> Vec<Action> {
     let Some((_, owed)) = remaining.iter().find(|(owing, _)| *owing == seat) else {
         return Vec::new();
     };
-    let hand = game.players[usize::from(seat)].hand;
+    let Ok(player) = game.player(seat) else {
+        return Vec::new();
+    };
+    let hand = player.hand;
     let mut found = Vec::new();
     sub_multisets(&hand, 0, *owed, ResourceCounts::default(), &mut found);
     found
@@ -179,7 +185,10 @@ fn victims(game: &Game, thief: Seat, tile: TileId) -> Vec<Seat> {
         .filter_map(|corner| game.board.building(*corner))
         .map(|building| building.seat)
         .filter(|seat| *seat != thief)
-        .filter(|seat| game.players[usize::from(*seat)].hand.total() > 0)
+        .filter(|seat| {
+            game.player(*seat)
+                .is_ok_and(|player| player.hand.total() > 0)
+        })
         .collect();
     seats.sort_unstable();
     seats.dedup();
@@ -203,7 +212,7 @@ mod tests {
     use crate::rules::test_support::{give, main_phase_game, put_settlement};
 
     fn hand(game: &Game, seat: Seat) -> ResourceCounts {
-        game.players[usize::from(seat)].hand
+        game.player(seat).unwrap().hand
     }
 
     fn total_cards(game: &Game) -> u32 {
@@ -436,6 +445,18 @@ mod tests {
             })
         );
         // Seat 2 has no cards and seat 0 is the mover: only seat 1 is offered.
+        assert_eq!(game.legal_actions(0), vec![Action::Steal { victim: 1 }]);
+    }
+
+    #[test]
+    fn a_victim_with_two_buildings_on_the_tile_is_offered_once() {
+        let (mut game, tile) = robber_game(3);
+        let corners = game.board.tile(tile).unwrap().corners;
+        put_settlement(&mut game, 1, corners[3]);
+        give(&mut game, 1, cards([1, 0, 0, 0, 0]));
+
+        game.apply(0, Action::MoveRobber { tile }).unwrap();
+
         assert_eq!(game.legal_actions(0), vec![Action::Steal { victim: 1 }]);
     }
 

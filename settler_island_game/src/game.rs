@@ -337,14 +337,17 @@ impl Game {
         }
     }
 
-    /// Moves `cost` from the seat's hand to the bank; callers have checked that the hand covers it.
-    pub(crate) fn pay_to_bank(&mut self, seat: Seat, cost: ResourceCounts) -> Event {
-        let paid = self.move_resources(Holder::Seat(seat), Holder::Bank, cost);
-        debug_assert!(paid.is_ok(), "seat {seat} could not pay {cost:?}: {paid:?}");
-        Event::ResourcesPaid {
+    /// Moves `cost` from the seat's hand to the bank, all or nothing; the event exists only when it was paid.
+    pub(crate) fn pay_to_bank(
+        &mut self,
+        seat: Seat,
+        cost: ResourceCounts,
+    ) -> Result<Event, GameError> {
+        self.move_resources(Holder::Seat(seat), Holder::Bank, cost)?;
+        Ok(Event::ResourcesPaid {
             seat,
             resources: cost,
-        }
+        })
     }
 
     /// The phase a robber or card interruption returns to: `Main` after the roll, `Roll` before it.
@@ -465,6 +468,19 @@ mod tests {
             }
         }
         assert!(rejected > 400);
+    }
+
+    #[test]
+    fn paying_more_than_the_hand_reports_nothing_paid() {
+        let mut game = main_phase_game(3, 8);
+        give(&mut game, 0, ResourceCounts::new([1, 0, 0, 0, 0]));
+        let before = game.clone();
+
+        assert_eq!(
+            game.pay_to_bank(0, ResourceCounts::new([2, 0, 0, 0, 0])),
+            Err(GameError::NotEnoughResources)
+        );
+        assert_eq!(game, before);
     }
 
     #[test]

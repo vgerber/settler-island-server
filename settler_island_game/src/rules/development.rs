@@ -13,7 +13,7 @@ const FREE_ROADS: u8 = 2;
 pub(crate) fn buy(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
     check_buy(game, seat)?;
     let card = game.deck.pop().ok_or(GameError::NoCard)?;
-    let paid = game.pay_to_bank(seat, Purchase::DevelopmentCard.cost());
+    let paid = game.pay_to_bank(seat, Purchase::DevelopmentCard.cost())?;
     player_mut(game, seat)?.new_development_cards.push(card);
     Ok(vec![
         paid,

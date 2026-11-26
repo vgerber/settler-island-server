@@ -2,7 +2,7 @@ use crate::action::Action;
 use crate::board::{CornerId, Port};
 use crate::error::GameError;
 use crate::event::Event;
-use crate::game::{Game, Seat, TradeOffer};
+use crate::game::{Game, Holder, Seat, TradeOffer};
 use crate::phase::Phase;
 use crate::resource::{Resource, ResourceCounts};
 
@@ -10,28 +10,22 @@ const BANK_RATE: u8 = 4;
 const GENERIC_PORT_RATE: u8 = 3;
 const SPECIFIC_PORT_RATE: u8 = 2;
 
-/// What one card of each resource costs at the bank for `seat`.
+/// What one card of each resource costs at the bank for `seat`: 2 with a matching specific port, 3 with any
+/// generic port, else 4.
 pub(crate) fn bank_rates(game: &Game, seat: Seat) -> ResourceCounts {
-    let mut rates = ResourceCounts::default();
-    for resource in Resource::ALL {
-        rates.set(resource, bank_rate(game, seat, resource));
+    let mut rates = ResourceCounts::new([BANK_RATE; Resource::ALL.len()]);
+    let own_corners = game.board.corner_ids().filter(|corner| {
+        game.board
+            .building(*corner)
+            .is_some_and(|building| building.seat == seat)
+    });
+    for corner in own_corners {
+        for resource in Resource::ALL {
+            let rate = port_rate(game, corner, resource).min(rates.get(resource));
+            rates.set(resource, rate);
+        }
     }
     rates
-}
-
-/// Rate 2 with a matching specific port, 3 with any generic port, else 4.
-fn bank_rate(game: &Game, seat: Seat, give: Resource) -> u8 {
-    game.board
-        .corner_ids()
-        .filter(|corner| {
-            game.board
-                .building(*corner)
-                .is_some_and(|building| building.seat == seat)
-        })
-        .map(|corner| port_rate(game, corner, give))
-        .min()
-        .unwrap_or(BANK_RATE)
-        .min(BANK_RATE)
 }
 
 fn port_rate(game: &Game, corner: CornerId, give: Resource) -> u8 {
@@ -50,17 +44,19 @@ fn check_main_turn(game: &Game, seat: Seat) -> Result<(), GameError> {
     Ok(())
 }
 
-pub(crate) fn bank_trade(
-    game: &mut Game,
+/// The cards a bank trade pays and receives; `rates` are the seat's `bank_rates`.
+fn check_bank_trade(
+    game: &Game,
     seat: Seat,
+    rates: &ResourceCounts,
     give: Resource,
     receive: Resource,
-) -> Result<Vec<Event>, GameError> {
+) -> Result<(ResourceCounts, ResourceCounts), GameError> {
     check_main_turn(game, seat)?;
     if give == receive {
         return Err(GameError::InvalidTrade);
     }
-    let gave = ResourceCounts::single(give, bank_rate(game, seat, give));
+    let gave = ResourceCounts::single(give, rates.get(give));
     let received = ResourceCounts::single(receive, 1);
     if !game.player(seat)?.hand.contains(&gave) {
         return Err(GameError::NotEnoughResources);
@@ -68,8 +64,19 @@ pub(crate) fn bank_trade(
     if !game.bank.contains(&received) {
         return Err(GameError::BankEmpty);
     }
+    Ok((gave, received))
+}
 
-    exchange_with_bank(game, seat, &gave, &received);
+pub(crate) fn bank_trade(
+    game: &mut Game,
+    seat: Seat,
+    give: Resource,
+    receive: Resource,
+) -> Result<Vec<Event>, GameError> {
+    let rates = bank_rates(game, seat);
+    let (gave, received) = check_bank_trade(game, seat, &rates, give, receive)?;
+
+    exchange(game, Holder::Seat(seat), Holder::Bank, gave, received)?;
     Ok(vec![Event::BankTraded {
         seat,
         gave,
@@ -77,21 +84,22 @@ pub(crate) fn bank_trade(
     }])
 }
 
-/// Callers have checked that the hand and the bank cover their side.
-fn exchange_with_bank(
+/// `first` gives `first_gives` to `second` and receives `second_gives`: both legs or neither.
+fn exchange(
     game: &mut Game,
-    seat: Seat,
-    gave: &ResourceCounts,
-    received: &ResourceCounts,
-) {
-    let Some(player) = game.players.get_mut(usize::from(seat)) else {
-        return;
+    first: Holder,
+    second: Holder,
+    first_gives: ResourceCounts,
+    second_gives: ResourceCounts,
+) -> Result<(), GameError> {
+    game.move_resources(first, second, first_gives)?;
+    let Err(error) = game.move_resources(second, first, second_gives) else {
+        return Ok(());
     };
-    if player.hand.try_remove(gave).is_err() || game.bank.try_remove(received).is_err() {
-        return;
-    }
-    player.hand.deposit(received);
-    game.bank.deposit(gave);
+    // `second` has held `first_gives` since the first leg, so the undo cannot fail.
+    let undone = game.move_resources(second, first, first_gives);
+    debug_assert!(undone.is_ok(), "undoing an exchange leg failed: {undone:?}");
+    Err(error)
 }
 
 pub(crate) fn offer_trade(
@@ -186,7 +194,13 @@ pub(crate) fn confirm_trade(
         return Err(GameError::NotEnoughResources);
     }
 
-    swap_hands(game, &offer, with);
+    exchange(
+        game,
+        Holder::Seat(seat),
+        Holder::Seat(with),
+        offer.give,
+        offer.receive,
+    )?;
     game.trade = None;
     Ok(vec![
         Event::TradeCompleted {
@@ -197,20 +211,6 @@ pub(crate) fn confirm_trade(
         },
         game.enter(Phase::Main),
     ])
-}
-
-/// Callers have checked both hands.
-fn swap_hands(game: &mut Game, offer: &TradeOffer, with: Seat) {
-    if let Some(player) = game.players.get_mut(usize::from(offer.seat)) {
-        if player.hand.try_remove(&offer.give).is_ok() {
-            player.hand.deposit(&offer.receive);
-        }
-    }
-    if let Some(player) = game.players.get_mut(usize::from(with)) {
-        if player.hand.try_remove(&offer.receive).is_ok() {
-            player.hand.deposit(&offer.give);
-        }
-    }
 }
 
 pub(crate) fn cancel_trade(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
@@ -226,21 +226,17 @@ pub(crate) fn cancel_trade(game: &mut Game, seat: Seat) -> Result<Vec<Event>, Ga
 }
 
 pub(crate) fn legal_main(game: &Game, seat: Seat) -> Vec<Action> {
-    let Ok(player) = game.player(seat) else {
-        return Vec::new();
-    };
-    let mut actions = Vec::new();
-    for give in Resource::ALL {
-        if player.hand.get(give) < bank_rate(game, seat, give) {
-            continue;
-        }
-        for receive in Resource::ALL {
-            if receive != give && game.bank.get(receive) > 0 {
-                actions.push(Action::BankTrade { give, receive });
-            }
-        }
-    }
-    actions
+    let rates = bank_rates(game, seat);
+    Resource::ALL
+        .into_iter()
+        .flat_map(|give| {
+            Resource::ALL
+                .into_iter()
+                .map(move |receive| (give, receive))
+        })
+        .filter(|(give, receive)| check_bank_trade(game, seat, &rates, *give, *receive).is_ok())
+        .map(|(give, receive)| Action::BankTrade { give, receive })
+        .collect()
 }
 
 pub(crate) fn legal_answers(game: &Game, seat: Seat) -> Vec<Action> {
@@ -323,9 +319,9 @@ mod tests {
         } else {
             Resource::Ore
         };
-        let before = game.players[0].hand.get(paid);
+        let before = game.player(0).unwrap().hand.get(paid);
         game.apply(0, bank_trade_action(paid, receive)).unwrap();
-        before - game.players[0].hand.get(paid)
+        before - game.player(0).unwrap().hand.get(paid)
     }
 
     #[test]
@@ -335,7 +331,7 @@ mod tests {
         put_settlement(&mut game, 0, corner);
 
         assert_eq!(trade_rate(&mut game, Resource::Wood), 4);
-        assert_eq!(game.players[0].hand.get(Resource::Ore), 1);
+        assert_eq!(game.player(0).unwrap().hand.get(Resource::Ore), 1);
         assert_eq!(total(&game), 95);
     }
 
@@ -467,9 +463,9 @@ mod tests {
             gave: cards(Resource::Wood, 2),
             received: cards(Resource::Ore, 1),
         }));
-        assert_eq!(game.players[0].hand, cards(Resource::Ore, 1));
-        assert_eq!(game.players[1].hand, cards(Resource::Wood, 2));
-        assert_eq!(game.players[2].hand, cards(Resource::Ore, 1));
+        assert_eq!(game.player(0).unwrap().hand, cards(Resource::Ore, 1));
+        assert_eq!(game.player(1).unwrap().hand, cards(Resource::Wood, 2));
+        assert_eq!(game.player(2).unwrap().hand, cards(Resource::Ore, 1));
         assert_eq!(total(&game), 95);
     }
 
@@ -536,8 +532,8 @@ mod tests {
     #[test]
     fn accepting_without_the_cards_fails() {
         let mut game = open_trade(None);
-        let held = game.players[1].hand;
-        game.players[1].hand = ResourceCounts::default();
+        let held = game.player(1).unwrap().hand;
+        game.player_mut(1).unwrap().hand = ResourceCounts::default();
         game.bank.deposit(&held);
         let before = game.clone();
 
@@ -567,14 +563,34 @@ mod tests {
             game.legal_actions(0),
             vec![Action::ConfirmTrade { with: 1 }, Action::CancelTrade]
         );
-        let held = game.players[1].hand;
+        let held = game.player(1).unwrap().hand;
         game.bank.deposit(&held);
-        game.players[1].hand = ResourceCounts::default();
+        game.player_mut(1).unwrap().hand = ResourceCounts::default();
         assert_eq!(
             game.apply(0, Action::ConfirmTrade { with: 1 }),
             Err(GameError::NotEnoughResources)
         );
         assert_eq!(game.legal_actions(0), vec![Action::CancelTrade]);
+    }
+
+    #[test]
+    fn a_failed_trade_swap_leaves_both_hands_unchanged() {
+        let mut game = open_trade(Some(1));
+        let offer = game.trade.clone().unwrap();
+        game.player_mut(1).unwrap().hand = ResourceCounts::default();
+        let before = game.clone();
+
+        assert_eq!(
+            exchange(
+                &mut game,
+                Holder::Seat(offer.seat),
+                Holder::Seat(1),
+                offer.give,
+                offer.receive
+            ),
+            Err(GameError::NotEnoughResources)
+        );
+        assert_eq!(game, before);
     }
 
     #[test]
@@ -590,7 +606,7 @@ mod tests {
         assert!(events.contains(&Event::TradeCancelled { seat: 0 }));
         assert_eq!(game.phase, Phase::Main);
         assert_eq!(game.trade, None);
-        assert_eq!(game.players[0].hand, cards(Resource::Wood, 2));
+        assert_eq!(game.player(0).unwrap().hand, cards(Resource::Wood, 2));
     }
 
     #[test]

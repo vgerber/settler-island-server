@@ -13,7 +13,7 @@ pub(crate) fn build_road(
     edge: EdgeId,
 ) -> Result<Vec<Event>, GameError> {
     check_road(game, seat, edge)?;
-    let mut events = vec![game.pay_to_bank(seat, Purchase::Road.cost())];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::Road.cost())?];
     events.push(place_road(game, seat, edge));
     Ok(events)
 }
@@ -24,7 +24,7 @@ pub(crate) fn build_settlement(
     corner: CornerId,
 ) -> Result<Vec<Event>, GameError> {
     check_settlement(game, seat, corner)?;
-    let mut events = vec![game.pay_to_bank(seat, Purchase::Settlement.cost())];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::Settlement.cost())?];
     events.push(place_settlement(game, seat, corner));
     Ok(events)
 }
@@ -35,7 +35,7 @@ pub(crate) fn build_city(
     corner: CornerId,
 ) -> Result<Vec<Event>, GameError> {
     check_city(game, seat, corner)?;
-    let mut events = vec![game.pay_to_bank(seat, Purchase::City.cost())];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::City.cost())?];
     game.board.set_building(
         corner,
         Building {
