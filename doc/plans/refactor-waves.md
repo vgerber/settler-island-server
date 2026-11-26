@@ -17,3 +17,4 @@ Source: `doc/reviews/summary.md` section 3 (task ids 1a-3f), details per finding
 ## Acceptance
 Each task's "Done when" from the summary; the lead gates every merge with `tools/check.sh` and the wave end with
 `tools/check.sh db` plus the mouse-only UI playtest.
+- 1f: add SQLX_OFFLINE=true as a tracked cargo [env] in .cargo/config.toml (gap left by 1e: a clone without .env).
