@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use settler_island_protocol::{Difficulty, ErrorCode, LobbyId, LobbySummary, User, UserId};
+use settler_island_protocol::{
+    Difficulty, ErrorCode, LobbyId, LobbySummary, ServerLimit, User, UserId,
+};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
@@ -223,7 +225,42 @@ impl<S: GameStore> Registry<S> {
                 self.memberships.insert(user, lobby);
             }
             LobbyNotice::Left { lobby, user } => self.leave(lobby, &user),
+            LobbyNotice::Starting {
+                lobby,
+                users,
+                reply,
+            } => {
+                // A lobby that went away while asking starts nothing.
+                let _ = reply.send(self.admit_game(lobby, users));
+            }
         }
+    }
+
+    /// Seats `users` in the lobby's new game unless a cap is reached. The seats count at once, so starts racing each
+    /// other cannot pass a cap together.
+    fn admit_game(&mut self, lobby: LobbyId, users: Vec<UserId>) -> Result<(), ErrorCode> {
+        let running = self.seated.values().filter(|seated| !seated.is_empty());
+        if running.count() >= self.config.max_running_games {
+            return Err(ErrorCode::LimitReached {
+                limit: ServerLimit::RunningGames,
+            });
+        }
+        let at_cap = |user: &UserId| self.games_of(user) >= self.config.max_games_per_user;
+        if users.iter().any(at_cap) {
+            return Err(ErrorCode::LimitReached {
+                limit: ServerLimit::GamesPerUser,
+            });
+        }
+        self.seated.insert(lobby, users);
+        Ok(())
+    }
+
+    /// Running games in which `user` holds a seat, connected or not.
+    fn games_of(&self, user: &UserId) -> usize {
+        self.seated
+            .values()
+            .filter(|users| users.contains(user))
+            .count()
     }
 
     fn running_lobby(&self, user: &UserId) -> Option<LobbyId> {

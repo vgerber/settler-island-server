@@ -55,7 +55,7 @@ pub(crate) enum LobbyRequest {
     GetRecord,
 }
 
-/// Sent to the registry; it never answers, so the lobby never waits on it.
+/// Sent to the registry. Only `Starting` is answered; the registry never waits on a lobby, so a lobby may wait on it.
 pub(crate) enum LobbyNotice {
     Updated(LobbySummary),
     Closed(LobbyId),
@@ -71,6 +71,12 @@ pub(crate) enum LobbyNotice {
     Seated {
         lobby: LobbyId,
         users: Vec<UserId>,
+    },
+    /// Asks to seat `users` in a new game; refused with `LimitReached` when a game cap is reached.
+    Starting {
+        lobby: LobbyId,
+        users: Vec<UserId>,
+        reply: Reply,
     },
 }
 
@@ -548,6 +554,9 @@ impl<S: GameStore> Lobby<S> {
             seed: self.config.seed.unwrap_or_else(rand::random),
         };
         let game = Game::new(settings.clone()).map_err(|error| ErrorCode::Game { error })?;
+        let admission = self.ask_to_start();
+        // No answer means the registry is shutting down.
+        admission.await.map_err(|_| ErrorCode::Internal)??;
         let new_game = NewGame {
             settings: settings.clone(),
             seats: self
@@ -559,10 +568,16 @@ impl<S: GameStore> Lobby<S> {
             lobby_name: self.name.clone(),
             bot_difficulty: self.bot_difficulty,
         };
-        let id = self.store.create_game(new_game).await.map_err(|error| {
+        let stored = self.store.create_game(new_game).await;
+        let id = stored.inspect_err(|error| {
             error!(lobby = self.id.0, %error, "storing the new game failed");
-            ErrorCode::Internal
-        })?;
+            // Frees the seats the registry counted for this game.
+            self.note_membership(LobbyNotice::Seated {
+                lobby: self.id,
+                users: Vec::new(),
+            });
+        });
+        let id = id.map_err(|_| ErrorCode::Internal)?;
         let bots = self
             .seats
             .iter()
@@ -584,26 +599,24 @@ impl<S: GameStore> Lobby<S> {
             in_progress: self.metrics.game_started(),
         });
         self.bot_deadline = Instant::now() + self.config.bot_delay;
-        self.note_membership(LobbyNotice::Seated {
-            lobby: self.id,
-            users: self
-                .members
-                .iter()
-                .map(|member| member.user.id.clone())
-                .collect(),
-        });
         info!(lobby = self.id.0, game = id.0, "game started");
         self.broadcast_state(Some((user, request_id)));
-        let members: Vec<UserId> = self
-            .members
-            .iter()
-            .map(|member| member.user.id.clone())
-            .collect();
-        for member in members {
+        for member in self.member_ids() {
             let echo = (member == *user).then_some(request_id);
             self.send_game_started(&member, echo);
         }
         Ok(())
+    }
+
+    /// Asks the registry to count the members as seated in a new game, within the server's game caps.
+    fn ask_to_start(&self) -> oneshot::Receiver<Result<(), ErrorCode>> {
+        let (reply, answer) = oneshot::channel();
+        self.note_membership(LobbyNotice::Starting {
+            lobby: self.id,
+            users: self.member_ids(),
+            reply,
+        });
+        answer
     }
 
     async fn act(&mut self, seat: Seat, request_id: u32, action: Action) -> Result<(), ErrorCode> {
@@ -815,6 +828,13 @@ impl<S: GameStore> Lobby<S> {
         let _ = self.notices.send(notice);
     }
 
+    fn member_ids(&self) -> Vec<UserId> {
+        self.members
+            .iter()
+            .map(|member| member.user.id.clone())
+            .collect()
+    }
+
     fn member(&self, user: &UserId) -> Option<&Member> {
         self.members.iter().find(|member| member.user.id == *user)
     }
@@ -991,7 +1011,7 @@ mod tests {
     use settler_island_protocol::{LobbyId, User, UserId, UserKind};
     use tokio::sync::{mpsc, Notify};
 
-    use super::{open, Lobby, LobbySetup, SeatCount};
+    use super::{open, Lobby, LobbyNotice, LobbySetup, SeatCount};
     use crate::config::{Config, SessionSecret};
     use crate::metrics::Metrics;
     use crate::outbox::{Outbox, OUTBOX_CAPACITY};
@@ -1015,7 +1035,15 @@ mod tests {
             kind: UserKind::Guest,
         };
         let (sender, _) = mpsc::channel(OUTBOX_CAPACITY);
-        let (notices, _) = mpsc::unbounded_channel();
+        let (notices, mut registry) = mpsc::unbounded_channel();
+        // Stands in for the registry, which admits every start.
+        tokio::spawn(async move {
+            while let Some(notice) = registry.recv().await {
+                if let LobbyNotice::Starting { reply, .. } = notice {
+                    let _ = reply.send(Ok(()));
+                }
+            }
+        });
         let setup = LobbySetup {
             id: LobbyId(1),
             name: "Table".to_string(),
