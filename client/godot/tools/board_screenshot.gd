@@ -2,7 +2,7 @@ extends SceneTree
 ## Renders the game screen for each `GameStarted` message of a fixture file (the board fixtures that
 ## settler_island_client_generator/tests/godot.rs writes to target/tmp/godot-board-fixtures.json) and
 ## saves `board_<key>.png`, with the mouse over one legal target. Needs a window; quits by itself.
-## Usage: godot --path client/godot -s tools/board_screenshot.gd -- <fixtures.json> <output directory>
+## Usage: godot --path client/godot --position 200,200 -s tools/board_screenshot.gd -- <fixtures.json> <output directory>
 
 const SETTLE_FRAMES := 10
 
@@ -12,15 +12,23 @@ var _output_directory := ""
 ## The game screen, untyped: `GameScreen` uses the `Net` autoload, which a -s script cannot name.
 var _screen: Control = null
 var _frames_left := -1
+var _exit_code := 0
 
 
 func _init() -> void:
 	var arguments := OS.get_cmdline_user_args()
 	if arguments.size() < 2:
 		push_error("usage: -s tools/board_screenshot.gd -- <fixtures.json> <output directory>")
+		_exit_code = 1
 		quit(1)
 		return
-	_fixtures = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
+	if not parsed is Dictionary:
+		push_error("board_screenshot: %s is not a JSON object" % arguments[0])
+		_exit_code = 1
+		quit(1)
+		return
+	_fixtures = parsed
 	_keys = _fixtures.keys()
 	_output_directory = arguments[1]
 
@@ -32,7 +40,7 @@ func _process(_delta: float) -> bool:
 	if _frames_left == 0:
 		_save()
 	if _keys.is_empty():
-		quit(0)
+		quit(_exit_code)
 		return true
 	_show(_keys.pop_front())
 	return false
@@ -70,4 +78,7 @@ func _save() -> void:
 	var path := _output_directory.path_join("board_%s.png" % _screen.name)
 	var error := root.get_viewport().get_texture().get_image().save_png(path)
 	print("saved %s (%d)" % [path, error])
+	if error != OK:
+		push_error("board_screenshot: saving %s failed (%d)" % [path, error])
+		_exit_code = 1
 	_frames_left = -1

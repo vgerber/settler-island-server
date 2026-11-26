@@ -1,7 +1,7 @@
 extends SceneTree
 ## Walks the main scene through its screens against a running server and saves one PNG per screen:
 ## connect, lobby browser, lobby room, game. Needs a window (not --headless); quits by itself.
-## Usage: godot --path client/godot -s tools/screenshot.gd -- http://127.0.0.1:<port> <output directory>
+## Usage: godot --path client/godot --position 200,200 -s tools/screenshot.gd -- http://127.0.0.1:<port> <output directory>
 
 const SETTLE_FRAMES := 20
 const TIMEOUT_MILLISECONDS := 30000
@@ -16,12 +16,14 @@ var _deadline := 0
 var _wait_frames := -1
 var _after_capture: Callable
 var _capture_name := ""
+var _exit_code := 0
 
 
 func _init() -> void:
 	var arguments := OS.get_cmdline_user_args()
 	if arguments.size() < 2:
 		push_error("usage: -s tools/screenshot.gd -- <server url> <output directory>")
+		_exit_code = 1
 		quit(1)
 		return
 	_server_http = arguments[0]
@@ -32,6 +34,7 @@ func _init() -> void:
 func _process(_delta: float) -> bool:
 	if Time.get_ticks_msec() > _deadline:
 		push_error("screenshot: timed out waiting for %s" % _capture_name)
+		_exit_code = 1
 		quit(1)
 		return true
 	if _net == null:
@@ -94,10 +97,13 @@ func _add_last_bot() -> void:
 
 func _quit() -> void:
 	_net.call("stop")
-	quit(0)
+	quit(_exit_code)
 
 
 func _save(capture_name: String) -> void:
 	var path := _output_directory.path_join("%s.png" % capture_name)
 	var error := root.get_viewport().get_texture().get_image().save_png(path)
 	print("saved %s (%d)" % [path, error])
+	if error != OK:
+		push_error("screenshot: saving %s failed (%d)" % [path, error])
+		_exit_code = 1
