@@ -32,12 +32,9 @@ pub(crate) fn roll_dice(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameE
 }
 
 pub(crate) fn end_turn(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
-    game.require_turn(seat)?;
-    if game.phase != Phase::Main {
-        return Err(GameError::WrongPhase);
-    }
+    game.require_main_turn(seat)?;
 
-    development::on_turn_end(game, seat);
+    development::on_turn_end(game, seat)?;
     game.dice_rolled = false;
     let next = (seat + 1) % game.settings.seats;
     game.turn_number += 1;

@@ -2,7 +2,7 @@ use crate::action::Action;
 use crate::board::EdgeId;
 use crate::error::GameError;
 use crate::event::Event;
-use crate::game::{DevelopmentCard, Game, PlayerState, Seat};
+use crate::game::{DevelopmentCard, Game, Holder, Seat};
 use crate::phase::Phase;
 use crate::resource::{Resource, ResourceCounts};
 use crate::rules::building;
@@ -12,9 +12,11 @@ const FREE_ROADS: u8 = 2;
 
 pub(crate) fn buy(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
     check_buy(game, seat)?;
-    let card = game.deck.pop().ok_or(GameError::NoCard)?;
+    let card = *game.deck.last().ok_or(GameError::NoCard)?;
     let paid = game.pay_to_bank(seat, Purchase::DevelopmentCard.cost())?;
-    player_mut(game, seat)?.new_development_cards.push(card);
+    // The deck was checked above and paying resolved the seat, so nothing below can fail.
+    game.deck.truncate(game.deck.len().saturating_sub(1));
+    game.player_mut(seat)?.new_development_cards.push(card);
     Ok(vec![
         paid,
         Event::DevelopmentCardBought {
@@ -27,7 +29,7 @@ pub(crate) fn buy(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> 
 pub(crate) fn play_knight(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
     check_play(game, seat, DevelopmentCard::Knight)?;
     let mut events = vec![spend_card(game, seat, DevelopmentCard::Knight)?];
-    let player = player_mut(game, seat)?;
+    let player = game.player_mut(seat)?;
     player.knights_played = player.knights_played.saturating_add(1);
     events.push(game.enter(Phase::MoveRobber { then_steal: true }));
     Ok(events)
@@ -50,8 +52,7 @@ pub(crate) fn play_year_of_plenty(
     check_play(game, seat, DevelopmentCard::YearOfPlenty)?;
     let wanted = year_of_plenty_take(game, first, second)?;
     let mut events = vec![spend_card(game, seat, DevelopmentCard::YearOfPlenty)?];
-    game.bank.try_remove(&wanted)?;
-    player_mut(game, seat)?.hand.deposit(&wanted);
+    game.move_resources(Holder::Bank, Holder::Seat(seat), wanted)?;
     events.push(Event::YearOfPlentyTaken {
         seat,
         resources: wanted,
@@ -65,19 +66,23 @@ pub(crate) fn play_monopoly(
     resource: Resource,
 ) -> Result<Vec<Event>, GameError> {
     check_play(game, seat, DevelopmentCard::Monopoly)?;
+    let held_before = game.player(seat)?.hand.get(resource);
+    let taken = (0..game.settings.seats)
+        .filter(|other| *other != seat)
+        .map(|other| {
+            let held = game.player(other)?.hand.get(resource);
+            Ok((other, ResourceCounts::single(resource, held)))
+        })
+        .collect::<Result<Vec<_>, GameError>>()?;
     let mut events = vec![spend_card(game, seat, DevelopmentCard::Monopoly)?];
-    let mut amount = 0u8;
-    for (index, player) in game.players.iter_mut().enumerate() {
-        if index == usize::from(seat) {
-            continue;
-        }
-        amount += player.hand.get(resource);
-        player.hand.set(resource, 0);
+    for (other, amount) in taken {
+        game.move_resources(Holder::Seat(other), Holder::Seat(seat), amount)?;
     }
-    let taker = player_mut(game, seat)?;
-    taker
+    let amount = game
+        .player(seat)?
         .hand
-        .set(resource, taker.hand.get(resource).saturating_add(amount));
+        .get(resource)
+        .saturating_sub(held_before);
     events.push(Event::MonopolyTaken {
         seat,
         resource,
@@ -103,13 +108,12 @@ pub(crate) fn build_free_road(
 }
 
 /// Bought cards become playable and the one-card limit resets.
-pub(crate) fn on_turn_end(game: &mut Game, seat: Seat) {
-    let Ok(player) = player_mut(game, seat) else {
-        return;
-    };
+pub(crate) fn on_turn_end(game: &mut Game, seat: Seat) -> Result<(), GameError> {
+    let player = game.player_mut(seat)?;
     let bought = std::mem::take(&mut player.new_development_cards);
     player.development_cards.extend(bought);
     player.played_development_card_this_turn = false;
+    Ok(())
 }
 
 /// A knight before rolling.
@@ -155,17 +159,8 @@ pub(crate) fn legal_free_roads(game: &Game, seat: Seat) -> Vec<Action> {
         .collect()
 }
 
-fn player_mut(game: &mut Game, seat: Seat) -> Result<&mut PlayerState, GameError> {
-    game.players
-        .get_mut(usize::from(seat))
-        .ok_or(GameError::NotYourTurn)
-}
-
 fn check_buy(game: &Game, seat: Seat) -> Result<(), GameError> {
-    game.require_turn(seat)?;
-    if game.phase != Phase::Main {
-        return Err(GameError::WrongPhase);
-    }
+    game.require_main_turn(seat)?;
     if game.deck.is_empty() {
         return Err(GameError::NoCard);
     }
@@ -202,7 +197,7 @@ fn check_play(game: &Game, seat: Seat, card: DevelopmentCard) -> Result<(), Game
 }
 
 fn spend_card(game: &mut Game, seat: Seat, card: DevelopmentCard) -> Result<Event, GameError> {
-    let player = player_mut(game, seat)?;
+    let player = game.player_mut(seat)?;
     let position = player
         .development_cards
         .iter()
@@ -247,7 +242,7 @@ fn road_phase(game: &Game, seat: Seat, roads_left: u8) -> Phase {
         && game
             .board
             .edge_ids()
-            .any(|edge| check_free_road_site(game, seat, edge).is_ok());
+            .any(|edge| building::check_road_placement(game, seat, edge).is_ok());
     if can_continue {
         return Phase::RoadBuilding { roads_left };
     }
@@ -259,21 +254,7 @@ fn check_free_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameErro
     if !matches!(game.phase, Phase::RoadBuilding { .. }) {
         return Err(GameError::WrongPhase);
     }
-    check_free_road_site(game, seat, edge)
-}
-
-fn check_free_road_site(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
-    let corners = building::check_road_site(&game.board, edge)?;
-    if !corners
-        .iter()
-        .any(|corner| building::road_continues_from(&game.board, seat, *corner, edge))
-    {
-        return Err(GameError::NotConnected);
-    }
-    if game.player(seat)?.roads_left == 0 {
-        return Err(GameError::NoPiecesLeft);
-    }
-    Ok(())
+    building::check_road_placement(game, seat, edge)
 }
 
 #[cfg(test)]
@@ -576,6 +557,58 @@ mod tests {
             })
         );
         assert_eq!(resource_total(&game), 95);
+    }
+
+    /// Rich hands make a rule that pays, spends or draws before a failing step visible.
+    #[test]
+    fn failed_development_actions_leave_the_game_unchanged() {
+        let mut rich = main_phase_game(4, 6);
+        for seat in 0..4 {
+            give(&mut rich, seat, ResourceCounts::new([4, 4, 4, 4, 4]));
+        }
+        let mut empty_deck = rich.clone();
+        empty_deck.deck.clear();
+        let mut empty_bank = rich.clone();
+        hold(&mut empty_bank, 0, DevelopmentCard::YearOfPlenty);
+        empty_bank.bank = ResourceCounts::default();
+        let mut bought_now = rich.clone();
+        bought_now.players[0]
+            .new_development_cards
+            .extend([DevelopmentCard::Knight, DevelopmentCard::Monopoly]);
+        let mut played = rich.clone();
+        hold(&mut played, 0, DevelopmentCard::Monopoly);
+        played.players[0].played_development_card_this_turn = true;
+        let mut no_free_road = rich.clone();
+        no_free_road.phase = Phase::RoadBuilding { roads_left: 2 };
+        let actions = [
+            Action::BuyDevelopmentCard,
+            Action::PlayKnight,
+            Action::PlayRoadBuilding,
+            Action::PlayYearOfPlenty {
+                first: Resource::Ore,
+                second: Resource::Wood,
+            },
+            Action::PlayMonopoly {
+                resource: Resource::Wood,
+            },
+            Action::BuildRoad {
+                edge: crate::board::EdgeId(0),
+            },
+        ];
+
+        let mut rejected = 0;
+        for game in [empty_deck, empty_bank, bought_now, played, no_free_road] {
+            for seat in 0..4 {
+                for action in &actions {
+                    let mut attempt = game.clone();
+                    if attempt.apply(seat, action.clone()).is_err() {
+                        rejected += 1;
+                        assert_eq!(attempt, game, "seat {seat} {action:?}");
+                    }
+                }
+            }
+        }
+        assert!(rejected > 100);
     }
 
     #[test]

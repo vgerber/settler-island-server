@@ -36,14 +36,6 @@ fn port_rate(game: &Game, corner: CornerId, give: Resource) -> u8 {
     }
 }
 
-fn check_main_turn(game: &Game, seat: Seat) -> Result<(), GameError> {
-    game.require_turn(seat)?;
-    if game.phase != Phase::Main {
-        return Err(GameError::WrongPhase);
-    }
-    Ok(())
-}
-
 /// The cards a bank trade pays and receives; `rates` are the seat's `bank_rates`.
 fn check_bank_trade(
     game: &Game,
@@ -52,7 +44,7 @@ fn check_bank_trade(
     give: Resource,
     receive: Resource,
 ) -> Result<(ResourceCounts, ResourceCounts), GameError> {
-    check_main_turn(game, seat)?;
+    game.require_main_turn(seat)?;
     if give == receive {
         return Err(GameError::InvalidTrade);
     }
@@ -92,14 +84,26 @@ fn exchange(
     first_gives: ResourceCounts,
     second_gives: ResourceCounts,
 ) -> Result<(), GameError> {
+    if !holdings(game, first)?.contains(&first_gives)
+        || !holdings(game, second)?.contains(&second_gives)
+    {
+        return Err(GameError::NotEnoughResources);
+    }
     game.move_resources(first, second, first_gives)?;
-    let Err(error) = game.move_resources(second, first, second_gives) else {
-        return Ok(());
-    };
-    // `second` has held `first_gives` since the first leg, so the undo cannot fail.
-    let undone = game.move_resources(second, first, first_gives);
-    debug_assert!(undone.is_ok(), "undoing an exchange leg failed: {undone:?}");
-    Err(error)
+    // Both sides were checked above, so the second leg fails only on an overflow beyond the 95 cards in play.
+    let second_leg = game.move_resources(second, first, second_gives);
+    debug_assert!(
+        second_leg.is_ok(),
+        "second exchange leg failed: {second_leg:?}"
+    );
+    second_leg
+}
+
+fn holdings(game: &Game, holder: Holder) -> Result<ResourceCounts, GameError> {
+    match holder {
+        Holder::Bank => Ok(game.bank),
+        Holder::Seat(seat) => Ok(game.player(seat)?.hand),
+    }
 }
 
 pub(crate) fn offer_trade(
@@ -109,7 +113,7 @@ pub(crate) fn offer_trade(
     receive: ResourceCounts,
     to: Option<Seat>,
 ) -> Result<Vec<Event>, GameError> {
-    check_main_turn(game, seat)?;
+    game.require_main_turn(seat)?;
     if give.is_empty() || receive.is_empty() || shares_a_resource(&give, &receive) {
         return Err(GameError::InvalidTrade);
     }

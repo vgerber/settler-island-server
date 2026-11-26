@@ -291,10 +291,6 @@ impl Game {
         Ok(())
     }
 
-    #[expect(
-        dead_code,
-        reason = "the rules modules switch to it in refactor wave 2"
-    )]
     pub(crate) fn require_main_turn(&self, seat: Seat) -> Result<(), GameError> {
         self.require_turn(seat)?;
         if self.phase != Phase::Main {

@@ -3,7 +3,6 @@ use crate::board::{Board, Building, BuildingKind, CornerId, EdgeId};
 use crate::error::GameError;
 use crate::event::Event;
 use crate::game::{Game, Seat};
-use crate::phase::Phase;
 use crate::resource::ResourceCounts;
 use crate::rules::purchase::Purchase;
 
@@ -36,6 +35,10 @@ pub(crate) fn build_city(
 ) -> Result<Vec<Event>, GameError> {
     check_city(game, seat, corner)?;
     let mut events = vec![game.pay_to_bank(seat, Purchase::City.cost())?];
+    // Paying resolved the seat, so this lookup cannot fail after the payment.
+    let player = game.player_mut(seat)?;
+    player.cities_left -= 1;
+    player.settlements_left += 1;
     game.board.set_building(
         corner,
         Building {
@@ -43,10 +46,6 @@ pub(crate) fn build_city(
             kind: BuildingKind::City,
         },
     );
-    if let Some(player) = game.players.get_mut(usize::from(seat)) {
-        player.cities_left -= 1;
-        player.settlements_left += 1;
-    }
     events.push(Event::CityBuilt { seat, corner });
     Ok(events)
 }
@@ -73,6 +72,11 @@ pub(crate) fn legal_builds(game: &Game, seat: Seat) -> Vec<Action> {
 
 /// Puts a settlement down and takes it from the supply; callers have validated the corner.
 pub(crate) fn place_settlement(game: &mut Game, seat: Seat, corner: CornerId) -> Event {
+    let player = game.player_mut(seat);
+    debug_assert!(player.is_ok(), "settlement placed for unknown seat {seat}");
+    if let Ok(player) = player {
+        player.settlements_left -= 1;
+    }
     game.board.set_building(
         corner,
         Building {
@@ -80,18 +84,17 @@ pub(crate) fn place_settlement(game: &mut Game, seat: Seat, corner: CornerId) ->
             kind: BuildingKind::Settlement,
         },
     );
-    if let Some(player) = game.players.get_mut(usize::from(seat)) {
-        player.settlements_left -= 1;
-    }
     Event::SettlementPlaced { seat, corner }
 }
 
 /// Puts a road down and takes it from the supply; callers have validated the edge.
 pub(crate) fn place_road(game: &mut Game, seat: Seat, edge: EdgeId) -> Event {
-    game.board.set_road(edge, seat);
-    if let Some(player) = game.players.get_mut(usize::from(seat)) {
+    let player = game.player_mut(seat);
+    debug_assert!(player.is_ok(), "road placed for unknown seat {seat}");
+    if let Ok(player) = player {
         player.roads_left -= 1;
     }
+    game.board.set_road(edge, seat);
     Event::RoadPlaced { seat, edge }
 }
 
@@ -120,16 +123,14 @@ pub(crate) fn check_road_site(board: &Board, edge: EdgeId) -> Result<[CornerId; 
     Ok(location.corners)
 }
 
-fn check_main_turn(game: &Game, seat: Seat) -> Result<(), GameError> {
-    game.require_turn(seat)?;
-    if game.phase != Phase::Main {
-        return Err(GameError::WrongPhase);
-    }
-    Ok(())
+fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
+    game.require_main_turn(seat)?;
+    check_road_placement(game, seat, edge)?;
+    require_resources(&game.player(seat)?.hand, &Purchase::Road.cost())
 }
 
-fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
-    check_main_turn(game, seat)?;
+/// Free edge, connected to the own network, and a road left in the supply; bought and free roads share it.
+pub(crate) fn check_road_placement(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
     let corners = check_road_site(&game.board, edge)?;
     if !corners
         .iter()
@@ -137,20 +138,14 @@ fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
     {
         return Err(GameError::NotConnected);
     }
-    let player = game.player(seat)?;
-    if player.roads_left == 0 {
+    if game.player(seat)?.roads_left == 0 {
         return Err(GameError::NoPiecesLeft);
     }
-    require_resources(&player.hand, &Purchase::Road.cost())
+    Ok(())
 }
 
 /// A road may start at an own building, or at an own road unless an opponent's building sits on the corner.
-pub(crate) fn road_continues_from(
-    board: &Board,
-    seat: Seat,
-    corner: CornerId,
-    new_edge: EdgeId,
-) -> bool {
+fn road_continues_from(board: &Board, seat: Seat, corner: CornerId, new_edge: EdgeId) -> bool {
     if let Some(building) = board.building(corner) {
         return building.seat == seat;
     }
@@ -164,7 +159,7 @@ pub(crate) fn road_continues_from(
 }
 
 fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<(), GameError> {
-    check_main_turn(game, seat)?;
+    game.require_main_turn(seat)?;
     check_settlement_site(&game.board, corner)?;
     let touches_own_road = game.board.corner(corner).is_some_and(|location| {
         location
@@ -183,7 +178,7 @@ fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<(), Gam
 }
 
 fn check_city(game: &Game, seat: Seat, corner: CornerId) -> Result<(), GameError> {
-    check_main_turn(game, seat)?;
+    game.require_main_turn(seat)?;
     let own_settlement = Building {
         seat,
         kind: BuildingKind::Settlement,
@@ -208,6 +203,7 @@ fn require_resources(hand: &ResourceCounts, cost: &ResourceCounts) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::phase::Phase;
     use crate::rules::test_support::{
         edge_between, give, main_phase_game, put_road, put_settlement,
     };
