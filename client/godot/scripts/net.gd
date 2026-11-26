@@ -41,9 +41,7 @@ func _ready() -> void:
 func start(new_server_http: String, new_user_name: String) -> void:
 	server_http = new_server_http.strip_edges().trim_suffix("/")
 	user_name = new_user_name.strip_edges()
-	user = null
-	_socket_opened = false
-	_reauthenticating = false
+	_reset_connection()
 	_token = stored_token(server_http, user_name)
 	_token_is_stored = not _token.is_empty()
 	if _token_is_stored:
@@ -53,9 +51,7 @@ func start(new_server_http: String, new_user_name: String) -> void:
 
 
 func stop() -> void:
-	user = null
-	_socket_opened = false
-	client.close()
+	_reset_connection()
 
 
 func is_online() -> bool:
@@ -146,10 +142,19 @@ func _on_error(message: SiServerMessageError) -> void:
 		_reauthenticating = true
 		_session.request(server_http, user_name)
 		return
-	stop()
 	_fail("login refused: %s" % message.message)
 
 
+## The single failure exit: no socket or flag survives it, so the next `start` begins clean.
 func _fail(reason: String) -> void:
-	_socket_opened = false
+	_reset_connection()
 	failed.emit(reason)
+
+
+## Clears the flags before closing so the close's own `disconnected` is not taken for a failure.
+func _reset_connection() -> void:
+	user = null
+	_socket_opened = false
+	_reauthenticating = false
+	_authenticate_request = 0
+	client.close()
