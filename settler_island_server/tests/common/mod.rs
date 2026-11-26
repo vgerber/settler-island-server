@@ -221,6 +221,12 @@ impl Client {
         self.socket.send(Message::text(text)).await.unwrap();
     }
 
+    /// Like `send_raw`, but the server may drop the socket while the frame is still being written.
+    pub async fn send_raw_unchecked(&mut self, text: String) {
+        // A reset during the write is the outcome the caller provokes; it checks the close afterwards.
+        let _ = self.socket.send(Message::text(text)).await;
+    }
+
     /// The next server message; panics on timeout or close so a stuck server fails the test.
     pub async fn receive(&mut self) -> ServerMessage {
         loop {

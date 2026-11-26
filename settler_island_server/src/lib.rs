@@ -28,7 +28,7 @@ use axum::{Json, Router};
 use serde::Serialize;
 use settler_island_protocol::{
     ErrorCode, GuestSession, GuestSessionRequest, HttpError, UpgradeRequest, Upgraded,
-    GUEST_SESSION_ROUTE, HEALTH_ROUTE, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
+    GUEST_SESSION_ROUTE, HEALTH_ROUTE, MAX_MESSAGE_BYTES, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
 };
 use tokio::net::TcpListener;
 
@@ -49,8 +49,10 @@ use metrics::Metrics;
 use rate_limit::IpLimiter;
 use registry::RegistryHandle;
 
-/// Frames above our 64 KiB limit still arrive and get an error reply; beyond this the socket is dropped.
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+/// Messages slightly above `MAX_MESSAGE_BYTES` still arrive and get an error reply; beyond this the socket is dropped.
+const MAX_FRAME_BYTES: usize = MAX_MESSAGE_BYTES + 8 * 1024;
+/// tungstenite's 128 KiB defaults cost about 146 KB per idle socket; frames grow the read buffer on demand.
+const SOCKET_BUFFER_BYTES: usize = 4 * 1024;
 
 struct AppState<I> {
     registry: RegistryHandle,
@@ -179,6 +181,8 @@ async fn upgrade<I: IdentityStore>(
     upgrade
         .max_message_size(MAX_FRAME_BYTES)
         .max_frame_size(MAX_FRAME_BYTES)
+        .read_buffer_size(SOCKET_BUFFER_BYTES)
+        .write_buffer_size(SOCKET_BUFFER_BYTES)
         .on_upgrade(move |socket| {
             connection::run(
                 socket,
