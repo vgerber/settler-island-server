@@ -17,7 +17,7 @@ mod store;
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::rejection::JsonRejection;
 use axum::extract::ws::WebSocketUpgrade;
@@ -34,6 +34,7 @@ use settler_island_protocol::{
     GUEST_SESSION_ROUTE, HEALTH_ROUTE, MAX_MESSAGE_BYTES, UPGRADE_SESSION_ROUTE, WEBSOCKET_ROUTE,
 };
 use tokio::net::TcpListener;
+use tower_http::timeout::{RequestBodyTimeoutLayer, TimeoutLayer};
 
 pub use config::{
     Config, ConfigError, DatabaseUrl, KeycloakConfig, LogFormat, SessionSecret,
@@ -59,6 +60,8 @@ const MAX_FRAME_BYTES: usize = MAX_MESSAGE_BYTES + 8 * 1024;
 const SOCKET_BUFFER_BYTES: usize = 4 * 1024;
 /// Session bodies are a name or two tokens; a Keycloak access token can reach a few KB.
 const MAX_SESSION_BODY_BYTES: usize = 8 * 1024;
+/// Whole-request and body-read deadline on the plain HTTP routes, so a stalled client cannot hold a handler.
+const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct AppState<I> {
     registry: RegistryHandle,
@@ -176,11 +179,19 @@ pub async fn router<S: GameStore, I: IdentityStore>(
             limit_sessions::<I>,
         ))
         .layer(DefaultBodyLimit::max(MAX_SESSION_BODY_BYTES));
-    let router = Router::new()
+    // The WebSocket route stays outside the timeouts: its handler returns at once and the socket outlives it.
+    let http_routes = Router::new()
         .route(HEALTH_ROUTE, get(health))
         .route("/metrics", get(metrics_page::<I>))
-        .route(WEBSOCKET_ROUTE, get(upgrade::<I>))
         .merge(sessions)
+        .layer(RequestBodyTimeoutLayer::new(HTTP_REQUEST_TIMEOUT))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            HTTP_REQUEST_TIMEOUT,
+        ));
+    let router = Router::new()
+        .route(WEBSOCKET_ROUTE, get(upgrade::<I>))
+        .merge(http_routes)
         .with_state(state);
     Ok(router)
 }
