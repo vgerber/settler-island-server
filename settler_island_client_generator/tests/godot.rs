@@ -6,16 +6,21 @@
 //! is found, or a panic when `SETTLER_REQUIRE_GODOT=1`; the binary is `$SETTLER_GODOT` or
 //! `$HOME/Software/godot/godot`.
 
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use schemars::{schema_for, JsonSchema};
 use serde_json::{json, Value};
 use settler_island_bot::{create_bot, play_game, Difficulty};
 use settler_island_client_generator::{default_client_directory, API_DIRECTORY};
-use settler_island_game::{replay, Action, Game, GameError, GameSettings, Phase, Port};
+use settler_island_game::{
+    replay, Action, CornerId, DevelopmentCard, EdgeId, Event, Game, GameError, GameSettings, Phase,
+    Port, Resource, ResourceCounts, TileId,
+};
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbySummary, SeatOccupant, ServerMessage,
     User, UserId, UserKind,
@@ -214,6 +219,221 @@ fn to_json<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap()
 }
 
+/// The `type` tag of every variant of the internally tagged enum `T`, read from its schema, so a new Rust variant
+/// is noticed here without a hand-kept list.
+fn variant_names<T: JsonSchema>() -> BTreeSet<String> {
+    let schema = to_json(&schema_for!(T));
+    let variants = schema["oneOf"].as_array().expect("tagged enum schema");
+    variants
+        .iter()
+        .map(|variant| {
+            let tag = &variant["properties"]["type"];
+            tag["const"].as_str().expect("tag constant").to_string()
+        })
+        .collect()
+}
+
+/// Fails when a variant of `T` has no sample in `samples`.
+fn assert_covers<T: JsonSchema>(samples: &[Value]) {
+    let present: BTreeSet<String> = samples
+        .iter()
+        .filter_map(|sample| sample["type"].as_str().map(str::to_string))
+        .collect();
+    let missing: Vec<_> = variant_names::<T>().difference(&present).cloned().collect();
+    assert!(
+        missing.is_empty(),
+        "{} has no sample for {missing:?}; add one to the fixtures",
+        std::any::type_name::<T>()
+    );
+}
+
+/// One error code per variant: the unit variants are decoded from their schema names, so a new one is sampled
+/// without an edit here.
+fn error_code_samples() -> Vec<ErrorCode> {
+    variant_names::<ErrorCode>()
+        .into_iter()
+        .map(|name| match name.as_str() {
+            "Game" => ErrorCode::Game {
+                error: GameError::NotYourTurn,
+            },
+            _ => serde_json::from_value(json!({ "type": name })).expect("unit error code"),
+        })
+        .collect()
+}
+
+fn event_samples() -> Vec<Event> {
+    let cards = ResourceCounts::new([1, 0, 2, 0, 1]);
+    let one_brick = ResourceCounts::new([1, 0, 0, 0, 0]);
+    let one_lumber = ResourceCounts::new([0, 1, 0, 0, 0]);
+    vec![
+        Event::SettlementPlaced {
+            seat: 0,
+            corner: CornerId(4),
+        },
+        Event::RoadPlaced {
+            seat: 1,
+            edge: EdgeId(7),
+        },
+        Event::CityBuilt {
+            seat: 2,
+            corner: CornerId(9),
+        },
+        Event::DiceRolled {
+            seat: 3,
+            first: 3,
+            second: 4,
+        },
+        Event::ResourcesProduced {
+            seat: 0,
+            resources: cards,
+        },
+        Event::ResourcesPaid {
+            seat: 1,
+            resources: cards,
+        },
+        Event::RobberMoved {
+            seat: 2,
+            tile: TileId(5),
+        },
+        Event::CardsDiscarded {
+            seat: 3,
+            resources: cards,
+        },
+        Event::ResourceStolen {
+            thief: 0,
+            victim: 1,
+            resource: Some(Resource::Ore),
+        },
+        Event::ResourceStolen {
+            thief: 2,
+            victim: 3,
+            resource: None,
+        },
+        Event::BankTraded {
+            seat: 1,
+            gave: ResourceCounts::new([4, 0, 0, 0, 0]),
+            received: ResourceCounts::new([0, 0, 0, 0, 1]),
+        },
+        Event::TradeOffered {
+            seat: 0,
+            give: one_brick,
+            receive: one_lumber,
+            to: None,
+        },
+        Event::TradeOffered {
+            seat: 0,
+            give: one_brick,
+            receive: one_lumber,
+            to: Some(1),
+        },
+        Event::TradeAnswered {
+            seat: 2,
+            accepted: true,
+        },
+        Event::TradeCompleted {
+            seat: 0,
+            with: 2,
+            gave: one_brick,
+            received: one_lumber,
+        },
+        Event::TradeCancelled { seat: 0 },
+        Event::DevelopmentCardBought {
+            seat: 1,
+            card: Some(DevelopmentCard::Monopoly),
+        },
+        Event::DevelopmentCardBought {
+            seat: 2,
+            card: None,
+        },
+        Event::DevelopmentCardPlayed {
+            seat: 3,
+            card: DevelopmentCard::YearOfPlenty,
+        },
+        Event::MonopolyTaken {
+            seat: 3,
+            resource: Resource::Wheat,
+            amount: 5,
+        },
+        Event::YearOfPlentyTaken {
+            seat: 1,
+            resources: ResourceCounts::new([0, 1, 0, 1, 0]),
+        },
+        Event::LongestRoadChanged {
+            holder: Some(2),
+            length: 6,
+        },
+        Event::LongestRoadChanged {
+            holder: None,
+            length: 0,
+        },
+        Event::LargestArmyChanged {
+            holder: Some(1),
+            knights: 3,
+        },
+        Event::LargestArmyChanged {
+            holder: None,
+            knights: 0,
+        },
+        Event::PhaseChanged {
+            phase: Phase::RoadBuilding { roads_left: 2 },
+        },
+        Event::TurnStarted { seat: 2 },
+        Event::TurnEnded { seat: 2 },
+        Event::GameWon {
+            seat: 1,
+            points: 10,
+        },
+    ]
+}
+
+fn action_samples() -> Vec<Action> {
+    let one_brick = ResourceCounts::new([1, 0, 0, 0, 0]);
+    let one_lumber = ResourceCounts::new([0, 1, 0, 0, 0]);
+    vec![
+        Action::PlaceSettlement {
+            corner: CornerId(4),
+        },
+        Action::PlaceRoad { edge: EdgeId(7) },
+        Action::RollDice,
+        Action::EndTurn,
+        Action::BuildRoad { edge: EdgeId(8) },
+        Action::BuildSettlement {
+            corner: CornerId(5),
+        },
+        Action::BuildCity {
+            corner: CornerId(5),
+        },
+        Action::MoveRobber { tile: TileId(3) },
+        Action::Steal { victim: 2 },
+        Action::Discard {
+            resources: one_brick,
+        },
+        Action::BankTrade {
+            give: Resource::Clay,
+            receive: Resource::Ore,
+        },
+        Action::OfferTrade {
+            give: one_brick,
+            receive: one_lumber,
+            to: Some(1),
+        },
+        Action::AcceptTrade,
+        Action::RejectTrade,
+        Action::ConfirmTrade { with: 1 },
+        Action::CancelTrade,
+        Action::BuyDevelopmentCard,
+        Action::PlayKnight,
+        Action::PlayRoadBuilding,
+        Action::PlayYearOfPlenty {
+            first: Resource::Wheat,
+            second: Resource::Ore,
+        },
+        Action::PlayMonopoly {
+            resource: Resource::Sheep,
+        },
+    ]
+}
+
 /// Every message variant, with game payloads taken from a played game so all events occur.
 fn fixtures() -> Value {
     let settings = GameSettings {
@@ -286,7 +506,12 @@ fn fixtures() -> Value {
         ClientMessage::GetState { request_id: 10 },
         ClientMessage::GetRecord { request_id: 11 },
     ];
-    client.extend(actions.iter().map(|(_, action)| ClientMessage::Act {
+    let sample_actions: Vec<Action> = actions
+        .iter()
+        .map(|(_, action)| action.clone())
+        .chain(action_samples())
+        .collect();
+    client.extend(sample_actions.iter().map(|action| ClientMessage::Act {
         request_id: 12,
         action: action.clone(),
     }));
@@ -351,19 +576,16 @@ fn fixtures() -> Value {
             request_id: 11,
             record: outcome.record.clone(),
         },
-        ServerMessage::Error {
-            request_id: Some(12),
-            code: ErrorCode::Game {
-                error: GameError::NotYourTurn,
-            },
-            message: "it is not this seat's turn".to_string(),
-        },
-        ServerMessage::Error {
-            request_id: None,
-            code: ErrorCode::InvalidMessage,
-            message: "invalid".to_string(),
-        },
     ];
+    server.extend(
+        error_code_samples()
+            .into_iter()
+            .map(|code| ServerMessage::Error {
+                request_id: Some(12),
+                message: code.description(),
+                code,
+            }),
+    );
     server.extend(
         outcome
             .record
@@ -376,9 +598,29 @@ fn fixtures() -> Value {
                 legal_actions: Vec::new(),
             }),
     );
+    let event_values: Vec<Value> = event_samples().iter().map(to_json).collect();
+    let action_values: Vec<Value> = sample_actions.iter().map(to_json).collect();
+    let error_values: Vec<Value> = error_code_samples().iter().map(to_json).collect();
     let client: Vec<Value> = client.iter().map(to_json).collect();
     let server: Vec<Value> = server.iter().map(to_json).collect();
-    json!({ "client": client, "server": server })
+    assert_covers::<ClientMessage>(&client);
+    assert_covers::<ServerMessage>(&server);
+    assert_covers::<Action>(&action_values);
+    assert_covers::<Event>(&event_values);
+    assert_covers::<ErrorCode>(&error_values);
+    json!({
+        "client": client,
+        "server": server,
+        "actions": action_values,
+        "events": event_values,
+        "errors": error_values,
+    })
+}
+
+fn write_fixtures() -> PathBuf {
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-round-trip-fixtures.json");
+    fs::write(&path, fixtures().to_string()).unwrap();
+    path
 }
 
 #[test]
@@ -386,9 +628,7 @@ fn generated_classes_round_trip_every_message() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let fixtures_path =
-        Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-round-trip-fixtures.json");
-    fs::write(&fixtures_path, fixtures().to_string()).unwrap();
+    let fixtures_path = write_fixtures();
 
     run_script(
         &godot,
@@ -605,7 +845,13 @@ fn game_state_offers_a_rate_limited_act_again() {
     })
     .unwrap();
     let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-game-state.json");
-    fs::write(&fixture_path, game_started(&game, 0).to_string()).unwrap();
+    let mut fixture = game_started(&game, 0);
+    fixture["rate_limited"] = to_json(&ServerMessage::Error {
+        request_id: None,
+        message: ErrorCode::RateLimited.description(),
+        code: ErrorCode::RateLimited,
+    });
+    fs::write(&fixture_path, fixture.to_string()).unwrap();
 
     run_script(
         &godot,
@@ -626,7 +872,7 @@ fn hud_event_log_has_a_line_for_every_event() {
         &godot,
         Project::Game,
         "hud_event_log.gd",
-        "-",
+        write_fixtures().to_str().unwrap(),
         "HUD_EVENT_LOG_OK",
     );
 }
@@ -645,6 +891,23 @@ fn net_goes_online_after_a_failed_start() {
         "net_reconnect.gd",
         &server,
         "NET_RECONNECT_OK",
+    );
+}
+
+#[test]
+fn net_replaces_a_refused_stored_token_with_a_fresh_guest_session() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime, None);
+
+    run_script(
+        &godot,
+        Project::Game,
+        "net_stale_token.gd",
+        &server,
+        "NET_STALE_TOKEN_OK",
     );
 }
 

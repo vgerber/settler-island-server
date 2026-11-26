@@ -1,7 +1,16 @@
 extends SceneTree
 ## Parses every fixture message through the generated classes and checks `to_dict` gives it back.
 ## Usage: godot --headless --path <project> -s round_trip.gd -- <fixtures.json>
-## Fixtures: {"client": [ClientMessage, ...], "server": [ServerMessage, ...]} as the server writes them.
+## Fixtures: {"client", "server", "actions", "events", "errors"}, lists of values as the server writes them.
+## Every generated variant class must have a sample, so a new Rust variant fails until the fixtures have one.
+
+const KINDS := {
+	"client": "SiClientMessage",
+	"server": "SiServerMessage",
+	"actions": "SiAction",
+	"events": "SiEvent",
+	"errors": "SiErrorCode",
+}
 
 
 func _init() -> void:
@@ -14,17 +23,36 @@ func _init() -> void:
 		_finish(1, "ROUND_TRIP_FAILED fixtures are not a JSON object")
 		return
 	var failures := 0
-	for input in fixtures["client"]:
-		var message := SiClientMessage.from_dict(input)
-		failures += _check(input, null if message == null else message.to_dict())
-	for input in fixtures["server"]:
-		var message := SiServerMessage.from_dict(input)
-		failures += _check(input, null if message == null else message.to_dict())
-	var total: int = fixtures["client"].size() + fixtures["server"].size()
+	var total := 0
+	for kind: String in KINDS:
+		var samples: Array = fixtures.get(kind, [])
+		for variant in SiTestSupport.missing_variants(KINDS[kind], samples):
+			print("NO SAMPLE %s%s" % [KINDS[kind], variant])
+			failures += 1
+		for input in samples:
+			failures += _check(input, _decode(kind, input))
+		total += samples.size()
 	if failures > 0:
 		_finish(1, "ROUND_TRIP_FAILED %d of %d" % [failures, total])
 		return
 	_finish(0, "ROUND_TRIP_OK %d" % total)
+
+
+## The value `input` decodes to and encodes back to, or null when the class does not know it.
+func _decode(kind: String, input: Variant) -> Variant:
+	var decoded: Variant = null
+	match kind:
+		"client":
+			decoded = SiClientMessage.from_dict(input)
+		"server":
+			decoded = SiServerMessage.from_dict(input)
+		"actions":
+			decoded = SiAction.from_dict(input)
+		"events":
+			decoded = SiEvent.from_dict(input)
+		"errors":
+			decoded = SiErrorCode.from_dict(input)
+	return null if decoded == null else decoded.to_dict()
 
 
 func _finish(code: int, line: String) -> void:
