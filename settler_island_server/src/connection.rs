@@ -126,8 +126,8 @@ impl<I: IdentityStore> Connection<I> {
                 Message::Text(text) => self.on_message(text.as_bytes()).await,
                 Message::Binary(bytes) => self.on_message(&bytes).await,
                 Message::Close(_) => return,
-                // Pings count as activity; axum answers them itself.
-                Message::Ping(_) | Message::Pong(_) => {}
+                // Axum answers pings itself; they still spend the message budget.
+                Message::Ping(_) | Message::Pong(_) => self.on_control_frame(),
             }
         }
     }
@@ -143,6 +143,12 @@ impl<I: IdentityStore> Connection<I> {
             return idle_deadline;
         }
         idle_deadline.min(auth_deadline)
+    }
+
+    fn on_control_frame(&mut self) {
+        if self.limiter.take(Instant::now()).is_err() {
+            self.send_error(None, ErrorCode::RateLimited);
+        }
     }
 
     async fn on_message(&mut self, bytes: &[u8]) {

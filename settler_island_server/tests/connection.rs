@@ -140,6 +140,27 @@ async fn an_unauthenticated_socket_that_only_pings_is_closed_after_the_auth_time
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pings_draw_from_the_message_budget() {
+    let address = start(test_config()).await;
+    let (mut client, _) = Client::welcomed(address, "Pinger").await;
+    tokio::time::sleep(BUCKET_REFILL).await;
+
+    client.send_pings(25).await;
+    let reply = client.request(list).await;
+
+    assert!(
+        matches!(
+            reply,
+            ServerMessage::Error {
+                code: ErrorCode::RateLimited,
+                ..
+            }
+        ),
+        "{reply:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_idle_connection_is_closed() {
     let config = Config {
         idle_timeout: Duration::from_millis(300),

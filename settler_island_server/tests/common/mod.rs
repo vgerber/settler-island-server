@@ -266,6 +266,15 @@ impl Client {
         false
     }
 
+    pub async fn send_pings(&mut self, count: usize) {
+        for _ in 0..count {
+            self.socket
+                .send(Message::Ping(Vec::new().into()))
+                .await
+                .unwrap();
+        }
+    }
+
     /// Skips broadcasts until the message that echoes `request_id`.
     pub async fn reply(&mut self, request_id: u32) -> ServerMessage {
         loop {
