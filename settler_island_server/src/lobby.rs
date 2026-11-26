@@ -81,6 +81,21 @@ pub(crate) enum LobbyNotice {
     },
 }
 
+/// Tells the registry that the lobby closed however its task ends, a panic included, so the registry never keeps
+/// pointing at a dead task.
+struct ClosedNotice {
+    lobby: LobbyId,
+    notices: mpsc::UnboundedSender<LobbyNotice>,
+}
+
+impl Drop for ClosedNotice {
+    fn drop(&mut self) {
+        info!(lobby = self.lobby.0, "lobby closed");
+        // The registry is gone only during shutdown.
+        let _ = self.notices.send(LobbyNotice::Closed(self.lobby));
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LobbyHandle {
     sender: mpsc::Sender<LobbyCommand>,
@@ -331,6 +346,10 @@ impl<S: GameStore> Lobby<S> {
 
     async fn run(mut self, mut commands: mpsc::Receiver<LobbyCommand>, request_id: Option<u32>) {
         info!(lobby = self.id.0, "lobby opened");
+        let _closed = ClosedNotice {
+            lobby: self.id,
+            notices: self.notices.clone(),
+        };
         let owner = self.owner.id.clone();
         if request_id.is_some() {
             self.send_state_to(&owner, request_id);
@@ -358,9 +377,6 @@ impl<S: GameStore> Lobby<S> {
                 }
             }
         }
-        info!(lobby = self.id.0, "lobby closed");
-        // The registry is gone only during shutdown.
-        let _ = self.notices.send(LobbyNotice::Closed(self.id));
     }
 
     async fn handle(&mut self, command: LobbyCommand) {
