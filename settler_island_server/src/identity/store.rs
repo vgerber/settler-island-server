@@ -8,6 +8,8 @@ use settler_island_protocol::UserId;
 pub enum IdentityStoreError {
     #[error("the identity store lock is poisoned")]
     Poisoned,
+    #[error("the user id is linked to another account already")]
+    UserAlreadyLinked,
     #[error("database: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -20,7 +22,14 @@ pub trait IdentityStore: Send + Sync + 'static {
         subject: &str,
     ) -> impl Future<Output = Result<Option<UserId>, IdentityStoreError>> + Send;
 
+    /// Whether some account was linked to `user`, which retires the guest token for that id.
+    fn is_linked(
+        &self,
+        user: &UserId,
+    ) -> impl Future<Output = Result<bool, IdentityStoreError>> + Send;
+
     /// Links `subject` to `user` unless it is linked already; returns the user id it maps to afterwards.
+    /// A new subject for a user id that another account holds is `UserAlreadyLinked`.
     fn link(
         &self,
         subject: &str,
@@ -49,9 +58,42 @@ impl IdentityStore for MemoryIdentityStore {
             .links
             .lock()
             .map_err(|_| IdentityStoreError::Poisoned)?;
-        Ok(links
-            .entry(subject.to_string())
-            .or_insert_with(|| user.clone())
-            .clone())
+        if let Some(existing) = links.get(subject) {
+            return Ok(existing.clone());
+        }
+        if links.values().any(|linked| linked == user) {
+            return Err(IdentityStoreError::UserAlreadyLinked);
+        }
+        links.insert(subject.to_string(), user.clone());
+        Ok(user.clone())
+    }
+
+    async fn is_linked(&self, user: &UserId) -> Result<bool, IdentityStoreError> {
+        let links = self
+            .links
+            .lock()
+            .map_err(|_| IdentityStoreError::Poisoned)?;
+        Ok(links.values().any(|linked| linked == user))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_second_subject_cannot_take_a_linked_user_id() {
+        let store = MemoryIdentityStore::default();
+        let user = UserId("guest".to_string());
+        assert!(!store.is_linked(&user).await.unwrap());
+        assert_eq!(store.link("first", &user).await.unwrap(), user);
+        assert!(store.is_linked(&user).await.unwrap());
+        assert!(matches!(
+            store.link("second", &user).await,
+            Err(IdentityStoreError::UserAlreadyLinked)
+        ));
+        assert_eq!(store.linked_user("second").await.unwrap(), None);
+        // Linking the same subject again is not an error.
+        assert_eq!(store.link("first", &user).await.unwrap(), user);
     }
 }

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM identity_links WHERE user_id = $1) AS \"linked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "linked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9aac6090ba16be55ca955435e12d7c216743e223d0f5f208376cdfe0914e519b"
+}

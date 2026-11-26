@@ -347,20 +347,26 @@ impl IdentityStore for PostgresStore {
     async fn link(&self, subject: &str, user: &UserId) -> Result<UserId, IdentityStoreError> {
         sqlx::query!(
             "INSERT INTO identity_links (keycloak_sub, user_id) VALUES ($1, $2)
-             ON CONFLICT (keycloak_sub) DO NOTHING",
+             ON CONFLICT DO NOTHING",
             subject,
             user.0,
         )
         .execute(&self.pool)
         .await?;
         // A separate statement sees a concurrent winner's link once it committed.
+        let linked = self.linked_user(subject).await?;
+        // No row for the subject after the insert means the unique user id belongs to another account.
+        linked.ok_or(IdentityStoreError::UserAlreadyLinked)
+    }
+
+    async fn is_linked(&self, user: &UserId) -> Result<bool, IdentityStoreError> {
         let linked = sqlx::query_scalar!(
-            "SELECT user_id FROM identity_links WHERE keycloak_sub = $1",
-            subject,
+            "SELECT EXISTS (SELECT 1 FROM identity_links WHERE user_id = $1) AS \"linked!\"",
+            user.0,
         )
         .fetch_one(&self.pool)
         .await?;
-        Ok(UserId(linked))
+        Ok(linked)
     }
 }
 

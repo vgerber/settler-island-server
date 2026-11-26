@@ -11,8 +11,9 @@ use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{
-    wants_snapshot, Config, GameId, GameStore, IdentityStore, MemoryIdentityStore, NewGame,
-    PostgresStore, SeatPlayer, StoreError, StoredGame, SNAPSHOT_INTERVAL,
+    wants_snapshot, Config, GameId, GameStore, IdentityStore, IdentityStoreError,
+    MemoryIdentityStore, NewGame, PostgresStore, SeatPlayer, StoreError, StoredGame,
+    SNAPSHOT_INTERVAL,
 };
 use sqlx::ConnectOptions;
 use tokio::runtime::Runtime;
@@ -179,7 +180,21 @@ async fn postgres_identity_links_keep_the_first_user() {
     assert_eq!(store.linked_user("subject").await.unwrap(), None);
     assert_eq!(store.link("subject", &first).await.unwrap(), first);
     assert_eq!(store.link("subject", &second).await.unwrap(), first);
-    assert_eq!(store.linked_user("subject").await.unwrap(), Some(first));
+    assert_eq!(
+        store.linked_user("subject").await.unwrap(),
+        Some(first.clone())
+    );
+    assert_eq!(store.linked_user("other").await.unwrap(), None);
+
+    assert!(store.is_linked(&first).await.unwrap());
+    assert!(!store
+        .is_linked(&UserId("guest-unlinked".to_string()))
+        .await
+        .unwrap());
+    assert!(matches!(
+        store.link("other", &first).await,
+        Err(IdentityStoreError::UserAlreadyLinked)
+    ));
     assert_eq!(store.linked_user("other").await.unwrap(), None);
 }
 

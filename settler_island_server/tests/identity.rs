@@ -344,6 +344,23 @@ async fn an_upgraded_guest_keeps_its_user_id_as_an_account() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_upgraded_guests_token_no_longer_authenticates_nor_upgrades_again() {
+    let (address, realm) = start_with_realm().await;
+    let session = guest_session(address, "Ada").await;
+    let response = upgrade(address, &session.token, &realm.token("sub-owner", "ada")).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    assert_eq!(
+        rejection(address, &session.token).await,
+        ErrorCode::InvalidToken
+    );
+    let response = upgrade(address, &session.token, &realm.token("sub-thief", "eve")).await;
+    assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let (_, user) = Client::authenticated(address, &realm.token("sub-thief", "eve")).await;
+    assert_ne!(user.id, session.user.id);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_new_connection_takes_over_the_running_game() {
     let address = start(test_config()).await;
     let session = guest_session(address, "Ada").await;

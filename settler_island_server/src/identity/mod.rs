@@ -51,7 +51,7 @@ impl<I: IdentityStore> Identity<I> {
     /// Accepts a guest token or a Keycloak access token.
     pub(crate) async fn authenticate(&self, token: &str) -> Result<User, ErrorCode> {
         if token.starts_with(GUEST_TOKEN_PREFIX) {
-            return self.guest(token);
+            return self.live_guest(token).await;
         }
         let claims = self.account(token).await?;
         let linked = self
@@ -69,17 +69,29 @@ impl<I: IdentityStore> Identity<I> {
         guest_token: &str,
         account_token: &str,
     ) -> Result<User, ErrorCode> {
-        let guest = self.guest(guest_token)?;
+        let guest = self.live_guest(guest_token).await?;
         let claims = self.account(account_token).await?;
-        let linked = self
-            .store
-            .link(&claims.sub, &guest.id)
-            .await
-            .map_err(internal)?;
+        let linked = match self.store.link(&claims.sub, &guest.id).await {
+            Ok(linked) => linked,
+            Err(IdentityStoreError::UserAlreadyLinked) => {
+                return Err(ErrorCode::AccountAlreadyLinked)
+            }
+            Err(error) => return Err(internal(error)),
+        };
         if linked != guest.id {
             return Err(ErrorCode::AccountAlreadyLinked);
         }
         Ok(account_user(linked, &claims))
+    }
+
+    /// A guest token stops working once its user id belongs to an account: the account is the identity from then on.
+    async fn live_guest(&self, token: &str) -> Result<User, ErrorCode> {
+        let guest = self.guest(token)?;
+        if self.store.is_linked(&guest.id).await.map_err(internal)? {
+            debug!("guest token rejected: the user was upgraded");
+            return Err(ErrorCode::InvalidToken);
+        }
+        Ok(guest)
     }
 
     fn guest(&self, token: &str) -> Result<User, ErrorCode> {
