@@ -6,7 +6,9 @@ extends SceneTree
 ## Usage: godot --headless --path <copy of client/godot> -s full_game.gd -- http://127.0.0.1:<port>
 
 const TIMEOUT_MILLISECONDS := 100000
-const UPDATES_BEFORE_RECONNECT := 20
+## Still in the setup round (16 placements, at most 2 points each), so bots cannot end the 3-point game before
+## the reconnect lands.
+const UPDATES_BEFORE_RECONNECT := 5
 const USER_NAME := "Godot"
 
 var _net: Node = null
