@@ -69,8 +69,58 @@ pub enum RenderError {
     MissingRoot(&'static str),
     #[error("`{0}` must be a union of tagged variants")]
     RootNotAUnion(&'static str),
+    #[error("client message `{0}` has no required `request_id` field")]
+    MissingRequestId(String),
     #[error("two generated files are both named {0}")]
     DuplicateFile(String),
+}
+
+/// A GDScript type annotation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GdType {
+    Int,
+    Float,
+    Bool,
+    String,
+    /// A generated class.
+    Class(String),
+    /// `Array[element]`.
+    TypedArray(Box<GdType>),
+    /// An untyped `Array`.
+    Array,
+    Variant,
+}
+
+impl GdType {
+    fn default_value(&self) -> &'static str {
+        match self {
+            GdType::Int => "0",
+            GdType::Float => "0.0",
+            GdType::Bool => "false",
+            GdType::String => "\"\"",
+            GdType::TypedArray(_) | GdType::Array => "[]",
+            GdType::Class(_) | GdType::Variant => "null",
+        }
+    }
+
+    fn is_typed_array(&self) -> bool {
+        matches!(self, GdType::TypedArray(_))
+    }
+}
+
+impl std::fmt::Display for GdType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GdType::Int => formatter.write_str("int"),
+            GdType::Float => formatter.write_str("float"),
+            GdType::Bool => formatter.write_str("bool"),
+            GdType::String => formatter.write_str("String"),
+            GdType::Class(name) => formatter.write_str(name),
+            GdType::TypedArray(element) => write!(formatter, "Array[{element}]"),
+            GdType::Array => formatter.write_str("Array"),
+            GdType::Variant => formatter.write_str("Variant"),
+        }
+    }
 }
 
 /// File name (`SiUser.gd`) to content, sorted.
@@ -305,7 +355,7 @@ impl Renderer<'_> {
                 "var {}: {} = {}",
                 identifier(&field.name),
                 self.gd_type(&field.type_ref),
-                self.default_value(&field.type_ref)
+                self.gd_type(&field.type_ref).default_value()
             ); // Writing to a String cannot fail.
         }
         if !spec.fields.is_empty() {
@@ -347,7 +397,7 @@ impl Renderer<'_> {
             };
             let value = self.decode(&field.type_ref, &raw, 0);
             let property = identifier(&field.name);
-            let assignment = if self.gd_type(&field.type_ref).starts_with("Array[") {
+            let assignment = if self.gd_type(&field.type_ref).is_typed_array() {
                 format!("decoded.{property}.assign({value})")
             } else {
                 format!("decoded.{property} = {value}")
@@ -434,56 +484,43 @@ impl Renderer<'_> {
     }
 
     /// The type a typed `Array[...]` can hold, when Godot can express it.
-    fn element_type(&self, item: &TypeRef) -> Option<String> {
+    fn element_type(&self, item: &TypeRef) -> Option<GdType> {
         if let Some(class) = self.class_of(item) {
-            return Some(class);
+            return Some(GdType::Class(class));
         }
         if self.is_string_enum(item) {
-            return Some("String".to_string());
+            return Some(GdType::String);
         }
         match self.model.resolve(item) {
-            TypeRef::Integer => Some("int".to_string()),
-            TypeRef::Number => Some("float".to_string()),
-            TypeRef::Boolean => Some("bool".to_string()),
-            TypeRef::String => Some("String".to_string()),
+            TypeRef::Integer => Some(GdType::Int),
+            TypeRef::Number => Some(GdType::Float),
+            TypeRef::Boolean => Some(GdType::Bool),
+            TypeRef::String => Some(GdType::String),
             // Typed object arrays accept null, primitive ones do not.
-            TypeRef::Nullable(inner) => self.class_of(inner),
+            TypeRef::Nullable(inner) => self.class_of(inner).map(GdType::Class),
             _ => None,
         }
     }
 
-    pub fn gd_type(&self, type_ref: &TypeRef) -> String {
+    pub fn gd_type(&self, type_ref: &TypeRef) -> GdType {
         if let Some(class) = self.class_of(type_ref) {
-            return class;
+            return GdType::Class(class);
         }
         if self.is_string_enum(type_ref) {
-            return "String".to_string();
+            return GdType::String;
         }
         match self.model.resolve(type_ref) {
-            TypeRef::Integer => "int".to_string(),
-            TypeRef::Number => "float".to_string(),
-            TypeRef::Boolean => "bool".to_string(),
-            TypeRef::String => "String".to_string(),
+            TypeRef::Integer => GdType::Int,
+            TypeRef::Number => GdType::Float,
+            TypeRef::Boolean => GdType::Bool,
+            TypeRef::String => GdType::String,
             TypeRef::Array(item) => match self.element_type(item) {
-                Some(element) => format!("Array[{element}]"),
-                None => "Array".to_string(),
+                Some(element) => GdType::TypedArray(Box::new(element)),
+                None => GdType::Array,
             },
-            TypeRef::Tuple(_) => "Array".to_string(),
-            TypeRef::Nullable(inner) => self
-                .class_of(inner)
-                .unwrap_or_else(|| "Variant".to_string()),
-            TypeRef::Named(_) | TypeRef::Any => "Variant".to_string(),
-        }
-    }
-
-    fn default_value(&self, type_ref: &TypeRef) -> &'static str {
-        match self.gd_type(type_ref).as_str() {
-            "int" => "0",
-            "float" => "0.0",
-            "bool" => "false",
-            "String" => "\"\"",
-            array if array.starts_with("Array") => "[]",
-            _ => "null",
+            TypeRef::Tuple(_) => GdType::Array,
+            TypeRef::Nullable(inner) => self.class_of(inner).map_or(GdType::Variant, GdType::Class),
+            TypeRef::Named(_) | TypeRef::Any => GdType::Variant,
         }
     }
 
@@ -601,21 +638,27 @@ impl Renderer<'_> {
             output,
             "\n## Sends any client message, filling in a fresh request id; returns that id.\nfunc send_message(message: {client_base}) -> int:"
         ); // Writing to a String cannot fail.
-        output.push_str(SEND_MESSAGE_BODY);
+        output.push_str(&send_message_body());
         for variant in client_variants {
             output.push('\n');
-            output.push_str(&self.send_function(variant));
+            output.push_str(&self.send_function(variant)?);
         }
         output.push_str(&receive_function(&server_base, server_variants));
         Ok(output)
     }
 
-    fn send_function(&self, variant: &Variant) -> String {
+    fn send_function(&self, variant: &Variant) -> Result<String, RenderError> {
         let class = variant_class_name(CLIENT_ROOT, &variant.name);
         let fields: &[Field] = match &variant.shape {
             VariantShape::Tagged { fields } | VariantShape::ExternalStruct { fields } => fields,
             VariantShape::UnitString | VariantShape::ExternalNewtype { .. } => &[],
         };
+        let has_request_id = fields
+            .iter()
+            .any(|field| field.name == REQUEST_ID && field.required);
+        if !has_request_id {
+            return Err(RenderError::MissingRequestId(variant.name.clone()));
+        }
         let parameters: Vec<&Field> = fields
             .iter()
             .filter(|field| field.name != REQUEST_ID)
@@ -629,7 +672,11 @@ impl Renderer<'_> {
                     self.gd_type(&field.type_ref)
                 );
                 if !field.required {
-                    let _ = write!(parameter, " = {}", self.default_value(&field.type_ref));
+                    let _ = write!(
+                        parameter,
+                        " = {}",
+                        self.gd_type(&field.type_ref).default_value()
+                    );
                     // Writing to a String cannot fail.
                 }
                 parameter
@@ -646,7 +693,7 @@ impl Renderer<'_> {
         for field in parameters {
             let property = identifier(&field.name);
             let parameter = parameter_name(&field.name);
-            let assignment = if self.gd_type(&field.type_ref).starts_with("Array[") {
+            let assignment = if self.gd_type(&field.type_ref).is_typed_array() {
                 format!("message.{property}.assign({parameter})")
             } else {
                 format!("message.{property} = {parameter}")
@@ -654,7 +701,7 @@ impl Renderer<'_> {
             let _ = writeln!(output, "\t{assignment}"); // Writing to a String cannot fail.
         }
         output.push_str("\treturn send_message(message)\n");
-        output
+        Ok(output)
     }
 }
 
@@ -711,15 +758,19 @@ func poll() -> void:
 \tdisconnected.emit(code, reason)
 ";
 
-const SEND_MESSAGE_BODY: &str = "\t_last_request_id += 1
-\tif \"request_id\" in message:
-\t\tmessage.set(\"request_id\", _last_request_id)
+fn send_message_body() -> String {
+    format!(
+        "\t_last_request_id += 1
+\tif \"{REQUEST_ID}\" in message:
+\t\tmessage.set(\"{REQUEST_ID}\", _last_request_id)
 \tif not _open:
 \t\tpush_warning(\"SiClient: not connected, dropping a message\")
 \t\treturn _last_request_id
 \t_socket.send_text(JSON.stringify(message.to_dict()))
 \treturn _last_request_id
-";
+"
+    )
+}
 
 fn receive_function(server_base: &str, variants: &[Variant]) -> String {
     let mut output = format!(
@@ -913,7 +964,7 @@ mod tests {
             },
             "Message": {"oneOf": [
                 {"type": "object", "properties": {"type": {"type": "string", "const": "Hello"}, "name": {"type": "string"}}, "required": ["type", "name"]},
-                {"type": "object", "properties": {"type": {"type": "string", "const": "Ping"}}, "required": ["type"]},
+                {"type": "object", "properties": {"type": {"type": "string", "const": "Ping"}, "value": {"type": "integer"}}, "required": ["type", "value"]},
             ]},
             "Port": {"oneOf": [
                 {"type": "string", "const": "Generic"},
@@ -990,5 +1041,25 @@ mod tests {
         assert_eq!(identifier("name"), "name");
         assert_eq!(parameter_name("name"), "name_value");
         assert_eq!(identifier("seat"), "seat");
+    }
+
+    #[test]
+    fn a_client_message_without_a_required_request_id_is_an_error() {
+        let model = Model::from_schema(&json!({"$defs": {
+            "ClientMessage": {"oneOf": [
+                {"type": "object", "properties": {"type": {"type": "string", "const": "Ping"}, "value": {"type": "integer"}}, "required": ["type", "value"]},
+                {"type": "object", "properties": {"type": {"type": "string", "const": "PingTwo"}}, "required": ["type"]},
+            ]},
+            "ServerMessage": {"oneOf": [
+                {"type": "object", "properties": {"type": {"type": "string", "const": "Pong"}, "value": {"type": "integer"}}, "required": ["type", "value"]},
+                {"type": "object", "properties": {"type": {"type": "string", "const": "PongTwo"}}, "required": ["type"]},
+            ]},
+        }}))
+        .unwrap();
+
+        assert_eq!(
+            render(&model),
+            Err(RenderError::MissingRequestId("Ping".to_string()))
+        );
     }
 }

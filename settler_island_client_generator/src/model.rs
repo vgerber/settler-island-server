@@ -465,12 +465,13 @@ pub fn read_type(node: &Value, path: &str) -> Result<TypeRef, ModelError> {
     if let Some(parts) = node.get("allOf").and_then(Value::as_array) {
         return match parts.as_slice() {
             [single] => read_type(single, path),
-            _ => Ok(TypeRef::Any),
+            _ => Err(unsupported(path, "an `allOf` with several parts")),
         };
     }
     match node.get("type") {
         Some(Value::String(name)) => read_named_type(node, name, path),
         Some(Value::Array(names)) => read_type_list(node, names, path),
+        // No `type` at all is an untyped schema, such as `serde_json::Value`.
         _ => Ok(TypeRef::Any),
     }
 }
@@ -482,7 +483,7 @@ fn read_type_alternatives(alternatives: &[Value], path: &str) -> Result<TypeRef,
         .collect();
     let inner = match non_null.as_slice() {
         [single] => read_type(single, path)?,
-        _ => TypeRef::Any,
+        _ => return Err(unsupported(path, "several non-null alternatives")),
     };
     if non_null.len() < alternatives.len() {
         return Ok(TypeRef::Nullable(Box::new(inner)));
@@ -498,7 +499,7 @@ fn read_type_list(node: &Value, names: &[Value], path: &str) -> Result<TypeRef, 
         .collect();
     let inner = match non_null.as_slice() {
         [single] => read_named_type(node, single, path)?,
-        _ => TypeRef::Any,
+        _ => return Err(unsupported(path, "several non-null types")),
     };
     if non_null.len() < names.len() {
         return Ok(TypeRef::Nullable(Box::new(inner)));
@@ -513,7 +514,8 @@ fn read_named_type(node: &Value, name: &str, path: &str) -> Result<TypeRef, Mode
         "boolean" => Ok(TypeRef::Boolean),
         "string" => Ok(TypeRef::String),
         "array" => read_array(node, path),
-        _ => Ok(TypeRef::Any),
+        "object" => Err(unsupported(path, "an inline object or map type")),
+        _ => Err(unsupported(path, "an unknown `type`")),
     }
 }
 
@@ -679,5 +681,49 @@ mod tests {
                 reference: "B".to_string()
             }
         );
+    }
+
+    #[test]
+    fn shapes_the_renderer_cannot_type_are_errors_with_the_path() {
+        for (property, reason) in [
+            (
+                json!({"type": "object", "additionalProperties": {"type": "integer"}}),
+                "inline object",
+            ),
+            (
+                json!({"allOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}]}),
+                "allOf",
+            ),
+            (
+                json!({"anyOf": [{"type": "integer"}, {"type": "string"}]}),
+                "alternatives",
+            ),
+            (json!({"type": ["integer", "string"]}), "types"),
+        ] {
+            let schema = json!({"$defs": {
+                "A": {"type": "integer"},
+                "B": {"type": "integer"},
+                "Holder": {"type": "object", "properties": {"field": property}, "required": ["field"]},
+            }});
+
+            let error = Model::from_schema(&schema).unwrap_err();
+
+            assert!(
+                matches!(&error, ModelError::Unsupported { path, .. } if path == "#/$defs/Holder/properties/field"),
+                "{reason}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_schema_without_a_type_stays_untyped() {
+        let model = model(json!({
+            "Holder": {"type": "object", "properties": {"raw": true}, "required": ["raw"]},
+        }));
+
+        let Some(Definition::Struct { fields }) = model.get("Holder") else {
+            panic!("not a struct");
+        };
+        assert_eq!(fields[0].type_ref, TypeRef::Any);
     }
 }
