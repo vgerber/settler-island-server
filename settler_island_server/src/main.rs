@@ -43,8 +43,6 @@ fn init_logging(config: &Config) -> Result<(), tracing_subscriber::filter::Parse
 enum StartError {
     #[error("network: {0}")]
     Io(#[from] std::io::Error),
-    #[error("DATABASE_URL is not a valid Postgres URL: {0}")]
-    DatabaseUrl(sqlx::Error),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]
@@ -56,8 +54,7 @@ async fn run(config: Config) -> Result<(), StartError> {
     info!(address = %listener.local_addr()?, "listening");
     match config.database_url.clone() {
         Some(url) => {
-            let options = url.0.parse().map_err(StartError::DatabaseUrl)?;
-            let store = PostgresStore::connect(options).await?;
+            let store = PostgresStore::connect(url.options()).await?;
             info!("games are stored in Postgres");
             serve(listener, config, store.clone(), store, shutdown_signal()).await?;
         }

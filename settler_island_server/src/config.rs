@@ -3,6 +3,8 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
+use sqlx::postgres::PgConnectOptions;
+
 const DEFAULT_BOT_DELAY_MILLISECONDS: u64 = 600;
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const DEFAULT_LOG_FILTER: &str = "info";
@@ -13,6 +15,22 @@ const DEFAULT_SESSION_REQUESTS_PER_MINUTE: u32 = 10;
 const DEFAULT_SESSION_BURST: u32 = 5;
 /// HMAC-SHA256 gains nothing from longer keys, and shorter ones are guessable.
 pub const MIN_SESSION_SECRET_BYTES: usize = 32;
+/// Every environment variable the server reads; a test keeps `.env.example` in step with it.
+pub const VARIABLES: [&str; 13] = [
+    "SETTLER_SESSION_SECRET",
+    "SETTLER_BIND",
+    "DATABASE_URL",
+    "SETTLER_KEYCLOAK_ISSUER",
+    "SETTLER_KEYCLOAK_AUDIENCE",
+    "SETTLER_BOT_DELAY_MILLISECONDS",
+    "SETTLER_ABANDON_AFTER_HOURS",
+    "SETTLER_SESSION_REQUESTS_PER_MINUTE",
+    "SETTLER_SESSION_BURST",
+    "SETTLER_TRUST_FORWARDED_FOR",
+    "RUST_LOG",
+    "SETTLER_LOG_FORMAT",
+    "SETTLER_TRADE_ANSWER_SECONDS",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -62,9 +80,37 @@ impl FromStr for LogFormat {
     }
 }
 
-/// A Postgres connection URL; never printed, it may carry a password.
-#[derive(Clone, PartialEq, Eq)]
-pub struct DatabaseUrl(pub String);
+/// A validated Postgres connection URL; never printed, it may carry a password.
+#[derive(Clone)]
+pub struct DatabaseUrl {
+    url: String,
+    options: PgConnectOptions,
+}
+
+impl DatabaseUrl {
+    pub fn options(&self) -> PgConnectOptions {
+        self.options.clone()
+    }
+}
+
+impl FromStr for DatabaseUrl {
+    type Err = sqlx::Error;
+
+    fn from_str(url: &str) -> Result<DatabaseUrl, sqlx::Error> {
+        Ok(DatabaseUrl {
+            url: url.to_string(),
+            options: url.parse()?,
+        })
+    }
+}
+
+impl PartialEq for DatabaseUrl {
+    fn eq(&self, other: &DatabaseUrl) -> bool {
+        self.url == other.url
+    }
+}
+
+impl Eq for DatabaseUrl {}
 
 impl fmt::Debug for DatabaseUrl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -122,6 +168,8 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("SETTLER_SESSION_SECRET needs at least {MIN_SESSION_SECRET_BYTES} bytes")]
     SessionSecretTooShort,
+    #[error("DATABASE_URL is not a valid Postgres URL: {0}")]
+    InvalidDatabaseUrl(#[source] sqlx::Error),
     #[error("set both SETTLER_KEYCLOAK_ISSUER and SETTLER_KEYCLOAK_AUDIENCE, or neither")]
     IncompleteKeycloak,
 }
@@ -183,7 +231,10 @@ impl Config {
                 vars.text("SETTLER_KEYCLOAK_ISSUER"),
                 vars.text("SETTLER_KEYCLOAK_AUDIENCE"),
             )?,
-            database_url: vars.text("DATABASE_URL").map(DatabaseUrl),
+            database_url: vars
+                .text("DATABASE_URL")
+                .map(|url| url.parse().map_err(ConfigError::InvalidDatabaseUrl))
+                .transpose()?,
             log_filter: vars.text("RUST_LOG").unwrap_or(defaults.log_filter),
             log_format: vars.parsed("SETTLER_LOG_FORMAT", LogFormat::Text)?,
             ..defaults
@@ -265,15 +316,19 @@ mod tests {
 
     const SECRET: (&str, &str) = ("SETTLER_SESSION_SECRET", "0123456789abcdef0123456789abcdef");
 
+    fn with_secret(vars: &[(&str, &str)]) -> Config {
+        let mut all = vec![SECRET];
+        all.extend_from_slice(vars);
+        load(&all).unwrap()
+    }
+
+    fn defaults() -> Config {
+        Config::new(SessionSecret::new(SECRET.1).unwrap())
+    }
+
     #[test]
     fn only_the_session_secret_is_required_and_the_rest_defaults() {
-        let config = load(&[SECRET]).unwrap();
-
-        assert_eq!(config.bind, "127.0.0.1:8253".parse().unwrap());
-        assert_eq!(config.abandon_after, Duration::from_secs(168 * 3600));
-        assert_eq!(config.session_burst, 5);
-        assert_eq!(config.log_format, LogFormat::Text);
-        assert_eq!(config.database_url, None);
+        assert_eq!(with_secret(&[]), defaults());
         assert!(
             matches!(load(&[]), Err(ConfigError::Missing(name)) if name == "SETTLER_SESSION_SECRET")
         );
@@ -281,64 +336,115 @@ mod tests {
 
     #[test]
     fn every_variable_is_read_and_blank_ones_keep_the_default() {
-        let config = load(&[
-            SECRET,
+        let config = with_secret(&[
             ("SETTLER_BIND", "0.0.0.0:9000"),
             ("DATABASE_URL", "postgres://u:p@db/x"),
             ("SETTLER_KEYCLOAK_ISSUER", "http://kc/realms/r"),
             ("SETTLER_KEYCLOAK_AUDIENCE", "game"),
             ("SETTLER_BOT_DELAY_MILLISECONDS", "50"),
+            ("SETTLER_TRADE_ANSWER_SECONDS", "7"),
             ("SETTLER_ABANDON_AFTER_HOURS", "2"),
             ("SETTLER_SESSION_REQUESTS_PER_MINUTE", "30"),
             ("SETTLER_SESSION_BURST", "9"),
             ("SETTLER_TRUST_FORWARDED_FOR", "true"),
             ("RUST_LOG", "debug"),
             ("SETTLER_LOG_FORMAT", "json"),
-        ])
-        .unwrap();
+        ]);
 
-        assert_eq!(config.bind.port(), 9000);
-        assert_eq!(config.bot_delay, Duration::from_millis(50));
-        assert_eq!(config.abandon_after, Duration::from_secs(7200));
         assert_eq!(
-            (config.session_requests_per_minute, config.session_burst),
-            (30, 9)
+            config,
+            Config {
+                bind: "0.0.0.0:9000".parse().unwrap(),
+                bot_delay: Duration::from_millis(50),
+                trade_answer_time: Duration::from_secs(7),
+                abandon_after: Duration::from_secs(7200),
+                session_requests_per_minute: 30,
+                session_burst: 9,
+                trust_forwarded_for: true,
+                keycloak: Some(KeycloakConfig {
+                    issuer: "http://kc/realms/r".to_string(),
+                    audience: "game".to_string(),
+                }),
+                database_url: Some("postgres://u:p@db/x".parse().unwrap()),
+                log_filter: "debug".to_string(),
+                log_format: LogFormat::Json,
+                ..defaults()
+            }
         );
-        assert!(config.trust_forwarded_for);
-        assert_eq!(
-            config.keycloak.map(|keycloak| keycloak.audience),
-            Some("game".to_string())
-        );
-        assert!(config.database_url.is_some());
-        assert_eq!(
-            (config.log_filter.as_str(), config.log_format),
-            ("debug", LogFormat::Json)
-        );
-        let blank = load(&[SECRET, ("SETTLER_BIND", "")]).unwrap();
-        assert_eq!(blank.bind.port(), 8253);
+        assert_eq!(with_secret(&[("SETTLER_BIND", "")]), defaults());
+    }
+
+    #[test]
+    fn a_malformed_database_url_is_refused_without_echoing_it() {
+        let error = load(&[SECRET, ("DATABASE_URL", "not a url:hunter2")]).unwrap_err();
+
+        assert!(matches!(error, ConfigError::InvalidDatabaseUrl(_)));
+        assert!(!error.to_string().contains("hunter2"), "{error}");
+    }
+
+    /// Variables `.env.example` documents that the server itself never reads.
+    const NOT_READ_BY_SERVER: [&str; 2] = ["SQLX_OFFLINE", "SETTLER_TEST_DATABASE_URL"];
+
+    fn example_pairs() -> Vec<(&'static str, &'static str)> {
+        include_str!("../../.env.example")
+            .lines()
+            .map(|line| line.strip_prefix('#').unwrap_or(line))
+            .filter_map(|line| line.split_once('='))
+            .filter(|(name, _)| {
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|letter| letter.is_ascii_uppercase() || letter == '_')
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_example_env_file_names_exactly_the_variables_the_server_reads() {
+        let mut documented: Vec<&str> = example_pairs().iter().map(|(name, _)| *name).collect();
+        documented.sort_unstable();
+        documented.dedup();
+        let mut expected: Vec<&str> = VARIABLES.into_iter().chain(NOT_READ_BY_SERVER).collect();
+        expected.sort_unstable();
+
+        assert_eq!(documented, expected);
+    }
+
+    #[test]
+    fn from_vars_looks_up_only_listed_variables_and_all_of_them() {
+        let asked = std::cell::RefCell::new(Vec::new());
+        let _ = Config::from_vars(|name| {
+            asked.borrow_mut().push(name.to_string());
+            Some(SECRET.1.to_string()).filter(|_| name == SECRET.0)
+        });
+
+        let mut asked = asked.into_inner();
+        asked.sort_unstable();
+        let mut listed: Vec<String> = VARIABLES.iter().map(|name| name.to_string()).collect();
+        listed.sort_unstable();
+        assert_eq!(asked, listed);
     }
 
     #[test]
     fn the_example_env_file_loads_and_documents_the_defaults() {
-        let example = include_str!("../../.env.example");
-        let pairs: Vec<(&str, &str)> = example
+        let uncommented: Vec<(&str, &str)> = include_str!("../../.env.example")
             .lines()
             .filter(|line| !line.starts_with('#') && line.contains('='))
             .filter_map(|line| line.split_once('='))
+            .filter(|(name, _)| VARIABLES.contains(name))
             .collect();
 
-        let config = load(&pairs).unwrap();
+        let config = load(&uncommented).unwrap();
 
-        let defaults = Config::new(SessionSecret::new(vec![0; 32]).unwrap());
-        assert_eq!(config.bind, defaults.bind);
-        assert_eq!(config.bot_delay, defaults.bot_delay);
-        assert_eq!(config.abandon_after, defaults.abandon_after);
         assert_eq!(
-            config.session_requests_per_minute,
-            defaults.session_requests_per_minute
+            config,
+            Config {
+                session_secret: config.session_secret.clone(),
+                database_url: config.database_url.clone(),
+                ..defaults()
+            }
         );
-        assert_eq!(config.session_burst, defaults.session_burst);
-        assert_eq!(config.keycloak, None);
+        assert!(config.database_url.is_some());
     }
 
     #[test]

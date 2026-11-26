@@ -33,7 +33,7 @@ use tokio::net::TcpListener;
 
 pub use config::{
     Config, ConfigError, DatabaseUrl, KeycloakConfig, LogFormat, SessionSecret,
-    MIN_SESSION_SECRET_BYTES,
+    MIN_SESSION_SECRET_BYTES, VARIABLES,
 };
 pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
 pub use metrics::MetricsError;
