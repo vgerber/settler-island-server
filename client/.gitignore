@@ -1,5 +1,3 @@
 # Godot writes these next to scripts and projects it opens.
 *.uid
 .godot/
-# The root .gitignore drops every tools/ directory; the game project's tools are part of it.
-!godot/tools/
