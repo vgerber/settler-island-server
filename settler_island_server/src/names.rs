@@ -1,36 +1,12 @@
 //! User and lobby names as clients may choose them.
 
-/// Unicode general category Cf (format), written out to avoid a dependency for one table.
-const FORMAT_RANGES: &[(u32, u32)] = &[
-    (0x00AD, 0x00AD),
-    (0x0600, 0x0605),
-    (0x061C, 0x061C),
-    (0x06DD, 0x06DD),
-    (0x070F, 0x070F),
-    (0x0890, 0x0891),
-    (0x08E2, 0x08E2),
-    (0x180E, 0x180E),
-    (0x200B, 0x200F),
-    (0x202A, 0x202E),
-    (0x2060, 0x2064),
-    (0x2066, 0x206F),
-    (0xFEFF, 0xFEFF),
-    (0xFFF9, 0xFFFB),
-    (0x110BD, 0x110BD),
-    (0x110CD, 0x110CD),
-    (0x13430, 0x1343F),
-    (0x1BCA0, 0x1BCA3),
-    (0x1D173, 0x1D17A),
-    (0xE0001, 0xE0001),
-    (0xE0020, 0xE007F),
-];
+use unicode_general_category::{get_general_category, GeneralCategory};
 
-/// Zl, Zp, and characters that render blank without being whitespace or Cf.
+/// Letters and marks that render blank (fillers); no general category singles them out.
 const BLANK_RANGES: &[(u32, u32)] = &[
     (0x034F, 0x034F),
     (0x115F, 0x1160),
     (0x17B4, 0x17B5),
-    (0x2028, 0x2029),
     (0x2800, 0x2800),
     (0x3164, 0x3164),
     (0xFFA0, 0xFFA0),
@@ -43,13 +19,22 @@ fn in_ranges(character: char, ranges: &[(u32, u32)]) -> bool {
         .any(|&(first, last)| (first..=last).contains(&code))
 }
 
+/// Control, format (bidi overrides, zero-width), line and paragraph separators, private use and unassigned
+/// characters, plus the blank fillers.
 fn is_forbidden(character: char) -> bool {
-    character.is_control()
-        || in_ranges(character, FORMAT_RANGES)
-        || in_ranges(character, BLANK_RANGES)
+    let invisible = matches!(
+        get_general_category(character),
+        GeneralCategory::Control
+            | GeneralCategory::Format
+            | GeneralCategory::LineSeparator
+            | GeneralCategory::ParagraphSeparator
+            | GeneralCategory::PrivateUse
+            | GeneralCategory::Unassigned
+    );
+    invisible || in_ranges(character, BLANK_RANGES)
 }
 
-/// Trims and accepts 1 to `max_chars` characters without control, format or filler characters and
+/// Trims and accepts 1 to `max_chars` characters without forbidden characters (see `is_forbidden`) and
 /// with at least one non-whitespace one (bidi overrides and zero-width characters spoof names).
 pub(crate) fn clean_name(name: &str, max_chars: usize) -> Option<String> {
     let trimmed = name.trim();
@@ -86,6 +71,9 @@ mod tests {
             "a\u{3164}",
             "\u{200B}\u{200D}",
             "\u{2800}",
+            // Private use and unassigned code points render as anything a font chooses.
+            "a\u{E000}b",
+            "a\u{0378}b",
         ] {
             assert_eq!(clean_name(rejected, 24), None, "{rejected:?}");
         }

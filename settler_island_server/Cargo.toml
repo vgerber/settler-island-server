@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+unicode-general-category = "1.1"
 settler_island_game = { path = "../settler_island_game" }
 settler_island_bot = { path = "../settler_island_bot" }
 settler_island_protocol = { path = "../settler_island_protocol" }
