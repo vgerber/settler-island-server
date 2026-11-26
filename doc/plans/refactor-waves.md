@@ -35,3 +35,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
   switches its private `check_main_turn` to `Game::require_main_turn` when the `#[expect(dead_code)]` goes; `exchange`
   validates both legs before moving anything instead of undoing the first leg on failure.
 - Watch: `concurrent_lobby_traffic_neither_deadlocks_nor_leaks` failed once under heavy parallel agent load (log lost; 30/30 alone). On the next failure read the kept gate log under .build/logs/ before changing anything.
+- Later: replay/rebuild reject a record whose format_version is not FORMAT_VERSION (today it is written but never checked).
