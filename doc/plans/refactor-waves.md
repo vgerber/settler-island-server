@@ -36,3 +36,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
   validates both legs before moving anything instead of undoing the first leg on failure.
 - Watch: `concurrent_lobby_traffic_neither_deadlocks_nor_leaks` failed once under heavy parallel agent load (log lost; 30/30 alone). On the next failure read the kept gate log under .build/logs/ before changing anything.
 - Later: replay/rebuild reject a record whose format_version is not FORMAT_VERSION (today it is written but never checked).
+- After 3d: drop the dead `if "request_id" in message:` guard in the generator (SiClient.gd changes once); generator: dedup all field names in read_fields, add the DuplicateFile unit test.
