@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use settler_island_bot::{bot_seed, create_bot, Bot, Difficulty};
 use settler_island_game::{
-    Action, Event, Game, GameRecord, GameSettings, Seat, MAX_SEATS, MIN_SEATS,
+    Action, Event, Game, GameRecord, GameSettings, RecordEntry, Seat, MAX_SEATS, MIN_SEATS,
 };
 
 use crate::store::StoredGame;
@@ -16,9 +16,7 @@ use tracing::{error, info, warn};
 use crate::config::Config;
 use crate::metrics::{GameInProgress, Metrics};
 use crate::outbox::Outbox;
-use crate::store::{
-    GameId, GameStore, NewGame, SeatPlayer, StoreError, StoredAction, SNAPSHOT_INTERVAL,
-};
+use crate::store::{wants_snapshot, GameId, GameStore, NewGame, SeatPlayer, StoreError};
 
 const COMMAND_QUEUE: usize = 64;
 /// How long to wait before retrying a store write that failed.
@@ -896,10 +894,8 @@ async fn apply_and_store<S: GameStore>(
         .apply(seat, action.clone())
         .map_err(|error| ErrorCode::Game { error })?;
     let index = running.record.entries.len() as u32;
-    let snapshot = (index + 1)
-        .is_multiple_of(SNAPSHOT_INTERVAL)
-        .then(|| next.clone());
-    let stored = StoredAction {
+    let snapshot = wants_snapshot(index).then(|| next.clone());
+    let stored = RecordEntry {
         index,
         seat,
         action: action.clone(),

@@ -5,7 +5,7 @@ use crate::action::Action;
 use crate::board::Board;
 use crate::error::GameError;
 use crate::event::Event;
-use crate::game::{Game, GameSettings, Seat};
+use crate::game::{Game, Seat};
 
 const FORMAT_VERSION: u16 = 1;
 const RULES_VERSION: u16 = 1;
@@ -58,20 +58,34 @@ impl GameRecord {
     }
 
     pub fn push(&mut self, seat: Seat, action: Action, events: Vec<Event>) {
-        self.entries.push(RecordEntry {
+        self.push_entry(RecordEntry {
             index: self.entries.len() as u32,
             seat,
             action,
             events,
         });
     }
+
+    pub fn push_entry(&mut self, entry: RecordEntry) {
+        self.entries.push(entry);
+    }
 }
 
-/// Rebuilds a game from its settings and the actions applied so far.
-pub fn replay(settings: GameSettings, actions: &[(Seat, Action)]) -> Result<Game, GameError> {
-    let mut game = Game::new(settings)?;
-    for (seat, action) in actions {
-        game.apply(*seat, action.clone())?;
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ReplayError {
+    #[error(transparent)]
+    Game(#[from] GameError),
+    #[error("replaying entry {0} produced other events than recorded")]
+    Diverged(u32),
+}
+
+/// Applies `entries` to `game` in order and checks each one yields exactly its recorded events.
+pub fn replay(mut game: Game, entries: &[RecordEntry]) -> Result<Game, ReplayError> {
+    for entry in entries {
+        let events = game.apply(entry.seat, entry.action.clone())?;
+        if events != entry.events {
+            return Err(ReplayError::Diverged(entry.index));
+        }
     }
     Ok(game)
 }
@@ -79,6 +93,7 @@ pub fn replay(settings: GameSettings, actions: &[(Seat, Action)]) -> Result<Game
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::GameSettings;
 
     fn settings() -> GameSettings {
         GameSettings {
@@ -104,21 +119,21 @@ mod tests {
     #[test]
     fn replay_reproduces_every_event_and_the_final_state() {
         let (game, record) = play(300);
-        let actions: Vec<(Seat, Action)> = record
-            .entries
-            .iter()
-            .map(|entry| (entry.seat, entry.action.clone()))
-            .collect();
-
-        let mut fresh = Game::new(settings()).unwrap();
+        let fresh = Game::new(settings()).unwrap();
         assert_eq!(record.header.board, fresh.board);
-        for entry in &record.entries {
-            assert_eq!(
-                fresh.apply(entry.seat, entry.action.clone()).as_ref(),
-                Ok(&entry.events)
-            );
-        }
-        assert_eq!(replay(settings(), &actions), Ok(game));
+        assert_eq!(replay(fresh, &record.entries), Ok(game));
+    }
+
+    #[test]
+    fn replay_reports_the_entry_whose_events_differ() {
+        let (_, mut record) = play(40);
+        record.entries[17].events.clear();
+
+        let fresh = Game::new(settings()).unwrap();
+        assert_eq!(
+            replay(fresh, &record.entries),
+            Err(ReplayError::Diverged(17))
+        );
     }
 
     #[test]

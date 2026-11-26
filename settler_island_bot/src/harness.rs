@@ -133,13 +133,8 @@ mod tests {
 
         assert_eq!(outcome.actions as usize, outcome.record.entries.len());
         assert!(outcome.actions <= 200);
-        let actions: Vec<(Seat, Action)> = outcome
-            .record
-            .entries
-            .iter()
-            .map(|entry| (entry.seat, entry.action.clone()))
-            .collect();
-        let game = replay(settings(4, 7), &actions).unwrap();
+        let fresh = Game::new(settings(4, 7)).unwrap();
+        let game = replay(fresh, &outcome.record.entries).unwrap();
         assert_eq!(game.view(None), outcome.final_view);
     }
 }

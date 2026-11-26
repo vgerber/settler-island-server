@@ -4,13 +4,15 @@ use std::time::Duration;
 
 use common::{guest_session, play_as, start_with, test_config, test_database, Client, Play};
 use settler_island_bot::create_bot;
-use settler_island_game::{Action, Game, GameRecord, GameSettings, Phase, Seat};
+use settler_island_game::{
+    replay, Action, Game, GameRecord, GameSettings, Phase, RecordEntry, Seat,
+};
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{
-    Config, GameId, GameStore, IdentityStore, MemoryIdentityStore, NewGame, PostgresStore,
-    SeatPlayer, StoreError, StoredAction, StoredGame, SNAPSHOT_INTERVAL,
+    wants_snapshot, Config, GameId, GameStore, IdentityStore, MemoryIdentityStore, NewGame,
+    PostgresStore, SeatPlayer, StoreError, StoredGame, SNAPSHOT_INTERVAL,
 };
 use sqlx::ConnectOptions;
 use tokio::runtime::Runtime;
@@ -58,10 +60,8 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
         let action = live.legal_actions(seat).pop().unwrap();
         let events = live.apply(seat, action.clone()).unwrap();
         record.push(seat, action.clone(), events.clone());
-        let snapshot = (index + 1)
-            .is_multiple_of(SNAPSHOT_INTERVAL)
-            .then(|| live.clone());
-        let stored = StoredAction {
+        let snapshot = wants_snapshot(index).then(|| live.clone());
+        let stored = RecordEntry {
             index,
             seat,
             action,
@@ -69,7 +69,7 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
         };
         store.append_action(id, stored, snapshot).await.unwrap();
     }
-    let duplicate = StoredAction {
+    let duplicate = RecordEntry {
         index: 3,
         seat: 0,
         action: Action::RollDice,
@@ -93,7 +93,7 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
 
     store.finish(id, 1).await.unwrap();
     assert!(store.load_running().await.unwrap().is_empty());
-    let late = StoredAction {
+    let late = RecordEntry {
         index: 2 * SNAPSHOT_INTERVAL + 9,
         seat: 0,
         action: Action::RollDice,
@@ -194,7 +194,7 @@ impl GameStore for RejectingStore {
     async fn append_action(
         &self,
         game: GameId,
-        _action: StoredAction,
+        _action: RecordEntry,
         _snapshot: Option<Game>,
     ) -> Result<(), StoreError> {
         Err(StoreError::UnknownGame(game))
@@ -335,13 +335,7 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
         points_to_win: POINTS_TO_WIN,
         seed: SEED,
     };
-    let mut replayed = Game::new(settings).unwrap();
-    let mut expected = GameRecord::new(&replayed);
-    for entry in &record.entries {
-        let events = replayed.apply(entry.seat, entry.action.clone()).unwrap();
-        expected.push(entry.seat, entry.action.clone(), events);
-    }
-    assert_eq!(record, expected);
+    let replayed = replay(Game::new(settings).unwrap(), &record.entries).unwrap();
     assert!(matches!(replayed.phase(), Phase::Finished { .. }));
 }
 

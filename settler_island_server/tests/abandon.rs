@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::{eventually, start_with, test_config, Client};
-use settler_island_game::{Game, GameSettings};
+use settler_island_game::{Game, GameSettings, RecordEntry};
 use settler_island_protocol::{
     ClientMessage, Difficulty, LobbyId, ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{
     Config, GameId, GameStore, MemoryIdentityStore, MemoryStore, NewGame, SeatPlayer, StoreError,
-    StoredAction, StoredGame,
+    StoredGame,
 };
 
 const ABANDON_AFTER: Duration = Duration::from_millis(400);
@@ -27,7 +27,7 @@ impl GameStore for SharedStore {
     async fn append_action(
         &self,
         game: GameId,
-        action: StoredAction,
+        action: RecordEntry,
         snapshot: Option<Game>,
     ) -> Result<(), StoreError> {
         self.0.append_action(game, action, snapshot).await

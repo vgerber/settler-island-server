@@ -40,8 +40,8 @@ pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
 pub use metrics::MetricsError;
 pub use postgres::PostgresStore;
 pub use store::{
-    GameId, GameStore, MemoryStore, NewGame, RebuildError, SeatPlayer, Snapshot, StoreError,
-    StoredAction, StoredGame, SNAPSHOT_INTERVAL,
+    wants_snapshot, GameId, GameStore, MemoryStore, NewGame, RebuildError, SeatPlayer, Snapshot,
+    StoreError, StoredGame, SNAPSHOT_INTERVAL,
 };
 
 use identity::Identity;

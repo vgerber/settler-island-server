@@ -1,16 +1,14 @@
 use std::time::Duration;
 
 use settler_island_bot::Difficulty;
-use settler_island_game::{Action, Event, Game, GameSettings, RecordSettings, Seat};
+use settler_island_game::{Action, Event, Game, GameSettings, RecordEntry, RecordSettings, Seat};
 use settler_island_protocol::{LobbyId, User, UserId, UserKind};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::types::Json;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::identity::{IdentityStore, IdentityStoreError};
-use crate::store::{
-    GameId, GameStore, NewGame, SeatPlayer, Snapshot, StoreError, StoredAction, StoredGame,
-};
+use crate::store::{GameId, GameStore, NewGame, SeatPlayer, Snapshot, StoreError, StoredGame};
 
 const MAX_CONNECTIONS: u32 = 8;
 
@@ -166,7 +164,7 @@ impl PostgresStore {
             .collect()
     }
 
-    async fn load_actions(&self, game: i64) -> Result<Vec<StoredAction>, StoreError> {
+    async fn load_actions(&self, game: i64) -> Result<Vec<RecordEntry>, StoreError> {
         let rows = sqlx::query!(
             r#"SELECT index, seat, action AS "action: Json<Action>", events AS "events: Json<Vec<Event>>"
                FROM game_actions WHERE game = $1 ORDER BY index"#,
@@ -176,7 +174,7 @@ impl PostgresStore {
         .await?;
         rows.into_iter()
             .map(|row| {
-                Ok(StoredAction {
+                Ok(RecordEntry {
                     index: u32::try_from(row.index).map_err(|_| corrupt(game, "action index"))?,
                     seat: Seat::try_from(row.seat).map_err(|_| corrupt(game, "seat"))?,
                     action: row.action.0,
@@ -230,7 +228,7 @@ impl GameStore for PostgresStore {
     async fn append_action(
         &self,
         game: GameId,
-        action: StoredAction,
+        action: RecordEntry,
         snapshot: Option<Game>,
     ) -> Result<(), StoreError> {
         let id = database_id(game)?;

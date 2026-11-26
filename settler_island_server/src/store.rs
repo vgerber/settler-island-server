@@ -4,11 +4,18 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use settler_island_bot::Difficulty;
-use settler_island_game::{Action, Event, Game, GameError, GameRecord, GameSettings, Seat};
+use settler_island_game::{
+    replay, Game, GameError, GameRecord, GameSettings, RecordEntry, ReplayError, Seat,
+};
 use settler_island_protocol::{LobbyId, User};
 
 /// A snapshot every this many actions bounds the replay work of a restart.
 pub const SNAPSHOT_INTERVAL: u32 = 50;
+
+/// Whether the state after the action at `index` is stored as a snapshot.
+pub fn wants_snapshot(index: u32) -> bool {
+    (index + 1).is_multiple_of(SNAPSHOT_INTERVAL)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GameId(pub u64);
@@ -30,14 +37,6 @@ pub struct NewGame {
     pub bot_difficulty: Difficulty,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredAction {
-    pub index: u32,
-    pub seat: Seat,
-    pub action: Action,
-    pub events: Vec<Event>,
-}
-
 /// The game state after the first `actions` actions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
@@ -50,7 +49,7 @@ pub struct StoredGame {
     pub id: GameId,
     pub game: NewGame,
     /// Every action so far, in order.
-    pub actions: Vec<StoredAction>,
+    pub actions: Vec<RecordEntry>,
     /// The latest snapshot, if any.
     pub snapshot: Option<Snapshot>,
     /// How long no human has been connected; `None` while one is.
@@ -61,8 +60,8 @@ pub struct StoredGame {
 pub enum RebuildError {
     #[error(transparent)]
     Game(#[from] GameError),
-    #[error("replaying action {0} produced other events than stored")]
-    Diverged(u32),
+    #[error(transparent)]
+    Replay(#[from] ReplayError),
     #[error("the snapshot covers {snapshot} actions but only {stored} are stored")]
     SnapshotBeyondLog { snapshot: u32, stored: u32 },
 }
@@ -73,7 +72,7 @@ impl StoredGame {
         let initial = Game::new(self.game.settings.clone())?;
         // The record starts from the empty board, not the snapshot's.
         let mut record = GameRecord::new(&initial);
-        let (mut game, replay_from) = match &self.snapshot {
+        let (game, replay_from) = match &self.snapshot {
             Some(snapshot) => (snapshot.state.clone(), snapshot.actions),
             None => (initial, 0),
         };
@@ -84,14 +83,9 @@ impl StoredGame {
                 stored,
             });
         }
-        for stored in &self.actions {
-            if stored.index >= replay_from {
-                let events = game.apply(stored.seat, stored.action.clone())?;
-                if events != stored.events {
-                    return Err(RebuildError::Diverged(stored.index));
-                }
-            }
-            record.push(stored.seat, stored.action.clone(), stored.events.clone());
+        let game = replay(game, &self.actions[replay_from as usize..])?;
+        for entry in &self.actions {
+            record.push_entry(entry.clone());
         }
         Ok((game, record))
     }
@@ -124,7 +118,7 @@ pub trait GameStore: Send + Sync + 'static {
     fn append_action(
         &self,
         game: GameId,
-        action: StoredAction,
+        action: RecordEntry,
         snapshot: Option<Game>,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
@@ -204,7 +198,7 @@ impl GameStore for MemoryStore {
     async fn append_action(
         &self,
         game: GameId,
-        action: StoredAction,
+        action: RecordEntry,
         snapshot: Option<Game>,
     ) -> Result<(), StoreError> {
         self.with_state(|state| {
@@ -268,6 +262,7 @@ impl GameStore for MemoryStore {
 
 #[cfg(test)]
 mod tests {
+    use settler_island_game::Action;
     use settler_island_protocol::{UserId, UserKind};
 
     use super::*;
@@ -294,8 +289,8 @@ mod tests {
         }
     }
 
-    fn action(index: u32) -> StoredAction {
-        StoredAction {
+    fn action(index: u32) -> RecordEntry {
+        RecordEntry {
             index,
             seat: 0,
             action: Action::RollDice,
@@ -362,10 +357,8 @@ mod tests {
             let action = live.legal_actions(seat).pop().unwrap();
             let events = live.apply(seat, action.clone()).unwrap();
             record.push(seat, action.clone(), events.clone());
-            let snapshot = (index + 1)
-                .is_multiple_of(SNAPSHOT_INTERVAL)
-                .then(|| live.clone());
-            let stored = StoredAction {
+            let snapshot = wants_snapshot(index).then(|| live.clone());
+            let stored = RecordEntry {
                 index,
                 seat,
                 action,

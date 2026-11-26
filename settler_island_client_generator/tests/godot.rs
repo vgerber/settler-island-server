@@ -458,7 +458,11 @@ fn fixtures() -> Value {
         .iter()
         .map(|entry| (entry.seat, entry.action.clone()))
         .collect();
-    let middle = replay(settings, &actions[..actions.len() / 2]).unwrap();
+    let middle = replay(
+        Game::new(settings).unwrap(),
+        &outcome.record.entries[..actions.len() / 2],
+    )
+    .unwrap();
     let seat = middle.pending_seats()[0];
     let owner = user("u1", "Ada");
 
@@ -757,7 +761,11 @@ fn board_fixtures() -> Value {
         .iter()
         .rposition(|(_, action)| matches!(action, Action::MoveRobber { .. }))
         .unwrap();
-    let middle = replay(settings, &actions[..last_robber_move]).unwrap();
+    let middle = replay(
+        Game::new(settings).unwrap(),
+        &outcome.record.entries[..last_robber_move],
+    )
+    .unwrap();
     json!({
         "setup": game_started(&setup, setup.pending_seats()[0]),
         "middle": game_started(&middle, actions[last_robber_move].0),

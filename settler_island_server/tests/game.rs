@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use common::{play_as, start, test_config, Client, Play};
 use settler_island_bot::create_bot;
-use settler_island_game::{replay, Action, GameSettings, Phase, PlayerView, Seat};
+use settler_island_game::{
+    replay, Action, Game, GameSettings, Phase, PlayerView, RecordEntry, Seat,
+};
 use settler_island_protocol::{ClientMessage, Difficulty, ServerMessage};
 use settler_island_server::Config;
 
@@ -18,7 +20,7 @@ const MAX_UPDATES_PER_ATTEMPT: u32 = 1500;
 struct Finished {
     seat: Seat,
     view: PlayerView,
-    actions: Vec<(Seat, Action)>,
+    actions: Vec<RecordEntry>,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -50,7 +52,8 @@ async fn one_human_and_three_bots_play_a_seeded_game_to_a_win() {
         points_to_win: POINTS_TO_WIN,
         seed: SEED,
     };
-    let replayed = replay(settings, &finished.actions).expect("the record replays");
+    let replayed =
+        replay(Game::new(settings).unwrap(), &finished.actions).expect("the record replays");
     assert_eq!(replayed.phase(), &Phase::Finished { winner });
     // The human's view hides other seats' victory point cards, so check the winner's own total.
     let winner_view = replayed.view(Some(winner));
@@ -83,18 +86,14 @@ async fn play_once(address: std::net::SocketAddr, attempt: u64) -> Option<Finish
     None
 }
 
-async fn full_record(client: &mut Client) -> Vec<(Seat, Action)> {
+async fn full_record(client: &mut Client) -> Vec<RecordEntry> {
     let reply = client
         .request(|request_id| ClientMessage::GetRecord { request_id })
         .await;
     let ServerMessage::Record { record, .. } = reply else {
         panic!("expected Record, got {reply:?}");
     };
-    record
-        .entries
-        .into_iter()
-        .map(|entry| (entry.seat, entry.action))
-        .collect()
+    record.entries
 }
 
 /// How long the human leaves a bot's offer unanswered before checking that it is still open.

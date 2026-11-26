@@ -22,7 +22,7 @@ pub use game::{
     MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
 };
 pub use phase::Phase;
-pub use record::{replay, GameRecord, RecordEntry, RecordHeader, RecordSettings};
+pub use record::{replay, GameRecord, RecordEntry, RecordHeader, RecordSettings, ReplayError};
 pub use resource::{Resource, ResourceCounts};
 pub use rules::production::CITY_PRODUCTION_FACTOR;
 pub use rules::purchase::Purchase;
