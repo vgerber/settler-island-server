@@ -25,6 +25,8 @@ jsonwebtoken = "9.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "migrate", "json", "macros"] }
 prometheus = { version = "0.14", default-features = false }
+hyper-util = { version = "0.1.10", features = ["server-auto", "server-graceful", "service", "tokio"] }
+tower-http = { version = "0.6", features = ["timeout", "limit"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
