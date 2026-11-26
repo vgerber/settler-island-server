@@ -3,26 +3,7 @@ extends RefCounted
 ## Draws one frame of the board onto its `Board` control; all sizes are in hex units scaled by
 ## `Board.hex_size`, so the drawing follows the fitted rect. Look: doc/design/visual-style.md section 3.
 
-const SEA := Color("#2A6672")
-const WAVE := Color("#357A86")
-const SHOAL := Color("#3E8790")
-const SAND := Color("#D9C48F")
-const OUTLINE := Palette.OUTLINE
-const KEYLINE := Palette.KEYLINE
-const CHIP := Palette.CARD_STOCK
-const CHIP_TEXT := Palette.INK
-const HOT_NUMBER := Palette.HOT_NUMBER
-const CHIP_RIM := Color("#7A5E3A")
-const PIER := Color("#7B5634")
-const PIER_TIE := Color("#5C3F26")
-const TARGET := Color("#F3C54A")
-const TARGET_HALO := Color("#231C17", 0.45)
-const ROBBER := Color("#3A3036")
-const LANTERN := Color("#E8A93A")
-const SHADOW := Color(0.0, 0.0, 0.0, 0.28)
 const SHADOW_OFFSET := Vector2(0.015, 0.025)
-const PINE_LIGHT := Color("#4F8457")
-const DESERT_ROCK := Color("#B9A777")
 ## Wave marks sit on a fixed grid in hex units, so every frame and screenshot draws the same sea.
 const WAVE_SPACING := 0.9
 const WAVE_CLEARANCE := 1.25
@@ -41,26 +22,14 @@ func _init(board_control: Board, board: SiBoard, geometry: BoardGeometry) -> voi
 	_geometry = geometry
 
 
-static func seat_color(seat: int) -> Color:
-	return Palette.seat_color(seat)
-
-
-static func seat_outline(seat: int) -> Color:
-	return Palette.seat_outline(seat)
-
-
-static func seat_keyline(seat: int) -> Color:
-	return Palette.seat_keyline(seat)
-
-
 func draw_sea() -> void:
-	_board_control.draw_rect(Rect2(Vector2.ZERO, _board_control.size), SEA)
+	_board_control.draw_rect(Rect2(Vector2.ZERO, _board_control.size), Palette.SEA)
 	_draw_wave_marks()
 	# Shoal then sand behind the tiles: a shallow rim, a beach, and thin grout between tiles.
 	for tile in _board.tiles:
-		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.18), SHOAL)
+		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.18), Palette.SHOAL)
 	for tile in _board.tiles:
-		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.05), SAND)
+		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.05), Palette.SAND)
 
 
 func draw_tiles() -> void:
@@ -99,7 +68,7 @@ func draw_robber() -> void:
 	var center := _geometry.tile_centers[_board.robber]
 	# Beside the number chip, so the chip stays readable.
 	var spot := center if tile.number == null else center + Vector2(-0.5, 0.05)
-	_ellipse(spot + Vector2(0.0, 0.22), Vector2(0.2, 0.06), Color(0.0, 0.0, 0.0, 0.3))
+	_ellipse(spot + Vector2(0.0, 0.22), Vector2(0.2, 0.06), Palette.SHADOW_SOFT)
 	var cloak := _offset(spot, [
 		Vector2(-0.17, 0.22), Vector2(-0.15, 0.12), Vector2(-0.12, 0.02), Vector2(-0.11, -0.04),
 		Vector2(-0.07, -0.07), Vector2(0.07, -0.07), Vector2(0.11, -0.04), Vector2(0.12, 0.02),
@@ -107,13 +76,13 @@ func draw_robber() -> void:
 	])
 	var hood_center := spot + Vector2(0.0, -0.12)
 	var hood := _hood(hood_center)
-	_fill(_grown(cloak, 0.035), KEYLINE)
-	_fill(_grown(hood, 0.035), KEYLINE)
-	_fill(cloak, ROBBER)
-	_fill(hood, ROBBER)
-	_line(spot + Vector2(0.0, -0.03), spot + Vector2(0.03, 0.2), 0.015, ROBBER.lightened(0.18))
-	_ellipse(hood_center + Vector2(0.015, 0.015), Vector2(0.05, 0.055), ROBBER.darkened(0.5))
-	_circle(hood_center + Vector2(0.03, 0.025), 0.025, LANTERN)
+	_fill(_grown(cloak, 0.035), Palette.KEYLINE)
+	_fill(_grown(hood, 0.035), Palette.KEYLINE)
+	_fill(cloak, Palette.ROBBER)
+	_fill(hood, Palette.ROBBER)
+	_line(spot + Vector2(0.0, -0.03), spot + Vector2(0.03, 0.2), 0.015, Palette.ROBBER.lightened(0.18))
+	_ellipse(hood_center + Vector2(0.015, 0.015), Vector2(0.05, 0.055), Palette.ROBBER.darkened(0.5))
+	_circle(hood_center + Vector2(0.03, 0.025), 0.025, Palette.FOCUS_ON_DARK)
 
 
 ## A round hood drawn up to a point at the back, so the figure reads as cloaked rather than as a pawn.
@@ -158,8 +127,8 @@ func _near_tile(spot: Vector2, distance: float) -> bool:
 func _draw_wave_mark(spot: Vector2) -> void:
 	var radius := _pixels(0.12)
 	var width := _pixels(0.02)
-	_board_control.draw_arc(_to_pixels(spot + Vector2(-0.12, 0.0)), radius, PI + 0.5, TAU - 0.5, 10, WAVE, width, true)
-	_board_control.draw_arc(_to_pixels(spot + Vector2(0.12, 0.0)), radius, 0.5, PI - 0.5, 10, WAVE, width, true)
+	_board_control.draw_arc(_to_pixels(spot + Vector2(-0.12, 0.0)), radius, PI + 0.5, TAU - 0.5, 10, Palette.WAVE, width, true)
+	_board_control.draw_arc(_to_pixels(spot + Vector2(0.12, 0.0)), radius, 0.5, PI - 0.5, 10, Palette.WAVE, width, true)
 
 
 func _draw_tile(tile_index: int) -> void:
@@ -212,7 +181,7 @@ func _draw_conifers(band: Vector2) -> void:
 			var left := base + Vector2(-tier.y, tier.x)
 			var apex := base + Vector2(0.0, tier.x - 0.15)
 			_fill(PackedVector2Array([left, apex, base + Vector2(tier.y, tier.x)]), dark)
-			_line(left, apex, 0.03, PINE_LIGHT)
+			_line(left, apex, 0.03, Palette.PINE_LIGHT)
 
 
 func _draw_pasture(band: Vector2, upper: bool) -> void:
@@ -266,7 +235,7 @@ func _draw_peaks(band: Vector2) -> void:
 		var left := base + Vector2(-0.16, 0.0)
 		var right := base + Vector2(0.16, 0.0)
 		_fill(PackedVector2Array([left, apex, right]), rock)
-		_fill(PackedVector2Array([apex.lerp(left, 0.34), apex, apex.lerp(right, 0.34)]), Color("#DCE0E5"))
+		_fill(PackedVector2Array([apex.lerp(left, 0.34), apex, apex.lerp(right, 0.34)]), Palette.PEAK_SNOW)
 		_line(apex, base + Vector2(0.03, 0.0), 0.02, rock.darkened(0.35))
 
 
@@ -275,20 +244,20 @@ func _draw_dunes(band: Vector2, upper: bool) -> void:
 		_board_control.draw_arc(_to_pixels(band + Vector2(offset, 0.1)), _pixels(0.14), PI + 0.5, TAU - 0.5, 12,
 				Palette.DESERT_PATTERN, _pixels(0.03), true)
 	var rock_spot := band + (Vector2(0.3, 0.06) if upper else Vector2(-0.3, 0.02))
-	_ellipse(rock_spot, Vector2(0.045, 0.028), DESERT_ROCK)
+	_ellipse(rock_spot, Vector2(0.045, 0.028), Palette.DESERT_ROCK)
 
 
 func _draw_chip(center: Vector2, number: int) -> void:
 	var hot := number == 6 or number == 8
-	var color := HOT_NUMBER if hot else CHIP_TEXT
+	var color := Palette.HOT_NUMBER if hot else Palette.INK
 	_shadow_circle(center, 0.3)
-	_circle(center, 0.3, CHIP)
-	_ring(center, 0.3 - 0.0125, CHIP_RIM, 0.025)
+	_circle(center, 0.3, Palette.CARD_STOCK)
+	_ring(center, 0.3 - 0.0125, Palette.CHIP_RIM, 0.025)
 	if hot:
 		# A second rim, so "hot" is not carried by colour alone.
-		_ring(center, 0.255, HOT_NUMBER, 0.018)
+		_ring(center, 0.255, Palette.HOT_NUMBER, 0.018)
 	else:
-		_ring(center, 0.25, Color(CHIP_RIM, 0.35), 0.01)
+		_ring(center, 0.25, Color(Palette.CHIP_RIM, 0.35), 0.01)
 	_text(center + Vector2(0.0, -0.04), str(number), 0.3 if hot else 0.26, color)
 	var pips := 6 - absi(7 - number)
 	var spacing := 0.065
@@ -303,14 +272,14 @@ func _draw_port(port: Dictionary) -> void:
 	for corner in corners:
 		_draw_pier(_geometry.corner_points[corner], marker)
 	_shadow_circle(marker, BoardGeometry.PORT_RADIUS)
-	_circle(marker, BoardGeometry.PORT_RADIUS, CHIP)
+	_circle(marker, BoardGeometry.PORT_RADIUS, Palette.CARD_STOCK)
 	var specific := port["port"] as SiPortSpecific
 	if specific == null:
-		_ring(marker, BoardGeometry.PORT_RADIUS - 0.015, CHIP_TEXT, 0.03)
-		_text(marker, "3:1", 0.2, CHIP_TEXT)
+		_ring(marker, BoardGeometry.PORT_RADIUS - 0.015, Palette.INK, 0.03)
+		_text(marker, "3:1", 0.2, Palette.INK)
 		return
 	_ring(marker, BoardGeometry.PORT_RADIUS - 0.03, Palette.resource_color(specific.value), 0.06)
-	_text(marker + Vector2(0.0, -0.09), "2:1", 0.16, CHIP_TEXT)
+	_text(marker + Vector2(0.0, -0.09), "2:1", 0.16, Palette.INK)
 	ResourceArt.draw_icon(_board_control, specific.value, _to_pixels(marker + Vector2(0.0, 0.09)), _pixels(0.2))
 
 
@@ -322,19 +291,19 @@ func _draw_pier(from: Vector2, to: Vector2) -> void:
 	var tie := 0.05
 	while tie < length:
 		var spot := from + direction * tie
-		_line(spot - side * 0.07, spot + side * 0.07, 0.03, PIER_TIE)
+		_line(spot - side * 0.07, spot + side * 0.07, 0.03, Palette.PIER_TIE)
 		tie += 0.1
 	for plank: float in [-0.0425, 0.0425]:
-		_line(from + side * plank, to + side * plank, 0.035, PIER)
+		_line(from + side * plank, to + side * plank, 0.035, Palette.PIER)
 
 
 ## A capsule from 0.16 to 0.84 of the edge: keyline, outline, fill and a lit upper edge.
 func _draw_road(from: Vector2, to: Vector2, seat: int, alpha: float) -> void:
 	var start := from.lerp(to, 0.16)
 	var end := to.lerp(from, 0.16)
-	var fill := seat_color(seat)
-	_capsule(start, end, 0.24, _faded(seat_keyline(seat), alpha))
-	_capsule(start, end, 0.19, _faded(seat_outline(seat), alpha))
+	var fill := Palette.seat_color(seat)
+	_capsule(start, end, 0.24, _faded(Palette.seat_keyline(seat), alpha))
+	_capsule(start, end, 0.19, _faded(Palette.seat_outline(seat), alpha))
 	_capsule(start, end, 0.12, _faded(fill, alpha))
 	var direction := (end - start).normalized()
 	var normal := Vector2(direction.y, -direction.x)
@@ -354,14 +323,14 @@ func _draw_settlement(center: Vector2, seat: int, alpha: float) -> void:
 	var house := _offset(center, [
 		Vector2(-0.15, 0.13), Vector2(-0.15, -0.04), Vector2(0.0, -0.18), Vector2(0.15, -0.04), Vector2(0.15, 0.13),
 	])
-	var fill := seat_color(seat)
-	_fill(_grown(house, 0.035), _faded(seat_keyline(seat), alpha))
+	var fill := Palette.seat_color(seat)
+	_fill(_grown(house, 0.035), _faded(Palette.seat_keyline(seat), alpha))
 	_fill(house, _faded(fill, alpha))
 	_fill(_offset(center, [Vector2(-0.15, -0.04), Vector2(0.0, -0.18), Vector2(0.15, -0.04)]),
 			_faded(fill.lightened(0.18), alpha))
 	_fill(_offset(center, [Vector2(-0.025, 0.13), Vector2(-0.025, 0.05), Vector2(0.025, 0.05), Vector2(0.025, 0.13)]),
 			_faded(fill.darkened(0.35), alpha))
-	_outline(house, _faded(seat_outline(seat), alpha))
+	_outline(house, _faded(Palette.seat_outline(seat), alpha))
 
 
 ## Twice the footprint of a settlement, with a tower, so the two read apart at a glance.
@@ -370,9 +339,9 @@ func _draw_city(center: Vector2, seat: int, alpha: float) -> void:
 		Vector2(-0.27, 0.17), Vector2(-0.27, -0.12), Vector2(-0.135, -0.27), Vector2(0.0, -0.12),
 		Vector2(0.0, -0.02), Vector2(0.27, -0.02), Vector2(0.27, 0.17),
 	])
-	var fill := seat_color(seat)
+	var fill := Palette.seat_color(seat)
 	var shade := _faded(fill.darkened(0.35), alpha)
-	_fill(_grown(city, 0.035), _faded(seat_keyline(seat), alpha))
+	_fill(_grown(city, 0.035), _faded(Palette.seat_keyline(seat), alpha))
 	_fill(city, _faded(fill, alpha))
 	_fill(_offset(center, [Vector2(-0.27, -0.12), Vector2(-0.135, -0.27), Vector2(0.0, -0.12)]),
 			_faded(fill.lightened(0.18), alpha))
@@ -381,7 +350,7 @@ func _draw_city(center: Vector2, seat: int, alpha: float) -> void:
 		var spot := center + window
 		_fill(_offset(spot, [Vector2(-0.02, -0.02), Vector2(0.02, -0.02), Vector2(0.02, 0.02), Vector2(-0.02, 0.02)]),
 				shade)
-	_outline(city, _faded(seat_outline(seat), alpha))
+	_outline(city, _faded(Palette.seat_outline(seat), alpha))
 
 
 func _draw_target(target: Dictionary, hovered: bool, seat: int, pulse: float) -> void:
@@ -397,16 +366,16 @@ func _draw_target(target: Dictionary, hovered: bool, seat: int, pulse: float) ->
 
 func _draw_corner_target(action: SiAction, point: Vector2, hovered: bool, seat: int, pulse: float) -> void:
 	if not hovered:
-		_ring(point, 0.13, TARGET_HALO, 0.07)
-		_circle(point, 0.13, Color(TARGET, 0.25 * pulse))
-		_ring(point, 0.13, Color(TARGET, pulse), 0.04)
+		_ring(point, 0.13, Palette.TARGET_HALO, 0.07)
+		_circle(point, 0.13, Color(Palette.TARGET, 0.25 * pulse))
+		_ring(point, 0.13, Color(Palette.TARGET, pulse), 0.04)
 		return
 	if action is SiActionBuildCity:
 		_draw_city(point, seat, 0.85)
 	else:
 		_draw_settlement(point, seat, 0.85)
-	_ring(point, 0.3, TARGET_HALO, 0.08)
-	_ring(point, 0.3, TARGET, 0.045)
+	_ring(point, 0.3, Palette.TARGET_HALO, 0.08)
+	_ring(point, 0.3, Palette.TARGET, 0.045)
 
 
 func _draw_edge_target(action: SiAction, hovered: bool, seat: int, pulse: float) -> void:
@@ -416,15 +385,15 @@ func _draw_edge_target(action: SiAction, hovered: bool, seat: int, pulse: float)
 	if hovered:
 		_draw_road(from, to, seat, 0.85)
 		return
-	_line(from.lerp(to, 0.22), to.lerp(from, 0.22), 0.12, TARGET_HALO)
+	_line(from.lerp(to, 0.22), to.lerp(from, 0.22), 0.12, Palette.TARGET_HALO)
 	for dash in 3:
 		var dash_start := 0.24 + dash * 0.2
-		_line(from.lerp(to, dash_start), from.lerp(to, dash_start + 0.12), 0.06, Color(TARGET, pulse))
+		_line(from.lerp(to, dash_start), from.lerp(to, dash_start + 0.12), 0.06, Color(Palette.TARGET, pulse))
 
 
 func _draw_tile_target(point: Vector2, hovered: bool, pulse: float) -> void:
-	_ring(point, 0.42, TARGET_HALO, 0.12 if hovered else 0.08)
-	_ring(point, 0.42, TARGET if hovered else Color(TARGET, pulse), 0.08 if hovered else 0.045)
+	_ring(point, 0.42, Palette.TARGET_HALO, 0.12 if hovered else 0.08)
+	_ring(point, 0.42, Palette.TARGET if hovered else Color(Palette.TARGET, pulse), 0.08 if hovered else 0.045)
 
 
 func _hexagon(coordinates: SiCubeCoordinates, scale: float) -> PackedVector2Array:
@@ -486,7 +455,7 @@ func _circle(center: Vector2, radius: float, color: Color) -> void:
 
 
 func _shadow_circle(center: Vector2, radius: float) -> void:
-	_circle(center + SHADOW_OFFSET, radius, SHADOW)
+	_circle(center + SHADOW_OFFSET, radius, Palette.SHADOW)
 
 
 func _ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
