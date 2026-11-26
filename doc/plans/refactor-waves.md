@@ -28,3 +28,6 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
   `HudText.seat_color`/`resource_color` wrappers.
 - 1a leftover (optional): back-off after a failed JWKS fetch while the realm is down.
 - 2k leftover: board_painter passes resource strings like "Wood" to Palette.resource_pattern_color; switch to SiResource constants (fold into ui-layout).
+- 2l (after 2b and 2c): the game crate exports the discard limit (robber.rs DISCARD_ABOVE), the largest army minimum,
+  the city production factor and `Board::is_settlement_site`; the bot drops SAFE_HAND, LARGEST_ARMY_MIN, is_free_site
+  and its factor 2 and uses them; the server drops its own `bot_seed` for the bot crate's (2e).
