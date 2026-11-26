@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jsonwebtoken::jwk::{JwkSet, PublicKeyUse};
@@ -23,16 +23,27 @@ pub(crate) struct AccountClaims {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AccountTokenError {
+    #[error("the account token names no key id")]
+    MissingKeyId,
+    #[error("the realm has no key with id {0}")]
+    UnknownKeyId(String),
     #[error("the account token is invalid: {0}")]
-    Invalid(String),
+    Rejected(#[from] jsonwebtoken::errors::Error),
     #[error("fetching the realm keys failed: {0}")]
-    KeysUnavailable(#[from] reqwest::Error),
+    KeysUnavailable(Arc<reqwest::Error>),
 }
 
 #[derive(Default)]
 struct KeyCache {
     keys: HashMap<String, DecodingKey>,
+    /// Set only by a successful fetch, so a failed one never blocks the next attempt.
     last_fetch: Option<Instant>,
+}
+
+/// Held by the refresh lock, so requests that waited on a failing fetch get its error instead of fetching again.
+#[derive(Default)]
+struct RefreshState {
+    last_failure: Option<(Instant, Arc<reqwest::Error>)>,
 }
 
 /// Checks RS256 access tokens against the realm's JWKS, issuer, audience and expiry.
@@ -42,6 +53,8 @@ pub(crate) struct KeycloakVerifier {
     http: reqwest::Client,
     // A plain mutex: it is never held across an await.
     cache: Mutex<KeyCache>,
+    // Serialises fetches, so concurrent misses wait for one fetch instead of each starting their own.
+    refresh: tokio::sync::Mutex<RefreshState>,
 }
 
 impl KeycloakVerifier {
@@ -55,53 +68,65 @@ impl KeycloakVerifier {
             validation,
             http: reqwest::Client::new(),
             cache: Mutex::new(KeyCache::default()),
+            refresh: tokio::sync::Mutex::new(RefreshState::default()),
         }
     }
 
     pub(crate) async fn verify(&self, token: &str) -> Result<AccountClaims, AccountTokenError> {
-        let header = decode_header(token).map_err(invalid)?;
-        let kid = header
-            .kid
-            .ok_or_else(|| AccountTokenError::Invalid("no kid".to_string()))?;
-        let key = self
-            .key(&kid)
-            .await?
-            .ok_or_else(|| AccountTokenError::Invalid(format!("unknown kid {kid}")))?;
-        let data = decode::<AccountClaims>(token, &key, &self.validation).map_err(invalid)?;
+        let header = decode_header(token)?;
+        let kid = header.kid.ok_or(AccountTokenError::MissingKeyId)?;
+        let key = self.key(&kid).await?;
+        let data = decode::<AccountClaims>(token, &key, &self.validation)?;
         Ok(data.claims)
     }
 
-    async fn key(&self, kid: &str) -> Result<Option<DecodingKey>, AccountTokenError> {
+    async fn key(&self, kid: &str) -> Result<DecodingKey, AccountTokenError> {
         if let Some(key) = self.cached(kid) {
-            return Ok(Some(key));
+            return Ok(key);
         }
-        if !self.claim_refresh() {
-            return Ok(None);
+        let waiting_since = Instant::now();
+        let mut refresh = self.refresh.lock().await;
+        if let Some(key) = self.cached(kid) {
+            return Ok(key);
         }
-        let keys = self.fetch().await?;
+        if let Some((failed_at, error)) = &refresh.last_failure {
+            if *failed_at >= waiting_since {
+                return Err(AccountTokenError::KeysUnavailable(error.clone()));
+            }
+        }
+        if self.fetched_recently() {
+            return Err(AccountTokenError::UnknownKeyId(kid.to_string()));
+        }
+        let keys = match self.fetch().await {
+            Ok(keys) => keys,
+            Err(error) => {
+                let error = Arc::new(error);
+                refresh.last_failure = Some((Instant::now(), error.clone()));
+                return Err(AccountTokenError::KeysUnavailable(error));
+            }
+        };
+        refresh.last_failure = None;
         let mut cache = self.lock();
         cache.keys = keys;
-        Ok(cache.keys.get(kid).cloned())
+        cache.last_fetch = Some(Instant::now());
+        cache
+            .keys
+            .get(kid)
+            .cloned()
+            .ok_or_else(|| AccountTokenError::UnknownKeyId(kid.to_string()))
     }
 
     fn cached(&self, kid: &str) -> Option<DecodingKey> {
         self.lock().keys.get(kid).cloned()
     }
 
-    /// Records a fetch attempt now unless the last one was too recent.
-    fn claim_refresh(&self) -> bool {
-        let mut cache = self.lock();
-        let now = Instant::now();
-        let recent = cache
+    fn fetched_recently(&self) -> bool {
+        self.lock()
             .last_fetch
-            .is_some_and(|last| now.duration_since(last) < MIN_REFRESH_INTERVAL);
-        if !recent {
-            cache.last_fetch = Some(now);
-        }
-        !recent
+            .is_some_and(|last| last.elapsed() < MIN_REFRESH_INTERVAL)
     }
 
-    async fn fetch(&self) -> Result<HashMap<String, DecodingKey>, AccountTokenError> {
+    async fn fetch(&self) -> Result<HashMap<String, DecodingKey>, reqwest::Error> {
         let set: JwkSet = self
             .http
             .get(&self.jwks_url)
@@ -136,8 +161,4 @@ impl KeycloakVerifier {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
-}
-
-fn invalid(error: jsonwebtoken::errors::Error) -> AccountTokenError {
-    AccountTokenError::Invalid(error.to_string())
 }

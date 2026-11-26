@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -40,8 +42,15 @@ struct Realm {
     jwks_requests: Arc<AtomicUsize>,
 }
 
+/// How the realm's JWKS endpoint misbehaves: the first `failures` requests answer 500, every answer takes `delay`.
+#[derive(Default, Clone, Copy)]
+struct RealmBehaviour {
+    failures: usize,
+    delay: Duration,
+}
+
 /// Serves the trusted key as the realm's JWKS on an ephemeral port.
-async fn start_realm() -> Realm {
+async fn start_realm(behaviour: RealmBehaviour) -> Realm {
     let public = KEYS[0].to_public_key();
     let jwks = json!({"keys": [
         {"kid": "encryption-key", "kty": "RSA", "use": "enc", "alg": "RSA-OAEP",
@@ -56,9 +65,15 @@ async fn start_realm() -> Realm {
     let app = Router::new().route(
         "/realms/test/protocol/openid-connect/certs",
         get(move || {
-            counter.fetch_add(1, Ordering::SeqCst);
+            let request = counter.fetch_add(1, Ordering::SeqCst);
             let jwks = jwks.clone();
-            async move { Json(jwks) }
+            async move {
+                tokio::time::sleep(behaviour.delay).await;
+                if request < behaviour.failures {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+                Json(jwks).into_response()
+            }
         }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -71,7 +86,11 @@ async fn start_realm() -> Realm {
 }
 
 async fn start_with_realm() -> (SocketAddr, Realm) {
-    let realm = start_realm().await;
+    start_with_misbehaving_realm(RealmBehaviour::default()).await
+}
+
+async fn start_with_misbehaving_realm(behaviour: RealmBehaviour) -> (SocketAddr, Realm) {
+    let realm = start_realm(behaviour).await;
     let config = Config {
         keycloak: Some(KeycloakConfig {
             issuer: realm.issuer.clone(),
@@ -196,6 +215,36 @@ async fn realm_keys_are_cached_and_unknown_key_ids_cannot_force_refetches() {
     assert_eq!(rejection(address, &unknown).await, ErrorCode::InvalidToken);
     Client::authenticated(address, &realm.token("sub-1", "kim")).await;
     assert_eq!(rejection(address, &unknown).await, ErrorCode::InvalidToken);
+
+    assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_key_fetch_is_a_server_error_and_the_next_request_fetches_again() {
+    let (address, realm) = start_with_misbehaving_realm(RealmBehaviour {
+        failures: 1,
+        ..RealmBehaviour::default()
+    })
+    .await;
+    let token = realm.token("sub-1", "kim");
+
+    assert_eq!(rejection(address, &token).await, ErrorCode::Internal);
+    Client::authenticated(address, &token).await;
+
+    assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_first_logins_share_one_key_fetch() {
+    let (address, realm) = start_with_misbehaving_realm(RealmBehaviour {
+        delay: Duration::from_millis(300),
+        ..RealmBehaviour::default()
+    })
+    .await;
+    let token = realm.token("sub-1", "kim");
+
+    let logins = (0..4).map(|_| Client::authenticated(address, &token));
+    futures_util::future::join_all(logins).await;
 
     assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 1);
 }

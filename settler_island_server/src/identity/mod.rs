@@ -92,7 +92,9 @@ impl<I: IdentityStore> Identity<I> {
     async fn account(&self, token: &str) -> Result<AccountClaims, ErrorCode> {
         let verifier = self.keycloak.as_ref().ok_or(ErrorCode::AccountsDisabled)?;
         verifier.verify(token).await.map_err(|error| match error {
-            AccountTokenError::Invalid(_) => {
+            AccountTokenError::MissingKeyId
+            | AccountTokenError::UnknownKeyId(_)
+            | AccountTokenError::Rejected(_) => {
                 debug!(%error, "account token rejected");
                 ErrorCode::InvalidToken
             }
