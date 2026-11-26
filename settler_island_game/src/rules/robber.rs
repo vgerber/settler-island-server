@@ -9,7 +9,7 @@ use rand::Rng;
 use crate::resource::{Resource, ResourceCounts};
 
 /// A seat with more cards than this discards half of them on a 7.
-const DISCARD_ABOVE: u32 = 7;
+pub const DISCARD_ABOVE_CARDS: u32 = 7;
 
 /// Moves the robber to another tile. With `then_steal` and a victim on the tile the turn goes to `Steal`;
 /// otherwise the steal is skipped and the turn continues in `Main`.
@@ -42,7 +42,8 @@ pub(crate) fn on_seven(game: &mut Game, _seat: Seat) -> Vec<Event> {
     let remaining: Vec<(Seat, u8)> = (0..game.settings.seats)
         .filter_map(|seat| {
             let total = game.player(seat).ok()?.hand.total();
-            (total > DISCARD_ABOVE).then(|| (seat, u8::try_from(total / 2).unwrap_or(u8::MAX)))
+            (total > DISCARD_ABOVE_CARDS)
+                .then(|| (seat, u8::try_from(total / 2).unwrap_or(u8::MAX)))
         })
         .collect();
     let phase = if remaining.is_empty() {

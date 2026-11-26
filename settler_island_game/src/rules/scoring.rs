@@ -4,7 +4,8 @@ use crate::game::{DevelopmentCard, Game, PlayerState, Seat};
 use crate::phase::Phase;
 
 const MIN_LONGEST_ROAD: u8 = 5;
-const MIN_LARGEST_ARMY: u8 = 3;
+/// Knights a player needs to hold the largest army.
+pub const MIN_LARGEST_ARMY: u8 = 3;
 const AWARD_POINTS: u8 = 2;
 
 /// Points everyone can see: buildings and awards, without hidden victory point cards.

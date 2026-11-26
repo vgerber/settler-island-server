@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
-use settler_island_game::{Board, BuildingKind, CornerId, EdgeId, PlayerView, Port, Seat, TileId};
+use settler_island_game::{
+    Board, BuildingKind, CornerId, EdgeId, PlayerView, Port, Seat, TileId, CITY_PRODUCTION_FACTOR,
+};
 
 /// Pips are summed across corners; one new resource is worth about a mid-sized number.
 const DIVERSITY_BONUS: f64 = 2.5;
@@ -60,7 +62,7 @@ pub(crate) fn seat_production(board: &Board, seat: Seat) -> Production {
             continue;
         };
         let factor = if building.kind == BuildingKind::City {
-            2
+            u32::from(CITY_PRODUCTION_FACTOR)
         } else {
             1
         };
@@ -101,18 +103,6 @@ fn port_value(port: Port, production: &Production, existing: &Production) -> f64
     }
 }
 
-/// Empty and no building on a neighbouring corner (the distance rule).
-pub(crate) fn is_free_site(board: &Board, corner: CornerId) -> bool {
-    let Some(location) = board.corner(corner) else {
-        return false;
-    };
-    board.building(corner).is_none()
-        && location
-            .neighbors
-            .iter()
-            .all(|neighbor| board.building(*neighbor).is_none())
-}
-
 fn in_network(board: &Board, seat: Seat, corner: CornerId) -> bool {
     let Some(location) = board.corner(corner) else {
         return false;
@@ -129,7 +119,7 @@ fn in_network(board: &Board, seat: Seat, corner: CornerId) -> bool {
 /// A free site touching an own road: a settlement can go there once it is paid.
 pub(crate) fn has_open_site(board: &Board, seat: Seat) -> bool {
     board.corner_ids().any(|corner| {
-        is_free_site(board, corner)
+        board.is_settlement_site(corner)
             && board.corner(corner).is_some_and(|location| {
                 location
                     .edges
@@ -178,7 +168,7 @@ fn reachable_sites(
     let mut sites = Vec::new();
     while let Some(corner) = queue.pop_front() {
         let here = distance[usize::from(corner.0)].unwrap_or(0);
-        if is_free_site(board, corner) {
+        if board.is_settlement_site(corner) {
             sites.push((corner, here));
         }
         let blocked = board

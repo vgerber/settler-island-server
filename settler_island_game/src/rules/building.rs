@@ -100,15 +100,11 @@ pub(crate) fn place_road(game: &mut Game, seat: Seat, edge: EdgeId) -> Event {
 
 /// The corner exists, is free and no neighbouring corner holds a building (distance rule).
 pub(crate) fn check_settlement_site(board: &Board, corner: CornerId) -> Result<(), GameError> {
-    let location = board.corner(corner).ok_or(GameError::InvalidLocation)?;
+    board.corner(corner).ok_or(GameError::InvalidLocation)?;
     if board.building(corner).is_some() {
         return Err(GameError::Occupied);
     }
-    if location
-        .neighbors
-        .iter()
-        .any(|neighbor| board.building(*neighbor).is_some())
-    {
+    if !board.is_settlement_site(corner) {
         return Err(GameError::TooClose);
     }
     Ok(())

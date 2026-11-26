@@ -3,6 +3,9 @@ use crate::event::Event;
 use crate::game::{Game, Seat};
 use crate::resource::{Resource, ResourceCounts};
 
+/// Cards a city yields per producing tile; a settlement yields one.
+pub const CITY_PRODUCTION_FACTOR: u8 = 2;
+
 /// Pays every tile showing `number` that does not hold the robber: 1 per settlement, 2 per city.
 pub(crate) fn produce(game: &mut Game, number: u8) -> Vec<Event> {
     let mut owed = vec![ResourceCounts::default(); game.players.len()];
@@ -53,7 +56,7 @@ fn add_building_yield(
     };
     let amount = match building.kind {
         BuildingKind::Settlement => 1,
-        BuildingKind::City => 2,
+        BuildingKind::City => CITY_PRODUCTION_FACTOR,
     };
     counts.set(resource, counts.get(resource) + amount);
 }

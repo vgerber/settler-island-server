@@ -3,7 +3,6 @@ use settler_island_game::{BuildingKind, PlayerView, Purchase, Resource, Resource
 use super::evaluation::has_open_site;
 
 /// A seven takes half of a hand above this size.
-pub(crate) const SAFE_HAND: u32 = 7;
 /// The goal's missing cards weigh more than those of the other builds when discarding.
 const GOAL_WEIGHT: u32 = 10;
 const OTHER_WEIGHT: u32 = 2;

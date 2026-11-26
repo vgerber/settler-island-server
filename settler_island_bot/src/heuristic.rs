@@ -3,6 +3,7 @@ mod hand;
 
 use settler_island_game::{
     Action, OwnView, Phase, PlayerView, Purchase, Resource, ResourceCounts, Seat,
+    DISCARD_ABOVE_CARDS, MIN_LARGEST_ARMY,
 };
 
 use crate::Bot;
@@ -14,7 +15,6 @@ use hand::{bank_trade_toward, goal, keep_score, missing, offer_toward};
 
 /// No trade partner this many points short of winning or closer.
 const LEADER_MARGIN: u8 = 2;
-const LARGEST_ARMY_MIN: u8 = 3;
 /// Monopoly only pays when the others hold enough cards.
 const MONOPOLY_MIN_CARDS: u32 = 5;
 
@@ -170,7 +170,7 @@ fn knight(view: &PlayerView, seat: Seat, legal: &[Action]) -> Option<Action> {
         .max()
         .unwrap_or(0);
     let takes_army =
-        view.largest_army != Some(seat) && mine >= LARGEST_ARMY_MIN && mine > others_best;
+        view.largest_army != Some(seat) && mine >= MIN_LARGEST_ARMY && mine > others_best;
     (takes_army || robber_blocks(&view.board, seat)).then_some(Action::PlayKnight)
 }
 
@@ -253,7 +253,7 @@ fn bank_trade(
     target: Purchase,
     legal: &[Action],
 ) -> Option<Action> {
-    let complete_only = hand.total() <= hand::SAFE_HAND;
+    let complete_only = hand.total() <= DISCARD_ABOVE_CARDS;
     let (give, receive) = bank_trade_toward(
         hand,
         &target.cost(),

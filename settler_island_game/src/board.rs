@@ -112,6 +112,18 @@ impl Board {
         self.buildings.get(usize::from(id.0)).copied().flatten()
     }
 
+    /// The corner exists, is empty and no neighbouring corner holds a building (the distance rule).
+    pub fn is_settlement_site(&self, id: CornerId) -> bool {
+        let Some(location) = self.corner(id) else {
+            return false;
+        };
+        self.building(id).is_none()
+            && location
+                .neighbors
+                .iter()
+                .all(|neighbor| self.building(*neighbor).is_none())
+    }
+
     pub fn road(&self, id: EdgeId) -> Option<Seat> {
         self.roads.get(usize::from(id.0)).copied().flatten()
     }
