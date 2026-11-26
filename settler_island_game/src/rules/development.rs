@@ -6,15 +6,14 @@ use crate::game::{DevelopmentCard, Game, PlayerState, Seat};
 use crate::phase::Phase;
 use crate::resource::{Resource, ResourceCounts};
 use crate::rules::building;
+use crate::rules::purchase::Purchase;
 
-/// Sheep, Wheat, Ore.
-const CARD_COST: ResourceCounts = ResourceCounts::new([0, 0, 1, 1, 1]);
 const FREE_ROADS: u8 = 2;
 
 pub(crate) fn buy(game: &mut Game, seat: Seat) -> Result<Vec<Event>, GameError> {
     check_buy(game, seat)?;
     let card = game.deck.pop().ok_or(GameError::NoCard)?;
-    let paid = game.pay_to_bank(seat, CARD_COST);
+    let paid = game.pay_to_bank(seat, Purchase::DevelopmentCard.cost());
     player_mut(game, seat)?.new_development_cards.push(card);
     Ok(vec![
         paid,
@@ -170,7 +169,11 @@ fn check_buy(game: &Game, seat: Seat) -> Result<(), GameError> {
     if game.deck.is_empty() {
         return Err(GameError::NoCard);
     }
-    if !game.player(seat)?.hand.contains(&CARD_COST) {
+    if !game
+        .player(seat)?
+        .hand
+        .contains(&Purchase::DevelopmentCard.cost())
+    {
         return Err(GameError::NotEnoughResources);
     }
     Ok(())
@@ -320,7 +323,7 @@ mod tests {
     fn the_whole_deck_can_be_bought_and_then_buying_fails() {
         let mut game = main_phase_game(3, 4);
         for _ in 0..25 {
-            give(&mut game, 0, CARD_COST);
+            give(&mut game, 0, Purchase::DevelopmentCard.cost());
             game.apply(0, Action::BuyDevelopmentCard).unwrap();
         }
         let count = |card| {
@@ -334,7 +337,7 @@ mod tests {
         assert_eq!(count(DevelopmentCard::VictoryPoint), 5);
         assert_eq!(count(DevelopmentCard::RoadBuilding), 2);
 
-        give(&mut game, 0, CARD_COST);
+        give(&mut game, 0, Purchase::DevelopmentCard.cost());
         let before = game.clone();
         assert_eq!(
             game.apply(0, Action::BuyDevelopmentCard),
@@ -347,7 +350,7 @@ mod tests {
     #[test]
     fn a_card_bought_this_turn_is_playable_from_the_next_turn() {
         let mut game = main_phase_game(3, 4);
-        give(&mut game, 0, CARD_COST);
+        give(&mut game, 0, Purchase::DevelopmentCard.cost());
         game.deck.push(DevelopmentCard::Knight);
         game.apply(0, Action::BuyDevelopmentCard).unwrap();
 

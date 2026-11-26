@@ -1,6 +1,7 @@
 pub(crate) mod building;
 pub(crate) mod development;
 pub(crate) mod production;
+pub(crate) mod purchase;
 pub(crate) mod robber;
 pub(crate) mod scoring;
 pub(crate) mod setup;

@@ -24,4 +24,5 @@ pub use game::{
 pub use phase::Phase;
 pub use record::{replay, GameRecord, RecordEntry, RecordHeader, RecordSettings};
 pub use resource::{Resource, ResourceCounts};
+pub use rules::purchase::Purchase;
 pub use view::{OwnView, PlayerView, PublicPlayerView};

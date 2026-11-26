@@ -5,13 +5,7 @@ use crate::event::Event;
 use crate::game::{Game, Seat};
 use crate::phase::Phase;
 use crate::resource::ResourceCounts;
-
-/// Clay, Wood.
-pub(crate) const ROAD_COST: ResourceCounts = ResourceCounts::new([1, 1, 0, 0, 0]);
-/// Clay, Wood, Sheep, Wheat.
-pub(crate) const SETTLEMENT_COST: ResourceCounts = ResourceCounts::new([1, 1, 1, 1, 0]);
-/// 2 Wheat, 3 Ore.
-pub(crate) const CITY_COST: ResourceCounts = ResourceCounts::new([0, 0, 0, 2, 3]);
+use crate::rules::purchase::Purchase;
 
 pub(crate) fn build_road(
     game: &mut Game,
@@ -19,7 +13,7 @@ pub(crate) fn build_road(
     edge: EdgeId,
 ) -> Result<Vec<Event>, GameError> {
     check_road(game, seat, edge)?;
-    let mut events = vec![game.pay_to_bank(seat, ROAD_COST)];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::Road.cost())];
     events.push(place_road(game, seat, edge));
     Ok(events)
 }
@@ -30,7 +24,7 @@ pub(crate) fn build_settlement(
     corner: CornerId,
 ) -> Result<Vec<Event>, GameError> {
     check_settlement(game, seat, corner)?;
-    let mut events = vec![game.pay_to_bank(seat, SETTLEMENT_COST)];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::Settlement.cost())];
     events.push(place_settlement(game, seat, corner));
     Ok(events)
 }
@@ -41,7 +35,7 @@ pub(crate) fn build_city(
     corner: CornerId,
 ) -> Result<Vec<Event>, GameError> {
     check_city(game, seat, corner)?;
-    let mut events = vec![game.pay_to_bank(seat, CITY_COST)];
+    let mut events = vec![game.pay_to_bank(seat, Purchase::City.cost())];
     game.board.set_building(
         corner,
         Building {
@@ -147,7 +141,7 @@ fn check_road(game: &Game, seat: Seat, edge: EdgeId) -> Result<(), GameError> {
     if player.roads_left == 0 {
         return Err(GameError::NoPiecesLeft);
     }
-    require_resources(&player.hand, &ROAD_COST)
+    require_resources(&player.hand, &Purchase::Road.cost())
 }
 
 /// A road may start at an own building, or at an own road unless an opponent's building sits on the corner.
@@ -185,7 +179,7 @@ fn check_settlement(game: &Game, seat: Seat, corner: CornerId) -> Result<(), Gam
     if player.settlements_left == 0 {
         return Err(GameError::NoPiecesLeft);
     }
-    require_resources(&player.hand, &SETTLEMENT_COST)
+    require_resources(&player.hand, &Purchase::Settlement.cost())
 }
 
 fn check_city(game: &Game, seat: Seat, corner: CornerId) -> Result<(), GameError> {
@@ -201,7 +195,7 @@ fn check_city(game: &Game, seat: Seat, corner: CornerId) -> Result<(), GameError
     if player.cities_left == 0 {
         return Err(GameError::NoPiecesLeft);
     }
-    require_resources(&player.hand, &CITY_COST)
+    require_resources(&player.hand, &Purchase::City.cost())
 }
 
 fn require_resources(hand: &ResourceCounts, cost: &ResourceCounts) -> Result<(), GameError> {
@@ -250,7 +244,7 @@ mod tests {
         let opponent = (seat + 1) % 4;
         let (start, middle, far) = path(&game);
         put_road(&mut game, seat, start, middle);
-        give(&mut game, seat, ROAD_COST);
+        give(&mut game, seat, Purchase::Road.cost());
         let beyond = edge_between(&game, middle, far);
 
         let mut ending_at_opponent = game.clone();
@@ -273,7 +267,7 @@ mod tests {
         let mut game = main_phase_game(3, 8);
         let seat = game.current;
         let (start, middle, _) = path(&game);
-        give(&mut game, seat, ROAD_COST);
+        give(&mut game, seat, Purchase::Road.cost());
 
         assert_eq!(
             game.apply(
@@ -291,7 +285,7 @@ mod tests {
         let mut game = main_phase_game(4, 21);
         let seat = game.current;
         let (start, middle, far) = path(&game);
-        give(&mut game, seat, SETTLEMENT_COST);
+        give(&mut game, seat, Purchase::Settlement.cost());
 
         assert_eq!(
             game.clone()
@@ -334,7 +328,14 @@ mod tests {
             .edge_ids()
             .find(|edge| check_road(&game, seat, *edge) == Err(GameError::NotEnoughResources))
             .unwrap();
-        give(&mut game, seat, ROAD_COST.checked_add(&CITY_COST).unwrap());
+        give(
+            &mut game,
+            seat,
+            Purchase::Road
+                .cost()
+                .checked_add(&Purchase::City.cost())
+                .unwrap(),
+        );
         game.players[usize::from(seat)].roads_left = 0;
         game.players[usize::from(seat)].cities_left = 0;
 
@@ -369,7 +370,7 @@ mod tests {
         };
         let own = settlements(&game, seat)[0];
         let foreign = settlements(&game, (seat + 1) % 3)[0];
-        give(&mut game, seat, CITY_COST);
+        give(&mut game, seat, Purchase::City.cost());
         let settlements_left = game.players[usize::from(seat)].settlements_left;
 
         assert_eq!(
@@ -416,7 +417,7 @@ mod tests {
                     .is_some_and(|building| building.seat == seat)
             })
             .unwrap();
-        give(&mut game, seat, CITY_COST);
+        give(&mut game, seat, Purchase::City.cost());
 
         let events = game.apply(seat, Action::BuildCity { corner: own }).unwrap();
 
@@ -438,7 +439,7 @@ mod tests {
         let mut game = main_phase_game(4, 9);
         let seat = game.current;
         let (start, middle, _) = path(&game);
-        give(&mut game, seat, SETTLEMENT_COST);
+        give(&mut game, seat, Purchase::Settlement.cost());
         let before = game.clone();
 
         assert_eq!(
