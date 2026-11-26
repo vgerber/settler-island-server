@@ -18,3 +18,12 @@ Source: `doc/reviews/summary.md` section 3 (task ids 1a-3f), details per finding
 Each task's "Done when" from the summary; the lead gates every merge with `tools/check.sh` and the wave end with
 `tools/check.sh db` plus the mouse-only UI playtest.
 - 1f: add SQLX_OFFLINE=true as a tracked cargo [env] in .cargo/config.toml (gap left by 1e: a clone without .env).
+
+## Follow-ups noted while merging wave 1
+- 2i: switch `join` callers (lobby.rs, identity.rs, abandon.rs, connection.rs tests) to `Client::try_join`, delete the
+  old `join`; replace sleeps and metrics' `wait_for` with `eventually`.
+- 2c: remove `#[expect(dead_code)]` from `Game::require_main_turn` once it is used.
+- 2b: `pay_to_bank` returns whether anything was paid so `ResourcesPaid` is not emitted for nothing.
+- ui-layout: switch hud_discard_dialog/resource_picker/trade_builder/hud_ui to `Palette` and delete the
+  `HudText.seat_color`/`resource_color` wrappers.
+- 1a leftover (optional): back-off after a failed JWKS fetch while the realm is down.
