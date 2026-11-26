@@ -5,12 +5,21 @@ use settler_island_game::{Action, Event, Game, GameSettings, RecordEntry, Record
 use settler_island_protocol::{LobbyId, User, UserId, UserKind};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::types::Json;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{ConnectOptions, Connection, PgPool, Postgres, Transaction};
 
 use crate::identity::{IdentityStore, IdentityStoreError};
 use crate::store::{GameId, GameStore, NewGame, SeatPlayer, Snapshot, StoreError, StoredGame};
 
-const MAX_CONNECTIONS: u32 = 8;
+/// A query running longer than this is cancelled by the database, so a stalled one errors instead of holding a
+/// lobby task (and its pooled connection) indefinitely.
+const STATEMENT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How the connection pool is sized and how long a caller waits for a connection.
+#[derive(Debug, Clone, Copy)]
+pub struct PoolSettings {
+    pub max_connections: u32,
+    pub acquire_timeout: Duration,
+}
 
 /// Games and identity links in Postgres; cheap to clone (the pool is shared).
 #[derive(Debug, Clone)]
@@ -20,12 +29,20 @@ pub struct PostgresStore {
 
 impl PostgresStore {
     /// Connects and applies pending migrations.
-    pub async fn connect(options: PgConnectOptions) -> Result<PostgresStore, StoreError> {
+    pub async fn connect(
+        options: PgConnectOptions,
+        settings: PoolSettings,
+    ) -> Result<PostgresStore, StoreError> {
+        // Migrations may legitimately outlast the statement timeout, so they run on a connection without it.
+        let mut connection = options.connect().await?;
+        sqlx::migrate!().run(&mut connection).await?;
+        connection.close().await?;
+        let timeout = STATEMENT_TIMEOUT.as_millis().to_string();
         let pool = PgPoolOptions::new()
-            .max_connections(MAX_CONNECTIONS)
-            .connect_with(options)
+            .max_connections(settings.max_connections)
+            .acquire_timeout(settings.acquire_timeout)
+            .connect_with(options.options([("statement_timeout", timeout.as_str())]))
             .await?;
-        sqlx::migrate!().run(&pool).await?;
         Ok(PostgresStore { pool })
     }
 

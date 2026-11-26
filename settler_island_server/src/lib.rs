@@ -42,7 +42,7 @@ pub use config::{
 };
 pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
 pub use metrics::MetricsError;
-pub use postgres::PostgresStore;
+pub use postgres::{PoolSettings, PostgresStore};
 pub use store::{
     wants_snapshot, GameId, GameStore, MemoryStore, NewGame, RebuildError, SeatPlayer, Snapshot,
     StoreError, StoredGame, SNAPSHOT_INTERVAL,

@@ -1,6 +1,6 @@
 use settler_island_server::{
-    serve, Config, LogFormat, MemoryIdentityStore, MemoryStore, PostgresStore, ServeError,
-    StoreError,
+    serve, Config, LogFormat, MemoryIdentityStore, MemoryStore, PoolSettings, PostgresStore,
+    ServeError, StoreError,
 };
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
@@ -54,7 +54,11 @@ async fn run(config: Config) -> Result<(), StartError> {
     info!(address = %listener.local_addr()?, "listening");
     match config.database_url.clone() {
         Some(url) => {
-            let store = PostgresStore::connect(url.options()).await?;
+            let pool_settings = PoolSettings {
+                max_connections: config.db_max_connections,
+                acquire_timeout: config.db_acquire_timeout,
+            };
+            let store = PostgresStore::connect(url.options(), pool_settings).await?;
             info!("games are stored in Postgres");
             serve(listener, config, store.clone(), store, shutdown_signal()).await?;
         }

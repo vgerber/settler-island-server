@@ -12,7 +12,7 @@ use settler_island_protocol::{
 };
 use settler_island_server::{
     wants_snapshot, Config, GameId, GameStore, IdentityStore, IdentityStoreError,
-    MemoryIdentityStore, NewGame, PostgresStore, SeatPlayer, StoreError, StoredGame,
+    MemoryIdentityStore, NewGame, PoolSettings, PostgresStore, SeatPlayer, StoreError, StoredGame,
     SNAPSHOT_INTERVAL,
 };
 use sqlx::ConnectOptions;
@@ -23,6 +23,13 @@ const POINTS_TO_WIN: u8 = 6;
 /// Past the first snapshot, so the restart replays snapshot plus tail.
 const ACTIONS_BEFORE_CRASH: usize = SNAPSHOT_INTERVAL as usize + 15;
 const MAX_UPDATES: usize = 5000;
+
+fn pool_settings() -> PoolSettings {
+    PoolSettings {
+        max_connections: 4,
+        acquire_timeout: Duration::from_secs(2),
+    }
+}
 
 fn new_game() -> NewGame {
     NewGame {
@@ -52,7 +59,9 @@ async fn postgres_snapshot_plus_replay_equals_the_live_game() {
         return;
     };
     let options = database.options();
-    let store = PostgresStore::connect(options).await.unwrap();
+    let store = PostgresStore::connect(options, pool_settings())
+        .await
+        .unwrap();
     let id = store.create_game(new_game()).await.unwrap();
     let mut live = Game::new(new_game().settings).unwrap();
     let mut record = GameRecord::new(&live);
@@ -110,7 +119,9 @@ async fn postgres_abandoned_games_are_kept_but_not_restored() {
         return;
     };
     let options = database.options();
-    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let store = PostgresStore::connect(options.clone(), pool_settings())
+        .await
+        .unwrap();
     let abandoned = store.create_game(new_game()).await.unwrap();
     let running = store.create_game(new_game()).await.unwrap();
 
@@ -142,7 +153,9 @@ async fn postgres_unattended_time_survives_a_reload_and_is_cleared_on_return() {
         return;
     };
     let options = database.options();
-    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let store = PostgresStore::connect(options.clone(), pool_settings())
+        .await
+        .unwrap();
     let id = store.create_game(new_game()).await.unwrap();
     assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
 
@@ -173,7 +186,9 @@ async fn postgres_identity_links_keep_the_first_user() {
         return;
     };
     let options = database.options();
-    let store = PostgresStore::connect(options).await.unwrap();
+    let store = PostgresStore::connect(options, pool_settings())
+        .await
+        .unwrap();
     let first = UserId("guest-first".to_string());
     let second = UserId("guest-second".to_string());
 
@@ -288,7 +303,9 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     };
     let server_a = server_runtime();
     let address_a = server_a.block_on(async {
-        let store = PostgresStore::connect(options.clone()).await.unwrap();
+        let store = PostgresStore::connect(options.clone(), pool_settings())
+            .await
+            .unwrap();
         start_with(config.clone(), store.clone(), store).await
     });
 
@@ -315,7 +332,9 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
 
     let server_b = server_runtime();
     let address_b = server_b.block_on(async {
-        let store = PostgresStore::connect(options.clone()).await.unwrap();
+        let store = PostgresStore::connect(options.clone(), pool_settings())
+            .await
+            .unwrap();
         start_with(config.clone(), store.clone(), store).await
     });
     let record = client_runtime.block_on(async {
@@ -359,7 +378,9 @@ async fn postgres_refuses_a_lobby_id_its_column_cannot_hold() {
     let Some(database) = test_database().await else {
         return;
     };
-    let store = PostgresStore::connect(database.options()).await.unwrap();
+    let store = PostgresStore::connect(database.options(), pool_settings())
+        .await
+        .unwrap();
     let mut game = new_game();
     game.lobby = LobbyId(u32::MAX);
 
@@ -378,7 +399,9 @@ async fn postgres_names_the_raw_row_and_field_of_an_out_of_range_value() {
         return;
     };
     let options = database.options();
-    let store = PostgresStore::connect(options.clone()).await.unwrap();
+    let store = PostgresStore::connect(options.clone(), pool_settings())
+        .await
+        .unwrap();
     let id = store.create_game(new_game()).await.unwrap();
     let mut connection = options.connect().await.unwrap();
     let row = i64::try_from(id.0).unwrap();
@@ -394,4 +417,61 @@ async fn postgres_names_the_raw_row_and_field_of_an_out_of_range_value() {
         result,
         Err(StoreError::Corrupt { row: found, field: "lobby id" }) if found == row
     ));
+}
+
+/// Holds `games` locked from another connection, so every query on it stalls.
+async fn lock_games(options: &sqlx::postgres::PgConnectOptions) -> sqlx::PgConnection {
+    let mut connection = options.connect().await.unwrap();
+    sqlx::query("BEGIN").execute(&mut connection).await.unwrap();
+    sqlx::query("LOCK TABLE games IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection
+}
+
+#[tokio::test]
+async fn postgres_acquire_times_out_when_every_connection_is_held() {
+    let Some(database) = test_database().await else {
+        return;
+    };
+    let options = database.options();
+    let settings = PoolSettings {
+        max_connections: 1,
+        acquire_timeout: Duration::from_millis(300),
+    };
+    let store = PostgresStore::connect(options.clone(), settings)
+        .await
+        .unwrap();
+    let _lock = lock_games(&options).await;
+    let holder = store.clone();
+    // Takes the only connection and then waits on the lock.
+    let stalled = tokio::spawn(async move { holder.create_game(new_game()).await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let started = std::time::Instant::now();
+    let result = store.load_running().await;
+    assert!(matches!(
+        result,
+        Err(StoreError::Database(sqlx::Error::PoolTimedOut))
+    ));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    stalled.abort();
+}
+
+#[tokio::test]
+async fn postgres_a_stalled_statement_is_cancelled_by_the_database() {
+    let Some(database) = test_database().await else {
+        return;
+    };
+    let options = database.options();
+    let store = PostgresStore::connect(options.clone(), pool_settings())
+        .await
+        .unwrap();
+    let _lock = lock_games(&options).await;
+
+    let started = std::time::Instant::now();
+    let result = store.load_running().await;
+    assert!(matches!(result, Err(StoreError::Database(_))));
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
