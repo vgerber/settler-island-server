@@ -47,7 +47,7 @@ async fn forged_and_oversized_messages_get_errors_and_the_connection_stays_usabl
         "x".repeat(70 * 1024)
     );
     let oversized = error_after_raw(&mut client, oversized).await;
-    assert_eq!(oversized, (None, ErrorCode::MessageTooLarge));
+    assert_eq!(oversized, (Some(11), ErrorCode::MessageTooLarge));
     let act = |request_id| ClientMessage::Act {
         request_id,
         action: settler_island_protocol::Action::RollDice,
@@ -96,6 +96,35 @@ async fn bursts_above_the_rate_limit_are_refused_until_the_next_second() {
         client.request(list).await,
         ServerMessage::Lobbies { .. }
     ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rate_limited_errors_echo_the_request_id() {
+    let address = start(test_config()).await;
+    let (mut client, _) = Client::welcomed(address, "Spammer").await;
+    tokio::time::sleep(BUCKET_REFILL).await;
+
+    let burst = 30;
+    let mut sent = Vec::new();
+    for _ in 0..burst {
+        sent.push(client.send(list).await);
+    }
+    let mut limited = Vec::new();
+    for _ in 0..burst {
+        if let ServerMessage::Error {
+            request_id,
+            code: ErrorCode::RateLimited,
+            ..
+        } = client.receive().await
+        {
+            limited.push(request_id);
+        }
+    }
+    assert!(!limited.is_empty(), "the excess is refused");
+    for request_id in limited {
+        let request_id = request_id.expect("RateLimited carries the request id");
+        assert!(sent.contains(&request_id));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

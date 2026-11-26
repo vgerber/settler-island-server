@@ -30,7 +30,7 @@ struct LobbyOptions {
     bot_difficulty: Option<Difficulty>,
 }
 
-/// Recovers the request id of a message that failed to parse, so the error still reaches the right request.
+/// The one field `probe_request_id` reads.
 #[derive(Deserialize)]
 struct RequestIdProbe {
     request_id: u32,
@@ -133,21 +133,17 @@ impl<I: IdentityStore> Connection<I> {
 
     async fn on_message(&mut self, bytes: &[u8]) {
         if self.limiter.take(Instant::now()).is_err() {
-            self.send_error(None, ErrorCode::RateLimited);
+            self.send_error(probe_request_id(bytes), ErrorCode::RateLimited);
             return;
         }
         if bytes.len() > MAX_MESSAGE_BYTES {
-            self.send_error(None, ErrorCode::MessageTooLarge);
+            self.send_error(probe_request_id(bytes), ErrorCode::MessageTooLarge);
             return;
         }
         let message: ClientMessage = match serde_json::from_slice(bytes) {
             Ok(message) => message,
             Err(_) => {
-                let probe = serde_json::from_slice::<RequestIdProbe>(bytes).ok();
-                self.send_error(
-                    probe.map(|probe| probe.request_id),
-                    ErrorCode::InvalidMessage,
-                );
+                self.send_error(probe_request_id(bytes), ErrorCode::InvalidMessage);
                 return;
             }
         };
@@ -382,6 +378,12 @@ impl<I: IdentityStore> Connection<I> {
         }
         result
     }
+}
+
+/// The request id of a message that is refused or fails to parse, so the error still reaches the right request.
+fn probe_request_id(bytes: &[u8]) -> Option<u32> {
+    let probe = serde_json::from_slice::<RequestIdProbe>(bytes).ok()?;
+    Some(probe.request_id)
 }
 
 async fn hash_password(password: String) -> Result<String, ErrorCode> {
