@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -6,7 +7,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
+    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerLimit, ServerMessage, User, UserId,
     DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS,
     MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MIN_POINTS_TO_WIN,
 };
@@ -19,7 +20,7 @@ use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest, SeatCount};
 use crate::metrics::Metrics;
 use crate::names::clean_name;
 use crate::outbox::{Outbox, OUTBOX_CAPACITY};
-use crate::password;
+use crate::password::{self, Guesser, GUESSES};
 use crate::rate_limit::TokenBucket;
 use crate::registry::{LobbyEntry, NewLobby, RegistryHandle};
 
@@ -42,6 +43,8 @@ struct Connection<I> {
     identity: Arc<Identity<I>>,
     user: Option<User>,
     lobby: Option<LobbyHandle>,
+    /// The client address, for the per-address password guess limit.
+    address: Option<IpAddr>,
     limiter: TokenBucket,
     metrics: Arc<Metrics>,
 }
@@ -65,6 +68,8 @@ pub(crate) async fn run<I: IdentityStore>(
         identity,
         user: None,
         lobby: None,
+        // The upgrade route in lib.rs does not pass the peer address yet.
+        address: None,
         limiter: TokenBucket::new(
             f64::from(config.messages_per_second),
             config.messages_per_second,
@@ -329,7 +334,9 @@ impl<I: IdentityStore> Connection<I> {
         }
         let claim = self.registry.claim(lobby, user.id.clone()).await?;
         let user_id = user.id.clone();
-        let result = self.enter(user, request_id, claim.entry, password).await;
+        let result = self
+            .enter(user, request_id, lobby, claim.entry, password)
+            .await;
         if result.is_err() && claim.claimed {
             self.registry.release(lobby, user_id).await;
         }
@@ -340,17 +347,17 @@ impl<I: IdentityStore> Connection<I> {
         &mut self,
         user: User,
         request_id: u32,
+        lobby: LobbyId,
         entry: LobbyEntry,
         password: Option<String>,
     ) -> Result<(), ErrorCode> {
         if let Some(hash) = entry.password_hash {
-            let password = password.unwrap_or_default();
-            let matches = tokio::task::spawn_blocking(move || password::verify(&hash, &password))
-                .await
-                .map_err(|_| ErrorCode::Internal)?;
-            if !matches {
-                return Err(ErrorCode::WrongPassword);
-            }
+            let guesser = Guesser {
+                user: user.id.clone(),
+                lobby,
+                address: self.address,
+            };
+            check_password(&guesser, hash, password.unwrap_or_default()).await?;
         }
         let outbox = self.outbox.clone();
         entry
@@ -413,11 +420,30 @@ fn probe_request_id(bytes: &[u8]) -> Option<u32> {
 }
 
 async fn hash_password(password: String) -> Result<String, ErrorCode> {
-    let hashed = tokio::task::spawn_blocking(move || password::hash(&password))
-        .await
-        .map_err(|_| ErrorCode::Internal)?;
-    hashed.map_err(|error| {
+    password::hash(password).await.map_err(|error| {
         error!(%error, "hashing a lobby password failed");
         ErrorCode::Internal
     })
+}
+
+/// Refuses a guesser over the wrong-guess limit before Argon2 runs.
+async fn check_password(
+    guesser: &Guesser,
+    hash: Arc<str>,
+    password: String,
+) -> Result<(), ErrorCode> {
+    GUESSES
+        .attempt(guesser, Instant::now())
+        .map_err(|_| ErrorCode::LimitReached {
+            limit: ServerLimit::PasswordGuesses,
+        })?;
+    let matches = password::verify(hash, password).await.map_err(|error| {
+        error!(%error, "verifying a lobby password failed");
+        ErrorCode::Internal
+    })?;
+    if !matches {
+        return Err(ErrorCode::WrongPassword);
+    }
+    GUESSES.forgive(guesser);
+    Ok(())
 }

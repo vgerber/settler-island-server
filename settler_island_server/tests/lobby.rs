@@ -2,7 +2,7 @@ mod common;
 
 use common::{guest_session, start, test_config, Client};
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerMessage,
+    ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerLimit, ServerMessage,
 };
 
 fn create_with(
@@ -245,6 +245,29 @@ async fn a_password_lobby_admits_only_the_right_password() {
     }
     let details = guest.try_join(lobby, Some("hunter2")).await.unwrap();
     assert!(details.info.has_password);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn password_guessing_is_refused_after_five_wrong_guesses_in_a_minute() {
+    let address = start(test_config()).await;
+    let (mut owner, _) = Client::welcomed(address, "Owner").await;
+    let (mut guesser, _) = Client::welcomed(address, "Guesser").await;
+    let lobby = owner.create_lobby("Secret", 3, Some("hunter2")).await;
+
+    for guess in 0..5 {
+        let wrong = format!("guess {guess}");
+        assert_eq!(
+            guesser.try_join(lobby, Some(&wrong)).await,
+            Err(ErrorCode::WrongPassword)
+        );
+    }
+    // Even the right password is refused, so the sixth attempt never reaches Argon2.
+    assert_eq!(
+        guesser.try_join(lobby, Some("hunter2")).await,
+        Err(ErrorCode::LimitReached {
+            limit: ServerLimit::PasswordGuesses
+        })
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
