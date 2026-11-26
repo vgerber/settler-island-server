@@ -17,7 +17,10 @@ pub use board::{
 pub use coordinates::CubeCoordinates;
 pub use error::GameError;
 pub use event::Event;
-pub use game::{DevelopmentCard, Game, GameSettings, PlayerState, Seat, TradeOffer};
+pub use game::{
+    DevelopmentCard, Game, GameSettings, PlayerState, Seat, TradeOffer, DEFAULT_POINTS_TO_WIN,
+    MAX_POINTS_TO_WIN, MAX_SEATS, MIN_POINTS_TO_WIN, MIN_SEATS,
+};
 pub use phase::Phase;
 pub use record::{replay, GameRecord, RecordEntry, RecordHeader, RecordSettings};
 pub use resource::{Resource, ResourceCounts};

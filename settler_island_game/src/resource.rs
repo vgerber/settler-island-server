@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::GameError;
 
+// The declaration order is the order of `ALL` and of `ResourceCounts`; not a doc comment, which would enter the schema.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
+#[repr(u8)]
 pub enum Resource {
     Clay,
     Wood,
@@ -23,14 +25,9 @@ impl Resource {
         Resource::Ore,
     ];
 
-    fn index(self) -> usize {
-        match self {
-            Resource::Clay => 0,
-            Resource::Wood => 1,
-            Resource::Sheep => 2,
-            Resource::Wheat => 3,
-            Resource::Ore => 4,
-        }
+    /// The position in `ALL` and in `ResourceCounts`.
+    pub const fn index(self) -> usize {
+        self as usize
     }
 }
 
@@ -39,14 +36,21 @@ impl Resource {
 pub struct ResourceCounts([u8; 5]);
 
 impl ResourceCounts {
+    pub const EMPTY: ResourceCounts = ResourceCounts([0; 5]);
+
     pub const fn new(counts: [u8; 5]) -> Self {
         ResourceCounts(counts)
     }
 
-    pub fn single(resource: Resource, amount: u8) -> Self {
-        let mut counts = ResourceCounts::default();
-        counts.set(resource, amount);
-        counts
+    /// Names the resource, so call sites need no positional array: `EMPTY.with(Wheat, 2).with(Ore, 3)`.
+    pub const fn with(self, resource: Resource, amount: u8) -> Self {
+        let mut counts = self.0;
+        counts[resource.index()] = amount;
+        ResourceCounts(counts)
+    }
+
+    pub const fn single(resource: Resource, amount: u8) -> Self {
+        ResourceCounts::EMPTY.with(resource, amount)
     }
 
     pub fn get(&self, resource: Resource) -> u8 {
@@ -119,6 +123,22 @@ mod tests {
         hand.set(Resource::Sheep, 2);
         assert_eq!(hand.try_remove(&cost), Ok(()));
         assert_eq!(hand, ResourceCounts::new([0, 0, 1, 0, 0]));
+    }
+
+    #[test]
+    fn index_follows_the_order_of_all() {
+        for (position, resource) in Resource::ALL.into_iter().enumerate() {
+            assert_eq!(resource.index(), position);
+        }
+    }
+
+    #[test]
+    fn with_names_each_resource() {
+        const COST: ResourceCounts = ResourceCounts::EMPTY
+            .with(Resource::Wheat, 2)
+            .with(Resource::Ore, 3);
+
+        assert_eq!(COST, ResourceCounts::new([0, 0, 0, 2, 3]));
     }
 
     #[test]

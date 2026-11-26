@@ -16,10 +16,12 @@ use crate::view::PlayerView;
 /// Player index `0..seats`.
 pub type Seat = u8;
 
-const MIN_SEATS: u8 = 3;
-const MAX_SEATS: u8 = 4;
+pub const MIN_SEATS: u8 = 3;
+pub const MAX_SEATS: u8 = 4;
 /// Below this the setup settlements alone could win.
-const MIN_POINTS_TO_WIN: u8 = 3;
+pub const MIN_POINTS_TO_WIN: u8 = 3;
+pub const MAX_POINTS_TO_WIN: u8 = 15;
+pub const DEFAULT_POINTS_TO_WIN: u8 = 10;
 const BANK_PER_RESOURCE: u8 = 19;
 const ROADS_PER_PLAYER: u8 = 15;
 const SETTLEMENTS_PER_PLAYER: u8 = 5;
@@ -71,6 +73,13 @@ pub struct TradeOffer {
     pub answers: Vec<(Seat, bool)>,
 }
 
+/// One side of a resource transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Holder {
+    Bank,
+    Seat(Seat),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Game {
     pub(crate) settings: GameSettings,
@@ -94,7 +103,9 @@ pub struct Game {
 impl Game {
     pub fn new(settings: GameSettings) -> Result<Game, GameError> {
         let seats_supported = (MIN_SEATS..=MAX_SEATS).contains(&settings.seats);
-        if !seats_supported || settings.points_to_win < MIN_POINTS_TO_WIN {
+        let points_supported =
+            (MIN_POINTS_TO_WIN..=MAX_POINTS_TO_WIN).contains(&settings.points_to_win);
+        if !seats_supported || !points_supported {
             return Err(GameError::InvalidSettings);
         }
 
@@ -135,7 +146,7 @@ impl Game {
 
     /// Validates first and mutates only on success, so an `Err` leaves the game unchanged.
     pub fn apply(&mut self, seat: Seat, action: Action) -> Result<Vec<Event>, GameError> {
-        if matches!(self.phase, Phase::Finished { .. }) {
+        if self.is_finished() {
             return Err(GameError::GameFinished);
         }
         let mut events = match action {
@@ -228,6 +239,17 @@ impl Game {
         self.trade.as_ref()
     }
 
+    pub fn winner(&self) -> Option<Seat> {
+        match self.phase {
+            Phase::Finished { winner } => Some(winner),
+            _ => None,
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.winner().is_some()
+    }
+
     pub fn current_seat(&self) -> Seat {
         self.current
     }
@@ -256,6 +278,12 @@ impl Game {
             .ok_or(GameError::NotYourTurn)
     }
 
+    pub(crate) fn player_mut(&mut self, seat: Seat) -> Result<&mut PlayerState, GameError> {
+        self.players
+            .get_mut(usize::from(seat))
+            .ok_or(GameError::NotYourTurn)
+    }
+
     pub(crate) fn require_turn(&self, seat: Seat) -> Result<(), GameError> {
         if seat != self.current {
             return Err(GameError::NotYourTurn);
@@ -263,15 +291,56 @@ impl Game {
         Ok(())
     }
 
+    #[expect(
+        dead_code,
+        reason = "the rules modules switch to it in refactor wave 2"
+    )]
+    pub(crate) fn require_main_turn(&self, seat: Seat) -> Result<(), GameError> {
+        self.require_turn(seat)?;
+        if self.phase != Phase::Main {
+            return Err(GameError::WrongPhase);
+        }
+        Ok(())
+    }
+
+    /// Moves all of `amount` or nothing: both sides are checked before either changes.
+    pub(crate) fn move_resources(
+        &mut self,
+        from: Holder,
+        to: Holder,
+        amount: ResourceCounts,
+    ) -> Result<(), GameError> {
+        let mut source = self.holdings(from)?;
+        let target = self.holdings(to)?;
+        source.try_remove(&amount)?;
+        if from == to {
+            return Ok(());
+        }
+        // Unreachable with 95 cards in play; rejected rather than saturated so no card is lost.
+        let target = target.checked_add(&amount).ok_or(GameError::InvalidTrade)?;
+        *self.holdings_mut(from)? = source;
+        *self.holdings_mut(to)? = target;
+        Ok(())
+    }
+
+    fn holdings(&self, holder: Holder) -> Result<ResourceCounts, GameError> {
+        match holder {
+            Holder::Bank => Ok(self.bank),
+            Holder::Seat(seat) => Ok(self.player(seat)?.hand),
+        }
+    }
+
+    fn holdings_mut(&mut self, holder: Holder) -> Result<&mut ResourceCounts, GameError> {
+        match holder {
+            Holder::Bank => Ok(&mut self.bank),
+            Holder::Seat(seat) => Ok(&mut self.player_mut(seat)?.hand),
+        }
+    }
+
     /// Moves `cost` from the seat's hand to the bank; callers have checked that the hand covers it.
     pub(crate) fn pay_to_bank(&mut self, seat: Seat, cost: ResourceCounts) -> Event {
-        let paid = self
-            .players
-            .get_mut(usize::from(seat))
-            .is_some_and(|player| player.hand.try_remove(&cost).is_ok());
-        if paid {
-            self.bank.deposit(&cost);
-        }
+        let paid = self.move_resources(Holder::Seat(seat), Holder::Bank, cost);
+        debug_assert!(paid.is_ok(), "seat {seat} could not pay {cost:?}: {paid:?}");
         Event::ResourcesPaid {
             seat,
             resources: cost,
@@ -310,6 +379,7 @@ mod tests {
 
     use super::*;
     use crate::board::{CornerId, EdgeId, TileId};
+    use crate::resource::Resource;
     use crate::rules::test_support::{after_setup, give, main_phase_game, new_game};
 
     const ACTION_LIMIT: usize = 2000;
@@ -361,7 +431,7 @@ mod tests {
 
     #[test]
     fn new_rejects_unsupported_settings() {
-        for (seats, points_to_win) in [(2, 10), (5, 10), (4, 2)] {
+        for (seats, points_to_win) in [(2, 10), (5, 10), (4, 2), (4, 16)] {
             let settings = GameSettings {
                 seats,
                 points_to_win,
@@ -398,9 +468,65 @@ mod tests {
     }
 
     #[test]
+    fn move_resources_is_all_or_nothing() {
+        let mut game = main_phase_game(3, 8);
+        give(&mut game, 0, ResourceCounts::new([2, 1, 0, 0, 0]));
+        game.players[1].hand.set(Resource::Ore, u8::MAX);
+        game.bank.set(Resource::Wheat, 0);
+        let before = game.clone();
+
+        let failures = [
+            (
+                Holder::Seat(0),
+                Holder::Bank,
+                ResourceCounts::new([3, 0, 0, 0, 0]),
+            ),
+            (
+                Holder::Bank,
+                Holder::Seat(0),
+                ResourceCounts::new([1, 0, 0, 1, 0]),
+            ),
+            (
+                Holder::Seat(0),
+                Holder::Seat(1),
+                ResourceCounts::new([1, 0, 0, 0, 1]),
+            ),
+            (
+                Holder::Bank,
+                Holder::Seat(1),
+                ResourceCounts::new([0, 0, 0, 0, 1]),
+            ),
+            (
+                Holder::Seat(0),
+                Holder::Seat(7),
+                ResourceCounts::new([1, 0, 0, 0, 0]),
+            ),
+            (Holder::Seat(7), Holder::Seat(0), ResourceCounts::default()),
+        ];
+        for (from, to, amount) in failures {
+            assert!(
+                game.move_resources(from, to, amount).is_err(),
+                "{from:?} -> {to:?}"
+            );
+            assert_eq!(game, before, "{from:?} -> {to:?}");
+        }
+
+        let pair = ResourceCounts::new([1, 1, 0, 0, 0]);
+        assert_eq!(
+            game.move_resources(Holder::Seat(0), Holder::Seat(2), pair),
+            Ok(())
+        );
+        assert_eq!(game.players[0].hand, ResourceCounts::new([1, 0, 0, 0, 0]));
+        assert_eq!(game.players[2].hand, pair);
+        assert_eq!(resource_total(&game), resource_total(&before));
+    }
+
+    #[test]
     fn finished_game_rejects_everything() {
         let mut game = main_phase_game(3, 3);
+        assert_eq!((game.winner(), game.is_finished()), (None, false));
         game.phase = Phase::Finished { winner: 1 };
+        assert_eq!((game.winner(), game.is_finished()), (Some(1), true));
 
         assert_eq!(game.pending_seats(), Vec::<Seat>::new());
         assert!(game.legal_actions(0).is_empty());
