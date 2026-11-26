@@ -1,2 +1,6 @@
 [target.x86_64-unknown-linux-gnu]
 runner = "tools/run_limited.sh"
+
+[env]
+# sqlx macros compile against the committed .sqlx cache, never a live database (a clone has no .env).
+SQLX_OFFLINE = "true"

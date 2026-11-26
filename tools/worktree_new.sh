@@ -4,14 +4,15 @@
 # - worktree .claude/worktrees/<tag> on a new branch agent/<tag>, from local main (or --base), in the main copy
 # - .build/<tag> (created) linked as <worktree>/target, so the build directory is deleted with the agent
 # - durable handoff .handoffs/<tag>.md at the repository root of the main copy (git-ignored, survives the worktree)
-# Prints three lines for the agent brief: worktree path, handoff path, sabotage script path.
+# Prints three lines for the agent brief: worktree path, handoff path, the prove_test_bites.sh command.
 # SETTLER_MAIN_BRANCH overrides the branch name "main". Never deletes anything.
 # --help prints this header; --self-test runs the script against a temporary repository.
 set -e
+source "$(dirname "$0")/common.sh"
 
 main_branch="${SETTLER_MAIN_BRANCH:-main}"
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { print_header "$0"; }
 
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then usage; exit 0; fi
 
@@ -87,4 +88,4 @@ TEMPLATE
 
 echo "worktree: $worktree"
 echo "handoff: $handoff"
-echo "sabotage script: $root/.handoffs/$tag-sabotage.sh"
+echo "sabotage check: tools/prove_test_bites.sh --help"

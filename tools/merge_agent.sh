@@ -8,11 +8,12 @@
 # At the end it compares the tree hash with the branch's: identical means the agent's gated tree needs no second gate.
 # SETTLER_MAIN_BRANCH overrides "main". --help prints this header.
 set -e
+source "$(dirname "$0")/common.sh"
 
 main_branch="${SETTLER_MAIN_BRANCH:-main}"
 forbidden_pattern='^(\.claude/.*|\.build/.*|\.handoffs/.*|\.vscode/settings\.json)$'
 
-if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0; fi
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then print_header "$0"; exit 0; fi
 if [ $# -lt 1 ]; then echo "usage: merge_agent.sh <branch> [commit ...]" >&2; exit 2; fi
 branch="$1"
 shift
