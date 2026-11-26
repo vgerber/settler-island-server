@@ -52,6 +52,8 @@ static func from_dict(data: Variant) -> SiErrorCode:
 				return SiErrorCodeNotABot.from_dict(data)
 			"NoGame":
 				return SiErrorCodeNoGame.from_dict(data)
+			"LimitReached":
+				return SiErrorCodeLimitReached.from_dict(data)
 			"Internal":
 				return SiErrorCodeInternal.from_dict(data)
 			"Game":

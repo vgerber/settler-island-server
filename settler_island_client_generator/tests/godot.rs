@@ -23,7 +23,7 @@ use settler_island_game::{
 };
 use settler_island_protocol::{
     ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
-    ServerMessage, User, UserId, UserKind,
+    ServerLimit, ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
@@ -253,6 +253,9 @@ fn error_code_samples() -> Vec<ErrorCode> {
     variant_names::<ErrorCode>()
         .into_iter()
         .map(|name| match name.as_str() {
+            "LimitReached" => ErrorCode::LimitReached {
+                limit: ServerLimit::ConnectionsPerIp,
+            },
             "Game" => ErrorCode::Game {
                 error: GameError::NotYourTurn,
             },

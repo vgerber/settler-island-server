@@ -281,8 +281,24 @@ pub enum ErrorCode {
     SeatsNotFilled,
     NotABot,
     NoGame,
+    /// A server-wide or per-user cap refused the request; retrying later may succeed.
+    LimitReached {
+        limit: ServerLimit,
+    },
     Internal,
-    Game { error: GameError },
+    Game {
+        error: GameError,
+    },
+}
+
+/// Which cap `ErrorCode::LimitReached` hit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum ServerLimit {
+    Connections,
+    ConnectionsPerIp,
+    RunningGames,
+    GamesPerUser,
+    PasswordGuesses,
 }
 
 impl ErrorCode {
@@ -330,10 +346,23 @@ impl ErrorCode {
             ErrorCode::SeatsNotFilled => "every seat needs a player or a bot",
             ErrorCode::NotABot => "that seat holds no bot",
             ErrorCode::NoGame => "no game is running in this lobby",
+            ErrorCode::LimitReached { limit } => limit.description(),
             ErrorCode::Internal => "internal server error",
             ErrorCode::Game { error } => return error.to_string(),
         };
         text.to_string()
+    }
+}
+
+impl ServerLimit {
+    fn description(&self) -> &'static str {
+        match self {
+            ServerLimit::Connections => "the server has too many connections, try again later",
+            ServerLimit::ConnectionsPerIp => "too many connections from this address",
+            ServerLimit::RunningGames => "the server runs too many games, try again later",
+            ServerLimit::GamesPerUser => "you already take part in too many games",
+            ServerLimit::PasswordGuesses => "too many wrong passwords, try again later",
+        }
     }
 }
 
@@ -403,6 +432,20 @@ mod tests {
             serde_json::from_value::<ServerMessage>(value).unwrap(),
             message
         );
+    }
+
+    #[test]
+    fn limit_reached_names_the_limit_as_a_string() {
+        let code = ErrorCode::LimitReached {
+            limit: ServerLimit::GamesPerUser,
+        };
+        let value = serde_json::to_value(code).unwrap();
+
+        assert_eq!(
+            value,
+            json!({"type": "LimitReached", "limit": "GamesPerUser"})
+        );
+        assert_eq!(serde_json::from_value::<ErrorCode>(value).unwrap(), code);
     }
 
     #[test]

@@ -1110,6 +1110,23 @@
           "type": "object"
         },
         {
+          "description": "A server-wide or per-user cap refused the request; retrying later may succeed.",
+          "properties": {
+            "limit": {
+              "$ref": "#/$defs/ServerLimit"
+            },
+            "type": {
+              "const": "LimitReached",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "limit"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "type": {
               "const": "Internal",
@@ -2695,6 +2712,17 @@
           "type": "object"
         }
       ]
+    },
+    "ServerLimit": {
+      "description": "Which cap `ErrorCode::LimitReached` hit.",
+      "enum": [
+        "Connections",
+        "ConnectionsPerIp",
+        "RunningGames",
+        "GamesPerUser",
+        "PasswordGuesses"
+      ],
+      "type": "string"
     },
     "ServerMessage": {
       "description": "Broadcasts carry `request_id` only in the copy sent to the member whose request caused them.",
