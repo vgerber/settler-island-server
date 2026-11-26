@@ -40,10 +40,7 @@ async fn only_the_owner_manages_bots_and_starts_and_every_member_gets_their_own_
     let (mut owner, _) = Client::welcomed(address, "Owner").await;
     let (mut guest, guest_user) = Client::welcomed(address, "Guest").await;
     let lobby = owner.create_lobby("Table", 3, None).await;
-    assert!(matches!(
-        guest.join(lobby, None).await,
-        ServerMessage::LobbyState { .. }
-    ));
+    guest.try_join(lobby, None).await.unwrap();
 
     assert_eq!(guest.expect_error(add_bot).await, ErrorCode::NotOwner);
     assert_eq!(guest.expect_error(start_game).await, ErrorCode::NotOwner);
@@ -119,17 +116,17 @@ async fn start_needs_every_seat_and_join_fails_when_full_or_started() {
     );
     owner.expect_lobby(add_bot).await;
     assert_eq!(owner.expect_error(add_bot).await, ErrorCode::LobbyFull);
-    let ServerMessage::Error { code, .. } = outsider.join(lobby, None).await else {
-        panic!("joining a full lobby must fail");
-    };
-    assert_eq!(code, ErrorCode::LobbyFull);
+    assert_eq!(
+        outsider.try_join(lobby, None).await,
+        Err(ErrorCode::LobbyFull)
+    );
 
     let started = owner.expect_lobby(start_game).await;
     assert!(started.started);
-    let ServerMessage::Error { code, .. } = outsider.join(lobby, None).await else {
-        panic!("joining a started lobby must fail");
-    };
-    assert_eq!(code, ErrorCode::GameAlreadyStarted);
+    assert_eq!(
+        outsider.try_join(lobby, None).await,
+        Err(ErrorCode::GameAlreadyStarted)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -138,7 +135,7 @@ async fn the_next_member_owns_the_lobby_when_the_owner_leaves() {
     let (mut owner, _) = Client::welcomed(address, "Owner").await;
     let (mut guest, guest_user) = Client::welcomed(address, "Guest").await;
     let lobby = owner.create_lobby("Table", 4, None).await;
-    guest.join(lobby, None).await;
+    guest.try_join(lobby, None).await.unwrap();
 
     let left = owner.request(leave).await;
     assert!(matches!(left, ServerMessage::LobbyLeft { .. }));
@@ -155,7 +152,7 @@ async fn a_disconnected_member_frees_the_seat() {
     let (mut owner, _) = Client::welcomed(address, "Owner").await;
     let (mut guest, _) = Client::welcomed(address, "Guest").await;
     let lobby = owner.create_lobby("Table", 3, None).await;
-    guest.join(lobby, None).await;
+    guest.try_join(lobby, None).await.unwrap();
     assert!(matches!(
         owner.next_lobby_state().await.seats[1],
         SeatOccupant::Human { .. }
@@ -176,7 +173,7 @@ async fn a_bot_plays_for_a_player_who_left_until_they_rejoin() {
         .expect_lobby(create_with(None, Some(Difficulty::Random)))
         .await
         .id;
-    guest.join(lobby, None).await;
+    guest.try_join(lobby, None).await.unwrap();
     owner.expect_lobby(add_bot).await;
     owner.expect_lobby(start_game).await;
 
@@ -189,20 +186,16 @@ async fn a_bot_plays_for_a_player_who_left_until_they_rejoin() {
             reserved_for: Some(guest_user.clone()),
         }
     );
-    let ServerMessage::Error { code, .. } = outsider.join(lobby, None).await else {
-        panic!("only the reserved player may take the seat");
-    };
-    assert_eq!(code, ErrorCode::GameAlreadyStarted);
+    assert_eq!(
+        outsider.try_join(lobby, None).await,
+        Err(ErrorCode::GameAlreadyStarted)
+    );
 
     // Seat 0 places its first settlement and road, then the replacement bot on seat 1 must move.
     owner
         .send(|request_id| ClientMessage::GetState { request_id })
         .await;
-    let mut legal = loop {
-        if let ServerMessage::GameStarted { legal_actions, .. } = owner.receive().await {
-            break legal_actions;
-        }
-    };
+    let mut legal = owner.next_game_started().await.legal_actions;
     let mut bot_moved = false;
     while !bot_moved {
         if let Some(action) = legal.first().cloned() {
@@ -224,12 +217,7 @@ async fn a_bot_plays_for_a_player_who_left_until_they_rejoin() {
         }
     }
 
-    let ServerMessage::LobbyState {
-        lobby: rejoined, ..
-    } = guest.join(lobby, None).await
-    else {
-        panic!("the reserved player rejoins");
-    };
+    let rejoined = guest.try_join(lobby, None).await.unwrap();
     assert_eq!(rejoined.seats[1], SeatOccupant::Human { user: guest_user });
     let ServerMessage::GameStarted { seat, view, .. } = guest.receive().await else {
         panic!("a rejoining player gets the game");
@@ -249,15 +237,12 @@ async fn a_password_lobby_admits_only_the_right_password() {
     let lobby = owner.create_lobby("Secret", 3, Some("hunter2")).await;
 
     for wrong in [None, Some("hunter3")] {
-        let ServerMessage::Error { code, .. } = guest.join(lobby, wrong).await else {
-            panic!("a wrong password must not join");
-        };
-        assert_eq!(code, ErrorCode::WrongPassword);
+        assert_eq!(
+            guest.try_join(lobby, wrong).await,
+            Err(ErrorCode::WrongPassword)
+        );
     }
-    let ServerMessage::LobbyState { lobby: details, .. } = guest.join(lobby, Some("hunter2")).await
-    else {
-        panic!("the right password joins");
-    };
+    let details = guest.try_join(lobby, Some("hunter2")).await.unwrap();
     assert!(details.has_password);
 }
 
@@ -278,10 +263,10 @@ async fn a_user_is_in_at_most_one_lobby() {
         bot_difficulty: None,
     };
     assert_eq!(first.expect_error(create).await, ErrorCode::AlreadyInLobby);
-    let ServerMessage::Error { code, .. } = first.join(other, None).await else {
-        panic!("joining a second lobby must fail");
-    };
-    assert_eq!(code, ErrorCode::AlreadyInLobby);
+    assert_eq!(
+        first.try_join(other, None).await,
+        Err(ErrorCode::AlreadyInLobby)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -296,14 +281,13 @@ async fn one_user_on_two_connections_is_still_in_at_most_one_lobby() {
 
     let code = second.expect_error(create_with(None, None)).await;
     assert_eq!(code, ErrorCode::AlreadyInLobby);
-    let ServerMessage::Error { code, .. } = second.join(elsewhere, None).await else {
-        panic!("joining a second lobby from another connection must fail");
-    };
-    assert_eq!(code, ErrorCode::AlreadyInLobby);
+    assert_eq!(
+        second.try_join(elsewhere, None).await,
+        Err(ErrorCode::AlreadyInLobby)
+    );
 
     // The user's own lobby on the second connection is a takeover, not a second lobby.
-    let joined = second.join(mine, None).await;
-    assert!(matches!(joined, ServerMessage::LobbyState { .. }));
+    second.try_join(mine, None).await.unwrap();
     second
         .request(|request_id| ClientMessage::LeaveLobby { request_id })
         .await;
@@ -427,12 +411,7 @@ async fn lobby_settings_default_and_reach_the_game() {
     client
         .send(|request_id| ClientMessage::GetState { request_id })
         .await;
-    let view = loop {
-        if let ServerMessage::GameStarted { view, .. } = client.receive().await {
-            break view;
-        }
-    };
-    assert_eq!(view.points_to_win, 4);
+    assert_eq!(client.next_game_started().await.view.points_to_win, 4);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

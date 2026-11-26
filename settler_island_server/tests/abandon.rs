@@ -3,7 +3,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{start_with, test_config, Client};
+use common::{eventually, start_with, test_config, Client};
 use settler_island_game::{Game, GameSettings};
 use settler_island_protocol::{
     ClientMessage, Difficulty, LobbyId, ServerMessage, User, UserId, UserKind,
@@ -51,19 +51,15 @@ impl GameStore for SharedStore {
 }
 
 async fn started_game(client: &mut Client, name: &str) -> LobbyId {
-    let lobby = client.create_lobby(name, 3, None).await;
-    for _ in 0..2 {
-        client
-            .expect_lobby(|request_id| ClientMessage::AddBot {
-                request_id,
-                difficulty: Difficulty::Random,
-            })
-            .await;
-    }
     client
-        .request(|request_id| ClientMessage::StartGame { request_id })
-        .await;
-    lobby
+        .start_with_bots(name, 3, None, Difficulty::Random)
+        .await
+        .0
+}
+
+/// Deliberate wait: the abandon timer has no event, so elapsed time is the thing under test.
+async fn elapse(duration: Duration) {
+    tokio::time::sleep(duration).await;
 }
 
 async fn lobby_count(client: &mut Client) -> u32 {
@@ -96,7 +92,10 @@ async fn a_game_without_a_connected_human_is_abandoned_and_its_lobby_closes() {
     assert_eq!(store.load_running().await.unwrap().len(), 2);
 
     drop(leaver);
-    tokio::time::sleep(ABANDON_AFTER * 3).await;
+    eventually("the deserted game to be abandoned", || async {
+        (store.load_running().await.unwrap().len() == 1).then_some(())
+    })
+    .await;
 
     // Only the lobby that still has a human survives, and only its game stays in the store.
     assert_eq!(lobby_count(&mut watcher).await, 1);
@@ -117,17 +116,18 @@ async fn rejoining_before_the_deadline_keeps_the_game() {
     let (mut client, _) = Client::authenticated(address, &session.token).await;
     let lobby = started_game(&mut client, "Brief").await;
     drop(client);
-    tokio::time::sleep(ABANDON_AFTER / 4).await;
-
-    assert!(store.load_running().await.unwrap()[0]
-        .unattended_for
-        .is_some());
+    eventually("the game to be marked unattended", || async {
+        store.load_running().await.unwrap()[0]
+            .unattended_for
+            .is_some()
+            .then_some(())
+    })
+    .await;
 
     let (mut returning, _) = Client::authenticated(address, &session.token).await;
-    let joined = returning.join(lobby, None).await;
-    assert!(matches!(joined, ServerMessage::LobbyState { .. }));
+    returning.try_join(lobby, None).await.unwrap();
     assert_eq!(store.load_running().await.unwrap()[0].unattended_for, None);
-    tokio::time::sleep(ABANDON_AFTER * 3).await;
+    elapse(ABANDON_AFTER * 3).await;
 
     assert_eq!(store.load_running().await.unwrap().len(), 1);
     assert_eq!(lobby_count(&mut returning).await, 1);
@@ -159,7 +159,7 @@ async fn time_unattended_before_a_restart_counts_toward_the_deadline() {
     let id = store.create_game(game).await.unwrap();
     store.set_attended(id, false).await.unwrap();
     let abandon_after = Duration::from_secs(1);
-    tokio::time::sleep(abandon_after).await;
+    elapse(abandon_after).await;
 
     let config = Config {
         abandon_after,
@@ -167,7 +167,7 @@ async fn time_unattended_before_a_restart_counts_toward_the_deadline() {
     };
     start_with(config, store.clone(), MemoryIdentityStore::default()).await;
     // Well before a fresh deadline would pass.
-    tokio::time::sleep(abandon_after / 3).await;
+    elapse(abandon_after / 3).await;
 
     assert!(store.load_running().await.unwrap().is_empty());
 }

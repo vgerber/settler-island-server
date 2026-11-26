@@ -297,7 +297,7 @@ async fn a_guest_and_an_account_play_in_one_lobby() {
     let (mut account, account_user) =
         Client::authenticated(address, &realm.token("sub-2", "kim")).await;
     let lobby = guest.create_lobby("Mixed", 3, None).await;
-    account.join(lobby, None).await;
+    account.try_join(lobby, None).await.unwrap();
     guest
         .expect_lobby(|request_id| ClientMessage::AddBot {
             request_id,
@@ -310,12 +310,7 @@ async fn a_guest_and_an_account_play_in_one_lobby() {
         .await;
     assert_eq!(details.seats[0], SeatOccupant::Human { user: guest_user });
     assert_eq!(details.seats[1], SeatOccupant::Human { user: account_user });
-    let legal_actions = loop {
-        if let ServerMessage::GameStarted { legal_actions, .. } = guest.receive().await {
-            break legal_actions;
-        }
-    };
-    let action = legal_actions[0].clone();
+    let action = guest.next_game_started().await.legal_actions[0].clone();
     guest
         .send(|request_id| ClientMessage::Act { request_id, action })
         .await;
@@ -355,7 +350,7 @@ async fn a_new_connection_takes_over_the_running_game() {
     let (mut first, user) = Client::authenticated(address, &session.token).await;
     let (mut other, _) = Client::welcomed(address, "Bob").await;
     let lobby = first.create_lobby("Rejoin", 3, None).await;
-    other.join(lobby, None).await;
+    other.try_join(lobby, None).await.unwrap();
     first
         .expect_lobby(|request_id| ClientMessage::AddBot {
             request_id,
@@ -368,18 +363,12 @@ async fn a_new_connection_takes_over_the_running_game() {
 
     let (mut second, same_user) = Client::authenticated(address, &session.token).await;
     assert_eq!(same_user, user);
-    let ServerMessage::LobbyState { .. } = second.join(lobby, None).await else {
-        panic!("the user rejoins its lobby from a new connection");
-    };
-    let seat = loop {
-        if let ServerMessage::GameStarted { seat, .. } = second.receive().await {
-            break seat;
-        }
-    };
-    assert_eq!(seat, 0);
+    second.try_join(lobby, None).await.unwrap();
+    assert_eq!(second.next_game_started().await.seat, 0);
 
     // The replaced connection closing must not hand the seat to a bot.
     drop(first);
+    // Deliberate wait: there is no event when the server does nothing, so give a wrong handover time to show.
     tokio::time::sleep(Duration::from_millis(300)).await;
     let details = second
         .expect_lobby(|request_id| ClientMessage::GetState { request_id })

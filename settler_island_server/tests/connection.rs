@@ -2,11 +2,14 @@ mod common;
 
 use std::time::Duration;
 
-use common::{start, test_config, Client};
+use common::{eventually, start, test_config, Client};
 use settler_island_protocol::{ClientMessage, ErrorCode, LobbyId, ServerMessage};
 use settler_island_server::Config;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+
+/// Deliberate wait: the rate limiter refills by wall-clock time (20 per second), so only time restores the budget.
+const BUCKET_REFILL: Duration = Duration::from_millis(1100);
 
 fn list(request_id: u32) -> ClientMessage {
     ClientMessage::ListLobbies {
@@ -67,7 +70,7 @@ async fn forged_and_oversized_messages_get_errors_and_the_connection_stays_usabl
 async fn bursts_above_the_rate_limit_are_refused_until_the_next_second() {
     let address = start(test_config()).await;
     let (mut client, _) = Client::welcomed(address, "Spammer").await;
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    tokio::time::sleep(BUCKET_REFILL).await;
 
     let burst = 30;
     for _ in 0..burst {
@@ -88,7 +91,7 @@ async fn bursts_above_the_rate_limit_are_refused_until_the_next_second() {
     assert!(answered >= 20, "the first 20 per second are served");
     assert!(limited >= 1, "the excess is refused");
 
-    tokio::time::sleep(Duration::from_millis(1100)).await;
+    tokio::time::sleep(BUCKET_REFILL).await;
     assert!(matches!(
         client.request(list).await,
         ServerMessage::Lobbies { .. }
@@ -143,18 +146,17 @@ async fn concurrent_lobby_traffic_neither_deadlocks_nor_leaks() {
         .await
         .expect("concurrent clients hung");
 
-    let (mut observer, _) = Client::welcomed(address, "Observer").await;
-    // Disconnect cleanup runs after the socket closes; give it a moment.
-    for _ in 0..50 {
-        let ServerMessage::Lobbies { total, .. } = observer.request(list).await else {
+    let (observer, _) = Client::welcomed(address, "Observer").await;
+    // The check closure is re-run, so the client sits behind a mutex it can borrow from.
+    let observer = tokio::sync::Mutex::new(observer);
+    // Disconnect cleanup runs after the socket closes.
+    eventually("all lobbies to close", || async {
+        let ServerMessage::Lobbies { total, .. } = observer.lock().await.request(list).await else {
             panic!("expected Lobbies");
         };
-        if total == 0 {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    panic!("lobbies outlived all their members");
+        (total == 0).then_some(())
+    })
+    .await;
 }
 
 async fn churn(address: std::net::SocketAddr, index: u32, rounds: u32) {
@@ -169,10 +171,7 @@ async fn churn(address: std::net::SocketAddr, index: u32, rounds: u32) {
             .nth((index + round) as usize % 3)
             .map(|lobby| lobby.id);
         let joined = match target {
-            Some(lobby) => matches!(
-                client.join(lobby, None).await,
-                ServerMessage::LobbyState { .. }
-            ),
+            Some(lobby) => client.try_join(lobby, None).await.is_ok(),
             None => false,
         };
         if !joined {

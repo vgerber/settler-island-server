@@ -316,7 +316,15 @@ impl Client {
         lobby: LobbyId,
         password: Option<&str>,
     ) -> Result<LobbyDetails, ErrorCode> {
-        match self.join(lobby, password).await {
+        let password = password.map(str::to_string);
+        let reply = self
+            .request(|request_id| ClientMessage::JoinLobby {
+                request_id,
+                lobby,
+                password,
+            })
+            .await;
+        match reply {
             ServerMessage::LobbyState { lobby, .. } => Ok(lobby),
             ServerMessage::Error { code, .. } => Err(code),
             other => panic!("expected LobbyState or Error, got {other:?}"),
@@ -379,16 +387,6 @@ impl Client {
             panic!("expected LobbyState, got {started:?}");
         };
         (lobby, self.next_game_started().await)
-    }
-
-    pub async fn join(&mut self, lobby: LobbyId, password: Option<&str>) -> ServerMessage {
-        let password = password.map(str::to_string);
-        self.request(|request_id| ClientMessage::JoinLobby {
-            request_id,
-            lobby,
-            password,
-        })
-        .await
     }
 }
 
