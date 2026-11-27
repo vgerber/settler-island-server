@@ -42,7 +42,7 @@ var _picker := HudResourcePicker.new()
 var _steal_list := HudActionList.new()
 var _trade_dialog := HudTradeDialog.new()
 var _game_over := HudGameOver.new()
-var _bottom_row := HudUi.hbox(20)
+var _bottom_row := HudUi.hbox(14)
 var _last_dice: Array[int] = []
 ## The build kind (an action variant) that board clicks place, or null.
 var _armed: Script = null

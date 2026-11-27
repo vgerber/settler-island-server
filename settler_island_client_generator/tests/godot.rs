@@ -949,6 +949,23 @@ fn hud_event_log_has_a_line_for_every_event() {
 }
 
 #[test]
+fn hud_fits_the_window_in_every_screenshot_state() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-hud-min-size.json");
+    fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "hud_min_size.gd",
+        fixtures_path.to_str().unwrap(),
+        "HUD_MIN_SIZE_OK",
+    );
+}
+
+#[test]
 fn every_sound_hook_has_a_file_and_repeats_are_dropped() {
     let Some(godot) = godot_binary() else {
         return;
