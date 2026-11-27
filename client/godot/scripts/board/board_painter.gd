@@ -14,24 +14,27 @@ const PORT_TEXT_FLOOR := 16.0
 const MOTIF_BANDS: Array[Vector2] = [Vector2(0.0, -0.55), Vector2(0.0, 0.55)]
 
 var _board_control: Board
+## The layer the shapes go on: the board's static layer or its target overlay.
+var _canvas: CanvasItem
 var _board: SiBoard
 var _geometry: BoardGeometry
 
 
-func _init(board_control: Board, board: SiBoard, geometry: BoardGeometry) -> void:
+func _init(board_control: Board, canvas: CanvasItem, board: SiBoard, geometry: BoardGeometry) -> void:
 	_board_control = board_control
+	_canvas = canvas
 	_board = board
 	_geometry = geometry
 
 
 func draw_sea() -> void:
-	_board_control.draw_rect(Rect2(Vector2.ZERO, _board_control.size), Palette.SEA)
+	_canvas.draw_rect(Rect2(Vector2.ZERO, _board_control.size), Palette.SEA)
 	_draw_wave_marks()
 	# Shoal then sand behind the tiles: a shallow rim, a beach, and thin grout between tiles.
 	for tile in _board.tiles:
-		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.18), Palette.SHOAL)
+		_canvas.draw_colored_polygon(_hexagon(tile.coordinates, 1.18), Palette.SHOAL)
 	for tile in _board.tiles:
-		_board_control.draw_colored_polygon(_hexagon(tile.coordinates, 1.05), Palette.SAND)
+		_canvas.draw_colored_polygon(_hexagon(tile.coordinates, 1.05), Palette.SAND)
 
 
 func draw_tiles() -> void:
@@ -129,21 +132,21 @@ func _near_tile(spot: Vector2, distance: float) -> bool:
 func _draw_wave_mark(spot: Vector2) -> void:
 	var radius := _pixels(0.12)
 	var width := _pixels(0.02)
-	_board_control.draw_arc(_to_pixels(spot + Vector2(-0.12, 0.0)), radius, PI + 0.5, TAU - 0.5, 10, Palette.WAVE, width, true)
-	_board_control.draw_arc(_to_pixels(spot + Vector2(0.12, 0.0)), radius, 0.5, PI - 0.5, 10, Palette.WAVE, width, true)
+	_canvas.draw_arc(_to_pixels(spot + Vector2(-0.12, 0.0)), radius, PI + 0.5, TAU - 0.5, 10, Palette.WAVE, width, true)
+	_canvas.draw_arc(_to_pixels(spot + Vector2(0.12, 0.0)), radius, 0.5, PI - 0.5, 10, Palette.WAVE, width, true)
 
 
 func _draw_tile(tile_index: int) -> void:
 	var tile := _board.tiles[tile_index]
 	var fill := Palette.DESERT if tile.resource == null else Palette.resource_color(tile.resource)
 	var corners := _hexagon(tile.coordinates, 0.955)
-	_board_control.draw_colored_polygon(corners, fill)
+	_canvas.draw_colored_polygon(corners, fill)
 	var bevel := _hexagon(tile.coordinates, 0.8)
 	for index in bevel.size():
 		bevel[index] += Vector2(-0.03, -0.04) * _board_control.hex_size
-	_board_control.draw_colored_polygon(bevel, fill.lightened(0.06))
+	_canvas.draw_colored_polygon(bevel, fill.lightened(0.06))
 	corners.append(corners[0])
-	_board_control.draw_polyline(corners, fill.darkened(0.25), _pixels(0.02), true)
+	_canvas.draw_polyline(corners, fill.darkened(0.25), _pixels(0.02), true)
 	var center := _geometry.tile_centers[tile_index]
 	_draw_motif(tile, center)
 	if tile.number != null:
@@ -169,7 +172,7 @@ func _draw_motif(tile: SiTile, center: Vector2) -> void:
 			_:
 				_draw_dunes(band, band_index == 0)
 	if resource.is_empty():
-		_board_control.draw_arc(_to_pixels(center + Vector2(0.0, 0.1)), _pixels(0.2), PI + 0.6, TAU - 0.6, 12,
+		_canvas.draw_arc(_to_pixels(center + Vector2(0.0, 0.1)), _pixels(0.2), PI + 0.6, TAU - 0.6, 12,
 				Palette.DESERT_PATTERN, _pixels(0.03), true)
 
 
@@ -243,7 +246,7 @@ func _draw_peaks(band: Vector2) -> void:
 
 func _draw_dunes(band: Vector2, upper: bool) -> void:
 	for offset: float in [-0.15, 0.15]:
-		_board_control.draw_arc(_to_pixels(band + Vector2(offset, 0.1)), _pixels(0.14), PI + 0.5, TAU - 0.5, 12,
+		_canvas.draw_arc(_to_pixels(band + Vector2(offset, 0.1)), _pixels(0.14), PI + 0.5, TAU - 0.5, 12,
 				Palette.DESERT_PATTERN, _pixels(0.03), true)
 	var rock_spot := band + (Vector2(0.3, 0.06) if upper else Vector2(-0.3, 0.02))
 	_ellipse(rock_spot, Vector2(0.045, 0.028), Palette.DESERT_ROCK)
@@ -282,7 +285,7 @@ func _draw_port(port: Dictionary) -> void:
 		return
 	_ring(marker, BoardGeometry.PORT_RADIUS - 0.03, Palette.resource_color(specific.value), 0.07)
 	_text(marker + Vector2(0.0, -0.13), "2:1", 0.27, Palette.INK, PORT_TEXT_FLOOR)
-	ResourceArt.draw_icon(_board_control, specific.value, _to_pixels(marker + Vector2(0.0, 0.17)), _pixels(0.27))
+	ResourceArt.draw_icon(_canvas, specific.value, _to_pixels(marker + Vector2(0.0, 0.17)), _pixels(0.27))
 
 
 ## Two planks on cross ties from a coast corner out to the port badge.
@@ -429,7 +432,7 @@ func _fill(points: PackedVector2Array, color: Color) -> void:
 	var pixels := PackedVector2Array()
 	for point in points:
 		pixels.append(_to_pixels(point))
-	_board_control.draw_colored_polygon(pixels, color)
+	_canvas.draw_colored_polygon(pixels, color)
 
 
 func _outline(points: PackedVector2Array, color: Color) -> void:
@@ -437,22 +440,22 @@ func _outline(points: PackedVector2Array, color: Color) -> void:
 	for point in points:
 		pixels.append(_to_pixels(point))
 	pixels.append(pixels[0])
-	_board_control.draw_polyline(pixels, color, _pixels(0.03), true)
+	_canvas.draw_polyline(pixels, color, _pixels(0.03), true)
 
 
 func _line(from: Vector2, to: Vector2, width: float, color: Color) -> void:
-	_board_control.draw_line(_to_pixels(from), _to_pixels(to), color, _pixels(width), true)
+	_canvas.draw_line(_to_pixels(from), _to_pixels(to), color, _pixels(width), true)
 
 
 func _polyline(points: Array[Vector2], width: float, color: Color) -> void:
 	var pixels := PackedVector2Array()
 	for point in points:
 		pixels.append(_to_pixels(point))
-	_board_control.draw_polyline(pixels, color, _pixels(width), true)
+	_canvas.draw_polyline(pixels, color, _pixels(width), true)
 
 
 func _circle(center: Vector2, radius: float, color: Color) -> void:
-	_board_control.draw_circle(_to_pixels(center), _pixels(radius), color, true, -1.0, true)
+	_canvas.draw_circle(_to_pixels(center), _pixels(radius), color, true, -1.0, true)
 
 
 func _shadow_circle(center: Vector2, radius: float) -> void:
@@ -468,7 +471,7 @@ func _ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
 
 
 func _ring(center: Vector2, radius: float, color: Color, width: float) -> void:
-	_board_control.draw_arc(_to_pixels(center), _pixels(radius), 0.0, TAU, 48, color, _pixels(width), true)
+	_canvas.draw_arc(_to_pixels(center), _pixels(radius), 0.0, TAU, 48, color, _pixels(width), true)
 
 
 func _faded(color: Color, alpha: float) -> Color:
@@ -483,7 +486,7 @@ func _text(center: Vector2, text: String, height: float, color: Color, floor_pix
 	var width := BOARD_FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	var baseline := _to_pixels(center) + Vector2(-width / 2.0,
 			(BOARD_FONT.get_ascent(font_size) - BOARD_FONT.get_descent(font_size)) / 2.0)
-	_board_control.draw_string(BOARD_FONT, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+	_canvas.draw_string(BOARD_FONT, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 
 
 func _to_pixels(point: Vector2) -> Vector2:

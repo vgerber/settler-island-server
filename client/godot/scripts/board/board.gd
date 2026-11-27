@@ -15,11 +15,16 @@ var hex_size := 1.0
 var origin := Vector2.ZERO
 
 var _hovered: BoardTarget = null
+## The island, drawn only when the game changes; the pulsing targets live on `_overlay` so a frame redraws little.
+var _static_layer := BoardLayer.new(_draw_island)
+var _overlay := BoardLayer.new(_draw_targets)
 ## Seconds since the targets appeared, for their glow.
 var _pulse_time := 0.0
 
 
 func _ready() -> void:
+	add_child(_static_layer)
+	add_child(_overlay)
 	resized.connect(_fit)
 	mouse_exited.connect(func() -> void: _set_hovered(null))
 	set_process(false)
@@ -28,7 +33,7 @@ func _ready() -> void:
 ## Redraws the target glow while any target is shown.
 func _process(delta: float) -> void:
 	_pulse_time += delta
-	queue_redraw()
+	_overlay.queue_redraw()
 
 
 func set_target_filter(kinds: Array[Script]) -> void:
@@ -73,7 +78,7 @@ func _refresh() -> void:
 	_collect_targets()
 	_set_hovered(_target_at(get_local_mouse_position()) if is_visible_in_tree() else null)
 	set_process(not _targets.is_empty())
-	queue_redraw()
+	_redraw_all()
 
 
 func _fit() -> void:
@@ -83,7 +88,7 @@ func _fit() -> void:
 	var bounds := geometry.bounds
 	hex_size = maxf(1.0, minf(available.x / bounds.size.x, available.y / bounds.size.y))
 	origin = size / 2.0 - bounds.get_center() * hex_size
-	queue_redraw()
+	_redraw_all()
 
 
 func _target_at(pixel: Vector2) -> BoardTarget:
@@ -103,7 +108,7 @@ func _set_hovered(target: BoardTarget) -> void:
 		return
 	_hovered = target
 	mouse_default_cursor_shape = Control.CURSOR_ARROW if target == null else Control.CURSOR_POINTING_HAND
-	queue_redraw()
+	_overlay.queue_redraw()
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -122,10 +127,15 @@ func _gui_input(event: InputEvent) -> void:
 	player.act(target.action)
 
 
-func _draw() -> void:
+func _redraw_all() -> void:
+	_static_layer.queue_redraw()
+	_overlay.queue_redraw()
+
+
+func _draw_island(layer: BoardLayer) -> void:
 	if player == null or geometry == null:
 		return
-	var painter := BoardPainter.new(self, player.shown_view.board, geometry)
+	var painter := BoardPainter.new(self, layer, player.shown_view.board, geometry)
 	painter.draw_sea()
 	painter.draw_tiles()
 	# Piers reach under the tiles' edge, so ports go on top of them.
@@ -133,6 +143,12 @@ func _draw() -> void:
 	painter.draw_roads()
 	painter.draw_buildings()
 	painter.draw_robber()
+
+
+func _draw_targets(layer: BoardLayer) -> void:
+	if player == null or geometry == null:
+		return
+	var painter := BoardPainter.new(self, layer, player.shown_view.board, geometry)
 	painter.draw_targets(_targets, _hovered, player.seat, _pulse())
 
 
