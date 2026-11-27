@@ -2,17 +2,21 @@ class_name TableLight
 extends RefCounted
 ## Lighting and Environment of the table, per renderer, in one place. The clay look is made for Compatibility
 ## (baked vertex AO, blob shadows); with Forward+ ("High" graphics quality) the same scene adds SSAO, glow and soft
-## directional shadows on top. The energies are tuned so both renderers come out equally bright.
+## SSAO and glow on top; both renderers cast the lamp's shadows (props and pieces on the tiles). The energies are tuned so both renderers come out equally bright.
 
-const AMBIENT_COLOR := Color("#FFE8D0")
-const AMBIENT_ENERGY := 0.45
-const LAMP_COLOR := Color("#FFF1DC")
-const LAMP_ENERGY := 0.75
-const LAMP_ROTATION := Vector3(-50.0, 35.0, 0.0)
+## Cool fill under a warm key: shadows tint toward blue, lit clay toward cream.
+const AMBIENT_COLOR := Color("#D6E2F2")
+const AMBIENT_ENERGY := 0.42
+const LAMP_COLOR := Color("#FFE7C4")
+const LAMP_ENERGY := 0.66
+const LAMP_ROTATION := Vector3(-38.0, 38.0, 0.0)
 const SSAO_RADIUS := 0.4
 const SSAO_INTENSITY := 1.2
 const GLOW_INTENSITY := 0.3
-const SHADOW_DISTANCE := 40.0
+const SHADOW_DISTANCE := 24.0
+const SHADOW_BIAS := 0.04
+const SHADOW_NORMAL_BIAS := 1.0
+const SHADOW_OPACITY := 0.85
 
 
 ## Whether the running renderer is Forward+, which the High look needs.
@@ -41,6 +45,11 @@ static func add_to(parent: Node3D) -> void:
 	lamp.rotation_degrees = LAMP_ROTATION
 	lamp.light_color = LAMP_COLOR
 	lamp.light_energy = LAMP_ENERGY
-	lamp.shadow_enabled = is_high()
+	lamp.shadow_enabled = true
+	# One orthogonal split covers the small table; four splits would multiply the shadow passes for nothing.
+	lamp.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	lamp.shadow_bias = SHADOW_BIAS
+	lamp.shadow_normal_bias = SHADOW_NORMAL_BIAS
+	lamp.shadow_opacity = SHADOW_OPACITY
 	lamp.directional_shadow_max_distance = SHADOW_DISTANCE
 	parent.add_child(lamp)

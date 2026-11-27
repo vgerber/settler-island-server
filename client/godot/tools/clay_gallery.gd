@@ -136,28 +136,7 @@ func _add_water() -> void:
 
 
 func _add_environment() -> void:
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Palette.TABLE.darkened(0.5)
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("#FFE8D0")
-	environment.ambient_light_energy = 0.45
-	if _renderer == "forward_plus":
-		# The High look: a Forward+ Environment adds what Compatibility fakes with baked AO and blob shadows.
-		environment.ssao_enabled = true
-		environment.ssao_radius = 0.4
-		environment.ssao_intensity = 1.2
-		environment.glow_enabled = true
-		environment.glow_intensity = 0.3
-	var world_environment := WorldEnvironment.new()
-	world_environment.environment = environment
-	_world.add_child(world_environment)
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-50.0, 35.0, 0.0)
-	light.light_color = Color("#FFF1DC")
-	light.light_energy = 0.75
-	light.shadow_enabled = _renderer == "forward_plus"
-	_world.add_child(light)
+	TableLight.add_to(_world)
 
 
 func _add_mesh(mesh: Mesh, material: Material, position: Vector3, yaw := 0.0) -> MeshInstance3D:
