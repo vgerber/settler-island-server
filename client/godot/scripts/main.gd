@@ -79,6 +79,9 @@ func _on_lobby_left(_message: SiServerMessageLobbyLeft) -> void:
 
 
 func _on_error(message: SiServerMessageError) -> void:
+	# In a game, errors answering a request belong to its acts; the game screen's toasts show them.
+	if _screen is GameScreen and message.request_id != null:
+		return
 	show_toast(message.message)
 	# A rejoin can fail when the game ended meanwhile; the browser is the way on from there.
 	if _screen is ConnectScreen and Net.is_online():

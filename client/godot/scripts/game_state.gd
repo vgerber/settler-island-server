@@ -104,7 +104,6 @@ func _on_error(message: SiServerMessageError) -> void:
 		return
 	_awaiting_act = 0
 	refused.emit(message.message)
-	# `Main` shows the server's message as a toast; here only the state is resynchronised.
 	# The refused action came from stale legal actions; `GameStarted` brings the current ones.
 	client.send_get_state()
 
