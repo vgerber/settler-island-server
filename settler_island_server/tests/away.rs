@@ -9,7 +9,9 @@ use common::{
 use settler_island_protocol::{
     AwayPolicy, ClientMessage, Difficulty, LobbyId, SeatOccupant, ServerMessage, User,
 };
-use settler_island_server::{GameStore, MemoryIdentityStore, PoolSettings, PostgresStore};
+use settler_island_server::{
+    GameStore, IdentityStore, MemoryIdentityStore, PoolSettings, PostgresStore,
+};
 
 /// Long enough for a bot with no delay to have moved many times.
 const QUIET: Duration = Duration::from_millis(300);
@@ -104,14 +106,14 @@ fn pool_settings() -> PoolSettings {
 }
 
 /// Starts a `WaitForPlayer` game on one server, stops it, and checks the restored game still waits for seat 0.
-fn restart_keeps_waiting_for_the_player(store: impl GameStore + Clone) {
+/// `identities` gives each server its identity store.
+fn restart_keeps_waiting_for_the_player<I: IdentityStore>(
+    store: impl GameStore + Clone,
+    identities: impl Fn() -> I,
+) {
     let client_runtime = server_runtime();
     let server_a = server_runtime();
-    let address_a = server_a.block_on(start_with(
-        test_config(),
-        store.clone(),
-        MemoryIdentityStore::default(),
-    ));
+    let address_a = server_a.block_on(start_with(test_config(), store.clone(), identities()));
     let (owner_token, guest_token, lobby) = client_runtime.block_on(async {
         let owner_session = guest_session(address_a, "Owner").await;
         let guest_session = guest_session(address_a, "Guest").await;
@@ -124,16 +126,12 @@ fn restart_keeps_waiting_for_the_player(store: impl GameStore + Clone) {
 
     let server_b = server_runtime();
     // Guest tokens are signed, so a fresh identity store accepts them.
-    let address_b = server_b.block_on(start_with(
-        test_config(),
-        store,
-        MemoryIdentityStore::default(),
-    ));
+    let address_b = server_b.block_on(start_with(test_config(), store, identities()));
     client_runtime.block_on(async {
         let (mut guest, _) = Client::authenticated(address_b, &guest_token).await;
         let details = guest.try_join(lobby, None).await.unwrap();
         assert_eq!(details.info.away_policy, AwayPolicy::WaitForPlayer);
-        let SeatOccupant::Away { user: owner_user } = details.seats[0].clone() else {
+        let SeatOccupant::Away { .. } = details.seats[0] else {
             panic!(
                 "a restored human seat must wait, got {:?}",
                 details.seats[0]
@@ -142,14 +140,14 @@ fn restart_keeps_waiting_for_the_player(store: impl GameStore + Clone) {
         guest.next_game_started().await;
         assert_no_move(&mut guest).await;
 
-        let (mut owner, _) = Client::authenticated(address_b, &owner_token).await;
+        let (mut owner, owner_user) = Client::authenticated(address_b, &owner_token).await;
         rejoin_and_continue(&mut owner, owner_user, &mut guest, lobby).await;
     });
 }
 
 #[test]
 fn a_restored_game_keeps_waiting_for_its_away_player() {
-    restart_keeps_waiting_for_the_player(SharedStore::default());
+    restart_keeps_waiting_for_the_player(SharedStore::default(), MemoryIdentityStore::default);
 }
 
 #[test]
@@ -161,5 +159,5 @@ fn postgres_a_restored_game_keeps_waiting_for_its_away_player() {
     let store = client_runtime
         .block_on(PostgresStore::connect(database.options(), pool_settings()))
         .unwrap();
-    restart_keeps_waiting_for_the_player(store);
+    restart_keeps_waiting_for_the_player(store.clone(), || store.clone());
 }

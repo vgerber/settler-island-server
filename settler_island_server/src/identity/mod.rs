@@ -6,14 +6,15 @@ mod store;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use settler_island_protocol::{
-    ErrorCode, GuestSession, User, UserId, UserKind, MAX_USER_NAME_CHARS,
+    ErrorCode, GuestSession, PublicId, User, UserKind, MAX_USER_NAME_CHARS,
 };
 use tracing::{debug, error};
 
 use crate::config::Config;
 use crate::names::clean_name;
-use guest::{GuestTokens, GUEST_TOKEN_PREFIX};
+use guest::{Guest, GuestTokens, GUEST_TOKEN_PREFIX};
 use keycloak::{AccountClaims, AccountTokenError, KeycloakVerifier};
 
 pub use store::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
@@ -21,6 +22,23 @@ pub use store::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
 /// Distinguishes account ids from guest uuids.
 const ACCOUNT_ID_PREFIX: &str = "kc:";
 const FALLBACK_ACCOUNT_NAME: &str = "Player";
+
+/// The server's key for a user: a guest uuid or `kc:<subject>`. Clients never see it, only the user's `PublicId`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UserId(pub String);
+
+/// A signed-in user: the private `id` the server keys on and the `user` clients see.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Player {
+    pub id: UserId,
+    pub user: User,
+}
+
+/// A fresh public id: random, so it reveals nothing about the user id it stands for.
+pub(crate) fn new_public_id() -> PublicId {
+    PublicId(uuid::Uuid::new_v4().simple().to_string())
+}
 
 pub(crate) struct Identity<I> {
     guests: GuestTokens,
@@ -37,21 +55,25 @@ impl<I: IdentityStore> Identity<I> {
         }
     }
 
-    pub(crate) fn guest_session(&self, name: &str) -> Result<GuestSession, ErrorCode> {
+    pub(crate) async fn guest_session(&self, name: &str) -> Result<GuestSession, ErrorCode> {
         let name = clean_name(name, MAX_USER_NAME_CHARS).ok_or(ErrorCode::InvalidName)?;
-        let user = User {
+        let guest = Guest {
             id: UserId(uuid::Uuid::new_v4().to_string()),
             name,
-            kind: UserKind::Guest,
         };
-        let token = self.guests.issue(&user, unix_now());
-        Ok(GuestSession { token, user })
+        let token = self.guests.issue(&guest, unix_now());
+        let player = self.player(guest.id, guest.name, UserKind::Guest).await?;
+        Ok(GuestSession {
+            token,
+            user: player.user,
+        })
     }
 
     /// Accepts a guest token or a Keycloak access token.
-    pub(crate) async fn authenticate(&self, token: &str) -> Result<User, ErrorCode> {
+    pub(crate) async fn authenticate(&self, token: &str) -> Result<Player, ErrorCode> {
         if token.starts_with(GUEST_TOKEN_PREFIX) {
-            return self.live_guest(token).await;
+            let guest = self.live_guest(token).await?;
+            return self.player(guest.id, guest.name, UserKind::Guest).await;
         }
         let claims = self.account(token).await?;
         let linked = self
@@ -60,10 +82,11 @@ impl<I: IdentityStore> Identity<I> {
             .await
             .map_err(internal)?;
         let id = linked.unwrap_or_else(|| UserId(format!("{ACCOUNT_ID_PREFIX}{}", claims.sub)));
-        Ok(account_user(id, &claims))
+        self.player(id, account_name(&claims), UserKind::Account)
+            .await
     }
 
-    /// Links the guest's id to the account, so the account keeps the guest's games.
+    /// Links the guest's id to the account, so the account keeps the guest's games and public id.
     pub(crate) async fn upgrade(
         &self,
         guest_token: &str,
@@ -81,24 +104,35 @@ impl<I: IdentityStore> Identity<I> {
         if linked != guest.id {
             return Err(ErrorCode::AccountAlreadyLinked);
         }
-        Ok(account_user(linked, &claims))
+        let player = self
+            .player(linked, account_name(&claims), UserKind::Account)
+            .await?;
+        Ok(player.user)
+    }
+
+    async fn player(&self, id: UserId, name: String, kind: UserKind) -> Result<Player, ErrorCode> {
+        let public_id = self.store.public_id(&id).await.map_err(internal)?;
+        Ok(Player {
+            id,
+            user: User {
+                id: public_id,
+                name,
+                kind,
+            },
+        })
     }
 
     /// A guest token stops working once its user id belongs to an account: the account is the identity from then on.
-    async fn live_guest(&self, token: &str) -> Result<User, ErrorCode> {
-        let guest = self.guest(token)?;
+    async fn live_guest(&self, token: &str) -> Result<Guest, ErrorCode> {
+        let guest = self.guests.verify(token, unix_now()).map_err(|error| {
+            debug!(%error, "guest token rejected");
+            ErrorCode::InvalidToken
+        })?;
         if self.store.is_linked(&guest.id).await.map_err(internal)? {
             debug!("guest token rejected: the user was upgraded");
             return Err(ErrorCode::InvalidToken);
         }
         Ok(guest)
-    }
-
-    fn guest(&self, token: &str) -> Result<User, ErrorCode> {
-        self.guests.verify(token, unix_now()).map_err(|error| {
-            debug!(%error, "guest token rejected");
-            ErrorCode::InvalidToken
-        })
     }
 
     async fn account(&self, token: &str) -> Result<AccountClaims, ErrorCode> {
@@ -115,18 +149,13 @@ impl<I: IdentityStore> Identity<I> {
     }
 }
 
-fn account_user(id: UserId, claims: &AccountClaims) -> User {
-    let name = claims
+fn account_name(claims: &AccountClaims) -> String {
+    claims
         .preferred_username
         .as_deref()
         .map(|name| name.chars().take(MAX_USER_NAME_CHARS).collect::<String>())
         .and_then(|name| clean_name(&name, MAX_USER_NAME_CHARS))
-        .unwrap_or_else(|| FALLBACK_ACCOUNT_NAME.to_string());
-    User {
-        id,
-        name,
-        kind: UserKind::Account,
-    }
+        .unwrap_or_else(|| FALLBACK_ACCOUNT_NAME.to_string())
 }
 
 fn internal(error: impl std::fmt::Display) -> ErrorCode {

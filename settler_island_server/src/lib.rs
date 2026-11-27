@@ -41,7 +41,7 @@ pub use config::{
     Config, ConfigError, DatabaseUrl, KeycloakConfig, LogFormat, SessionSecret,
     MIN_SESSION_SECRET_BYTES, VARIABLES,
 };
-pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore};
+pub use identity::{IdentityStore, IdentityStoreError, MemoryIdentityStore, Player, UserId};
 pub use metrics::MetricsError;
 pub use postgres::{PoolSettings, PostgresStore};
 pub use store::{
@@ -275,6 +275,7 @@ async fn guest_session<I: IdentityStore>(
     state
         .identity
         .guest_session(&request.name)
+        .await
         .map(Json)
         .map_err(HttpFailure)
 }

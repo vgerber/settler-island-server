@@ -8,16 +8,15 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use settler_island_protocol::{
-    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerLimit, ServerMessage, User,
-    UserId, DEFAULT_AWAY_POLICY, DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN,
-    MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN,
-    MIN_POINTS_TO_WIN,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerLimit, ServerMessage,
+    DEFAULT_AWAY_POLICY, DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE,
+    MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MIN_POINTS_TO_WIN,
 };
 use tokio::sync::Notify;
 use tracing::{debug, error};
 
 use crate::config::Config;
-use crate::identity::{Identity, IdentityStore};
+use crate::identity::{Identity, IdentityStore, Player, UserId};
 use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest, SeatCount};
 use crate::metrics::Metrics;
 use crate::names::clean_name;
@@ -47,7 +46,7 @@ struct Connection<I> {
     outbox: Outbox,
     registry: RegistryHandle,
     identity: Arc<Identity<I>>,
-    user: Option<User>,
+    user: Option<Player>,
     lobby: Option<LobbyHandle>,
     /// The client address, for the per-address password guess limit.
     address: Option<IpAddr>,
@@ -278,9 +277,10 @@ impl<I: IdentityStore> Connection<I> {
         if self.user.is_some() {
             return Err(ErrorCode::AlreadyWelcomed);
         }
-        let user = self.identity.authenticate(token).await?;
-        let running_lobby = self.registry.running_lobby(user.id.clone()).await?;
-        self.user = Some(user.clone());
+        let player = self.identity.authenticate(token).await?;
+        let running_lobby = self.registry.running_lobby(player.id.clone()).await?;
+        let user = player.user.clone();
+        self.user = Some(player);
         self.metrics.authenticated_connections.inc();
         self.outbox.send(ServerMessage::Welcome {
             request_id,
@@ -312,7 +312,7 @@ impl<I: IdentityStore> Connection<I> {
 
     async fn create(
         &mut self,
-        owner: User,
+        owner: Player,
         request_id: u32,
         name: &str,
         password: Option<String>,
@@ -348,7 +348,7 @@ impl<I: IdentityStore> Connection<I> {
 
     async fn join(
         &mut self,
-        user: User,
+        user: Player,
         request_id: u32,
         lobby: LobbyId,
         password: Option<String>,
@@ -369,7 +369,7 @@ impl<I: IdentityStore> Connection<I> {
 
     async fn enter(
         &mut self,
-        user: User,
+        user: Player,
         request_id: u32,
         lobby: LobbyId,
         entry: LobbyEntry,

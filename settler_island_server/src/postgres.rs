@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use settler_island_bot::Difficulty;
 use settler_island_game::{Action, Event, Game, GameSettings, RecordEntry, RecordSettings, Seat};
-use settler_island_protocol::{AwayPolicy, LobbyId, User, UserId, UserKind};
+use settler_island_protocol::{AwayPolicy, LobbyId, PublicId, User, UserKind};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::types::Json;
 use sqlx::{ConnectOptions, Connection, PgPool, Postgres, Transaction};
 
-use crate::identity::{IdentityStore, IdentityStoreError};
+use crate::identity::{new_public_id, IdentityStore, IdentityStoreError, Player, UserId};
 use crate::store::{GameId, GameStore, NewGame, SeatPlayer, Snapshot, StoreError, StoredGame};
 
 /// A query running longer than this is cancelled by the database, so a stalled one errors instead of holding a
@@ -53,13 +53,21 @@ impl PostgresStore {
         player: &SeatPlayer,
     ) -> Result<(), StoreError> {
         match player {
-            SeatPlayer::Human(user) => {
+            SeatPlayer::Human(player) => {
                 sqlx::query!(
                     "INSERT INTO users (id, kind, name) VALUES ($1, $2, $3)
                      ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name",
-                    user.id.0,
-                    kind_name(user.kind),
-                    user.name,
+                    player.id.0,
+                    kind_name(player.user.kind),
+                    player.user.name,
+                )
+                .execute(&mut **transaction)
+                .await?;
+                // The identity store wrote it already when they share the database; otherwise it is kept from here.
+                sqlx::query!(
+                    "INSERT INTO public_ids (user_id, public_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    player.id.0,
+                    player.user.id.0,
                 )
                 .execute(&mut **transaction)
                 .await?;
@@ -67,7 +75,7 @@ impl PostgresStore {
                     "INSERT INTO game_seats (game, seat, user_id) VALUES ($1, $2, $3)",
                     game,
                     seat,
-                    user.id.0,
+                    player.id.0,
                 )
                 .execute(&mut **transaction)
                 .await?;
@@ -155,8 +163,11 @@ impl PostgresStore {
     async fn load_seats(&self, game: i64) -> Result<Vec<SeatPlayer>, StoreError> {
         let rows = sqlx::query!(
             r#"SELECT seat.bot_difficulty AS "bot_difficulty: Json<Difficulty>",
-                      users.id AS "user_id?", users.name AS "user_name?", users.kind AS "user_kind?"
-               FROM game_seats seat LEFT JOIN users ON users.id = seat.user_id
+                      users.id AS "user_id?", users.name AS "user_name?", users.kind AS "user_kind?",
+                      public_ids.public_id AS "public_id?"
+               FROM game_seats seat
+               LEFT JOIN users ON users.id = seat.user_id
+               LEFT JOIN public_ids ON public_ids.user_id = seat.user_id
                WHERE seat.game = $1 ORDER BY seat.seat"#,
             game,
         )
@@ -167,16 +178,19 @@ impl PostgresStore {
                 if let Some(difficulty) = row.bot_difficulty {
                     return Ok(SeatPlayer::Bot(difficulty.0));
                 }
-                let (Some(user_id), Some(name), Some(kind)) =
-                    (row.user_id, row.user_name, row.user_kind)
+                let (Some(user_id), Some(name), Some(kind), Some(public_id)) =
+                    (row.user_id, row.user_name, row.user_kind, row.public_id)
                 else {
                     return Err(corrupt(game, "seat"));
                 };
                 let kind = parse_kind(&kind).ok_or_else(|| corrupt(game, "user kind"))?;
-                Ok(SeatPlayer::Human(User {
+                Ok(SeatPlayer::Human(Player {
                     id: UserId(user_id),
-                    name,
-                    kind,
+                    user: User {
+                        id: PublicId(public_id),
+                        name,
+                        kind,
+                    },
                 }))
             })
             .collect()
@@ -355,6 +369,20 @@ impl GameStore for PostgresStore {
 }
 
 impl IdentityStore for PostgresStore {
+    async fn public_id(&self, user: &UserId) -> Result<PublicId, IdentityStoreError> {
+        // The no-op update makes RETURNING yield the stored id when the user has one already.
+        let public_id = sqlx::query_scalar!(
+            "INSERT INTO public_ids (user_id, public_id) VALUES ($1, $2)
+             ON CONFLICT (user_id) DO UPDATE SET user_id = excluded.user_id
+             RETURNING public_id",
+            user.0,
+            new_public_id().0,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(PublicId(public_id))
+    }
+
     async fn linked_user(&self, subject: &str) -> Result<Option<UserId>, IdentityStoreError> {
         let user = sqlx::query_scalar!(
             "SELECT user_id FROM identity_links WHERE keycloak_sub = $1",

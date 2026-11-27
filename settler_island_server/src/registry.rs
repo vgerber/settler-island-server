@@ -2,12 +2,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use settler_island_protocol::{
-    AwayPolicy, Difficulty, ErrorCode, LobbyId, LobbySummary, ServerLimit, User, UserId,
+    AwayPolicy, Difficulty, ErrorCode, LobbyId, LobbySummary, ServerLimit,
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
+use crate::identity::{Player, UserId};
 use crate::lobby::{self, LobbyHandle, LobbyNotice, LobbySetup, SeatCount};
 use crate::metrics::Metrics;
 use crate::outbox::Outbox;
@@ -17,7 +18,7 @@ const COMMAND_QUEUE: usize = 256;
 
 pub(crate) struct NewLobby {
     pub name: String,
-    pub owner: User,
+    pub owner: Player,
     pub outbox: Outbox,
     pub request_id: u32,
     pub password_hash: Option<String>,

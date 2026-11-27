@@ -213,6 +213,8 @@ pub async fn guest_session(address: SocketAddr, name: &str) -> GuestSession {
 pub struct Client {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
     next_request: u32,
+    /// Every text frame received, as sent, so a test can search what the server revealed.
+    pub received: Vec<String>,
 }
 
 pub fn echoed_request_id(message: &ServerMessage) -> Option<u32> {
@@ -240,6 +242,7 @@ impl Client {
         Ok(Client {
             socket,
             next_request: 0,
+            received: Vec::new(),
         })
     }
 
@@ -256,6 +259,7 @@ impl Client {
         Client {
             socket,
             next_request: 0,
+            received: Vec::new(),
         }
     }
 
@@ -325,6 +329,7 @@ impl Client {
                 .expect("connection closed")
                 .expect("websocket error");
             if let Message::Text(text) = next {
+                self.received.push(text.to_string());
                 return serde_json::from_str(text.as_str()).unwrap();
             }
         }

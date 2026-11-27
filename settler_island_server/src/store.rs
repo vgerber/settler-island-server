@@ -7,7 +7,9 @@ use settler_island_bot::Difficulty;
 use settler_island_game::{
     replay, Game, GameError, GameRecord, GameSettings, RecordEntry, ReplayError, Seat,
 };
-use settler_island_protocol::{AwayPolicy, LobbyId, User};
+use settler_island_protocol::{AwayPolicy, LobbyId};
+
+use crate::identity::Player;
 
 /// A snapshot every this many actions bounds the replay work of a restart.
 pub const SNAPSHOT_INTERVAL: u32 = 50;
@@ -22,7 +24,7 @@ pub struct GameId(pub u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeatPlayer {
-    Human(User),
+    Human(Player),
     Bot(Difficulty),
 }
 
@@ -265,7 +267,9 @@ impl GameStore for MemoryStore {
 #[cfg(test)]
 mod tests {
     use settler_island_game::Action;
-    use settler_island_protocol::{UserId, UserKind};
+    use settler_island_protocol::{PublicId, User, UserKind};
+
+    use crate::identity::UserId;
 
     use super::*;
 
@@ -277,10 +281,13 @@ mod tests {
                 seed: 5,
             },
             seats: vec![
-                SeatPlayer::Human(User {
+                SeatPlayer::Human(Player {
                     id: UserId("a".to_string()),
-                    name: "Ada".to_string(),
-                    kind: UserKind::Guest,
+                    user: User {
+                        id: PublicId("public-a".to_string()),
+                        name: "Ada".to_string(),
+                        kind: UserKind::Guest,
+                    },
                 }),
                 SeatPlayer::Bot(Difficulty::Random),
                 SeatPlayer::Bot(Difficulty::Random),

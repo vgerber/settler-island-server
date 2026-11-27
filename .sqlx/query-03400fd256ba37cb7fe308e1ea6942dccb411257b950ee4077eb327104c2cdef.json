@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public_ids (user_id, public_id) VALUES ($1, $2)\n             ON CONFLICT (user_id) DO UPDATE SET user_id = excluded.user_id\n             RETURNING public_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "public_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "03400fd256ba37cb7fe308e1ea6942dccb411257b950ee4077eb327104c2cdef"
+}

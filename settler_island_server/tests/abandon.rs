@@ -6,10 +6,12 @@ use std::time::Duration;
 use common::{eventually, start_with, test_config, Client, Dealt, SharedStore};
 use settler_island_game::GameSettings;
 use settler_island_protocol::{
-    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, PublicId, ServerMessage, User,
     UserKind,
 };
-use settler_island_server::{Config, GameStore, MemoryIdentityStore, NewGame, SeatPlayer};
+use settler_island_server::{
+    Config, GameStore, MemoryIdentityStore, NewGame, Player, SeatPlayer, UserId,
+};
 
 const ABANDON_AFTER: Duration = Duration::from_millis(400);
 
@@ -240,10 +242,13 @@ async fn time_unattended_before_a_restart_counts_toward_the_deadline() {
 
 /// A game with one human seat and no moves yet.
 fn stored_game(name: &str) -> NewGame {
-    let human = User {
+    let human = Player {
         id: UserId("guest:ada".to_string()),
-        name: "Ada".to_string(),
-        kind: UserKind::Guest,
+        user: User {
+            id: PublicId("public-ada".to_string()),
+            name: "Ada".to_string(),
+            kind: UserKind::Guest,
+        },
     };
     NewGame {
         settings: GameSettings {

@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Mutex;
 
-use settler_island_protocol::UserId;
+use settler_island_protocol::PublicId;
+
+use super::{new_public_id, UserId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityStoreError {
@@ -14,8 +16,14 @@ pub enum IdentityStoreError {
     Database(#[from] sqlx::Error),
 }
 
-/// Maps Keycloak subjects to the user ids of upgraded guests.
+/// Maps Keycloak subjects to the user ids of upgraded guests, and user ids to the public ids clients see.
 pub trait IdentityStore: Send + Sync + 'static {
+    /// The public id of `user`, created at random on first use and the same ever after.
+    fn public_id(
+        &self,
+        user: &UserId,
+    ) -> impl Future<Output = Result<PublicId, IdentityStoreError>> + Send;
+
     /// The user id `subject` was linked to, if any.
     fn linked_user(
         &self,
@@ -37,14 +45,24 @@ pub trait IdentityStore: Send + Sync + 'static {
     ) -> impl Future<Output = Result<UserId, IdentityStoreError>> + Send;
 }
 
-/// Keeps links in memory; they are lost on restart.
+/// Keeps links and public ids in memory; they are lost on restart.
 #[derive(Debug, Default)]
 pub struct MemoryIdentityStore {
-    // A plain mutex is fine: it is never held across an await.
+    // Plain mutexes are fine: they are never held across an await.
     links: Mutex<HashMap<String, UserId>>,
+    public_ids: Mutex<HashMap<UserId, PublicId>>,
 }
 
 impl IdentityStore for MemoryIdentityStore {
+    async fn public_id(&self, user: &UserId) -> Result<PublicId, IdentityStoreError> {
+        let mut public_ids = self
+            .public_ids
+            .lock()
+            .map_err(|_| IdentityStoreError::Poisoned)?;
+        let public_id = public_ids.entry(user.clone()).or_insert_with(new_public_id);
+        Ok(public_id.clone())
+    }
+
     async fn linked_user(&self, subject: &str) -> Result<Option<UserId>, IdentityStoreError> {
         let links = self
             .links

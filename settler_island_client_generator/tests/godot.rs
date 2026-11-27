@@ -22,8 +22,8 @@ use settler_island_game::{
     Port, Resource, ResourceCounts, Resume, TileId,
 };
 use settler_island_protocol::{
-    AwayPolicy, ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary,
-    SeatOccupant, ServerLimit, ServerMessage, User, UserId, UserKind,
+    AwayPolicy, ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, PublicId,
+    SeatOccupant, ServerLimit, ServerMessage, User, UserKind,
 };
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
@@ -209,7 +209,7 @@ fn run_script(godot: &Path, project: Project, script: &str, argument: &str, mark
 
 fn user(id: &str, name: &str) -> User {
     User {
-        id: UserId(id.to_string()),
+        id: PublicId(id.to_string()),
         name: name.to_string(),
         kind: UserKind::Guest,
     }
@@ -470,7 +470,7 @@ fn fixtures() -> Value {
     )
     .unwrap();
     let seat = middle.pending_seats()[0];
-    let owner = user("u1", "Ada");
+    let owner = user("2b7e151628ae4d2aabf71588ca09cf4f", "Ada");
 
     let mut client = vec![
         ClientMessage::Authenticate {
@@ -546,7 +546,7 @@ fn fixtures() -> Value {
             },
             SeatOccupant::Bot {
                 difficulty: Difficulty::Random,
-                reserved_for: Some(user("u2", "Bob")),
+                reserved_for: Some(user("3f9c0a525d4e4b8a9e610c7d2a8b1e33", "Bob")),
             },
             SeatOccupant::Bot {
                 difficulty: Difficulty::Heuristic,
@@ -555,7 +555,7 @@ fn fixtures() -> Value {
             SeatOccupant::Open,
             // One more seat than a game has, so every occupant kind is sampled.
             SeatOccupant::Away {
-                user: user("u3", "Cy"),
+                user: user("c4a1e8f02b6d4c7e9f135a7b9d0e2c46", "Cy"),
             },
         ],
     };
@@ -635,6 +635,36 @@ fn write_fixtures() -> PathBuf {
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-round-trip-fixtures.json");
     fs::write(&path, fixtures().to_string()).unwrap();
     path
+}
+
+/// The shapes of `UserId`s: a guest's hyphenated uuid or `kc:` plus a Keycloak subject.
+fn is_user_id_shaped(text: &str) -> bool {
+    let hyphens_at_uuid_positions = text.len() == 36
+        && text.char_indices().all(|(index, character)| match index {
+            8 | 13 | 18 | 23 => character == '-',
+            _ => character.is_ascii_hexdigit(),
+        });
+    text.starts_with("kc:") || hyphens_at_uuid_positions
+}
+
+/// Every string anywhere in `value`.
+fn strings(value: &Value) -> Vec<&str> {
+    match value {
+        Value::String(text) => vec![text.as_str()],
+        Value::Array(items) => items.iter().flat_map(strings).collect(),
+        Value::Object(fields) => fields.values().flat_map(strings).collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn server_messages_name_users_only_by_public_id() {
+    let fixtures = fixtures();
+    let leaked: Vec<&str> = strings(&fixtures["server"])
+        .into_iter()
+        .filter(|text| is_user_id_shaped(text))
+        .collect();
+    assert!(leaked.is_empty(), "user ids in server messages: {leaked:?}");
 }
 
 #[test]

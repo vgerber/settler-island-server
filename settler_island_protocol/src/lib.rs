@@ -29,11 +29,12 @@ pub const GUEST_SESSION_ROUTE: &str = "/api/v1/sessions/guest";
 pub const UPGRADE_SESSION_ROUTE: &str = "/api/v1/sessions/upgrade";
 pub const HEALTH_ROUTE: &str = "/api/v1/health";
 
+/// How clients know a user: random, stable across restarts, and not derivable from the server's own user id.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct UserId(pub String);
+pub struct PublicId(pub String);
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -59,7 +60,7 @@ pub enum UserKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct User {
-    pub id: UserId,
+    pub id: PublicId,
     pub name: String,
     pub kind: UserKind,
 }
@@ -476,7 +477,7 @@ mod tests {
             SeatOccupant::Open,
             SeatOccupant::Human {
                 user: User {
-                    id: UserId("u1".to_string()),
+                    id: PublicId("u1".to_string()),
                     name: "Ada".to_string(),
                     kind: UserKind::Guest,
                 },

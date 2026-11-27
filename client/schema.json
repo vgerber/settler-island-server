@@ -2522,6 +2522,10 @@
         }
       ]
     },
+    "PublicId": {
+      "description": "How clients know a user: random, stable across restarts, and not derivable from the server's own user id.",
+      "type": "string"
+    },
     "PublicPlayerView": {
       "properties": {
         "cities_left": {
@@ -3172,7 +3176,7 @@
     "User": {
       "properties": {
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/PublicId"
         },
         "kind": {
           "$ref": "#/$defs/UserKind"

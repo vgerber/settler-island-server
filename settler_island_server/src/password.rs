@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use rand::RngCore;
-use settler_island_protocol::{LobbyId, UserId};
+use settler_island_protocol::LobbyId;
+
+use crate::identity::UserId;
 use tokio::sync::Semaphore;
 
 /// Each Argon2 run takes about 19 MiB and a core; a constant because `config.rs` is shared and this bound only

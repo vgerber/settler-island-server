@@ -20,7 +20,7 @@ use rsa::RsaPrivateKey;
 use serde_json::{json, Value};
 use settler_island_protocol::{
     ClientMessage, ErrorCode, HttpError, SeatOccupant, ServerMessage, UpgradeRequest, Upgraded,
-    User, UserId, UserKind,
+    UserKind,
 };
 use settler_island_server::{Config, KeycloakConfig};
 use sha2::Sha256;
@@ -169,14 +169,8 @@ async fn account_tokens_must_be_signed_by_the_realm_for_us_and_unexpired() {
     let (address, realm) = start_with_realm().await;
 
     let (_, user) = Client::authenticated(address, &realm.token("sub-1", "kim")).await;
-    assert_eq!(
-        user,
-        User {
-            id: UserId("kc:sub-1".to_string()),
-            name: "kim".to_string(),
-            kind: UserKind::Account,
-        }
-    );
+    assert_eq!((user.name.as_str(), user.kind), ("kim", UserKind::Account));
+    assert!(!user.id.0.contains("sub-1"));
 
     let mut expired = realm.claims("sub-1", "kim");
     expired["exp"] = json!(now() - 600);
@@ -256,8 +250,7 @@ async fn concurrent_first_logins_share_one_key_fetch() {
 async fn tampered_and_expired_guest_tokens_are_rejected() {
     let address = start(test_config()).await;
     let session = guest_session(address, "Ada").await;
-    let valid =
-        json!({"id": session.user.id, "name": "Ada", "kind": "Guest", "expires": now() + 60});
+    let valid = json!({"id": guest_user_id(&session.token), "name": "Ada", "kind": "Guest", "expires": now() + 60});
     assert_eq!(
         Client::authenticated(address, &guest_token(&valid)).await.1,
         session.user
@@ -322,6 +315,72 @@ async fn a_guest_and_an_account_play_in_one_lobby() {
             assert!(!events.is_empty());
             break;
         }
+    }
+}
+
+/// The user id a guest token carries; only its holder may know it.
+fn guest_user_id(token: &str) -> String {
+    let (payload, _) = token["guest.".len()..].split_once('.').unwrap();
+    let claims: Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+    claims["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn players_see_each_other_only_by_public_id() {
+    let (address, realm) = start_with_realm().await;
+    let session = guest_session(address, "Ada").await;
+    let guest_id = guest_user_id(&session.token);
+    let subject = "subject-never-shown";
+    let (mut guest, guest_user) = Client::authenticated(address, &session.token).await;
+    let (mut account, account_user) =
+        Client::authenticated(address, &realm.token(subject, "kim")).await;
+    assert_eq!(guest_user, session.user);
+    assert_ne!(guest_user.id, account_user.id);
+
+    let lobby = guest.create_lobby("Masked", 3, None).await;
+    let listed = account
+        .request(|request_id| ClientMessage::ListLobbies {
+            request_id,
+            page: 0,
+            per_page: 10,
+        })
+        .await;
+    let ServerMessage::Lobbies { lobbies, .. } = listed else {
+        panic!("expected Lobbies, got {listed:?}");
+    };
+    assert_eq!(lobbies[0].info.owner, guest_user);
+    let joined = account.try_join(lobby, None).await.unwrap();
+    assert_eq!(
+        joined.seats[0],
+        SeatOccupant::Human {
+            user: guest_user.clone()
+        }
+    );
+    guest
+        .expect_lobby(|request_id| ClientMessage::AddBot {
+            request_id,
+            difficulty: settler_island_protocol::Difficulty::Random,
+        })
+        .await;
+    let started = guest
+        .expect_lobby(|request_id| ClientMessage::StartGame { request_id })
+        .await;
+    assert_eq!(
+        started.seats[1],
+        SeatOccupant::Human {
+            user: account_user.clone()
+        }
+    );
+    account.next_game_started().await;
+    for client in [&mut guest, &mut account] {
+        client
+            .request(|request_id| ClientMessage::GetRecord { request_id })
+            .await;
+    }
+
+    for text in guest.received.iter().chain(&account.received) {
+        assert!(!text.contains(&guest_id), "a guest id leaked: {text}");
+        assert!(!text.contains(subject), "an account id leaked: {text}");
     }
 }
 

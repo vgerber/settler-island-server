@@ -9,13 +9,14 @@ use settler_island_game::{
 use crate::store::StoredGame;
 use settler_island_protocol::{
     AwayPolicy, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
-    ServerMessage, User, UserId,
+    ServerMessage,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep_until, Instant};
 use tracing::{error, info, warn};
 
 use crate::config::Config;
+use crate::identity::{Player, UserId};
 use crate::metrics::{GameInProgress, Metrics};
 use crate::outbox::Outbox;
 use crate::store::{wants_snapshot, GameId, GameStore, NewGame, SeatPlayer, StoreError};
@@ -28,7 +29,7 @@ pub(crate) type Reply = oneshot::Sender<Result<(), ErrorCode>>;
 
 pub(crate) enum LobbyCommand {
     Join {
-        user: User,
+        user: Player,
         outbox: Outbox,
         request_id: u32,
         reply: Reply,
@@ -143,7 +144,7 @@ impl SeatCount {
 pub(crate) struct LobbySetup {
     pub id: LobbyId,
     pub name: String,
-    pub owner: User,
+    pub owner: Player,
     pub outbox: Outbox,
     pub request_id: u32,
     pub has_password: bool,
@@ -154,8 +155,47 @@ pub(crate) struct LobbySetup {
 }
 
 struct Member {
-    user: User,
+    player: Player,
     outbox: Outbox,
+}
+
+/// A seat as the lobby tracks it, keyed by private user ids; clients see it as a `SeatOccupant`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Occupant {
+    Open,
+    Human {
+        player: Player,
+    },
+    /// `reserved_for` is the player this bot stands in for until they rejoin.
+    Bot {
+        difficulty: Difficulty,
+        reserved_for: Option<Player>,
+    },
+    /// Left a running game under `AwayPolicy::WaitForPlayer`.
+    Away {
+        player: Player,
+    },
+}
+
+impl Occupant {
+    fn public(&self) -> SeatOccupant {
+        match self {
+            Occupant::Open => SeatOccupant::Open,
+            Occupant::Human { player } => SeatOccupant::Human {
+                user: player.user.clone(),
+            },
+            Occupant::Bot {
+                difficulty,
+                reserved_for,
+            } => SeatOccupant::Bot {
+                difficulty: *difficulty,
+                reserved_for: reserved_for.as_ref().map(|player| player.user.clone()),
+            },
+            Occupant::Away { player } => SeatOccupant::Away {
+                user: player.user.clone(),
+            },
+        }
+    }
 }
 
 struct RunningGame {
@@ -191,9 +231,9 @@ impl RunningGame {
 struct Lobby<S> {
     id: LobbyId,
     name: String,
-    owner: User,
+    owner: Player,
     has_password: bool,
-    seats: Vec<SeatOccupant>,
+    seats: Vec<Occupant>,
     points_to_win: u8,
     /// Plays for a player who leaves a running game under `AwayPolicy::BotTakesOver`.
     bot_difficulty: Difficulty,
@@ -232,10 +272,10 @@ fn open<S: GameStore>(
     metrics: Arc<Metrics>,
     notices: mpsc::UnboundedSender<LobbyNotice>,
 ) -> Lobby<S> {
-    let owner_seat = SeatOccupant::Human {
-        user: setup.owner.clone(),
+    let owner_seat = Occupant::Human {
+        player: setup.owner.clone(),
     };
-    let open_seats = std::iter::repeat_n(SeatOccupant::Open, usize::from(setup.seats.0) - 1);
+    let open_seats = std::iter::repeat_n(Occupant::Open, usize::from(setup.seats.0) - 1);
     let seats = std::iter::once(owner_seat).chain(open_seats).collect();
     Lobby {
         id: setup.id,
@@ -247,7 +287,7 @@ fn open<S: GameStore>(
         bot_difficulty: setup.bot_difficulty,
         away_policy: setup.away_policy,
         members: vec![Member {
-            user: setup.owner,
+            player: setup.owner,
             outbox: setup.outbox,
         }],
         game: None,
@@ -283,7 +323,7 @@ pub(crate) fn restore<S: GameStore>(
                 human_seats.extend(Seat::try_from(seat).ok());
                 away_occupant(stored.game.away_policy, away, user.clone())
             }
-            SeatPlayer::Bot(difficulty) => SeatOccupant::Bot {
+            SeatPlayer::Bot(difficulty) => Occupant::Bot {
                 difficulty: *difficulty,
                 reserved_for: None,
             },
@@ -429,11 +469,11 @@ impl<S: GameStore> Lobby<S> {
         }
     }
 
-    fn join(&mut self, user: User, outbox: Outbox, request_id: u32) -> Result<(), ErrorCode> {
+    fn join(&mut self, user: Player, outbox: Outbox, request_id: u32) -> Result<(), ErrorCode> {
         if let Some(member) = self
             .members
             .iter_mut()
-            .find(|member| member.user.id == user.id)
+            .find(|member| member.player.id == user.id)
         {
             // The same user on a new connection: the newest connection takes over.
             let displaced = std::mem::replace(&mut member.outbox, outbox);
@@ -457,12 +497,17 @@ impl<S: GameStore> Lobby<S> {
                 .ok_or(ErrorCode::GameAlreadyStarted)?,
             None => self.open_seat().ok_or(ErrorCode::LobbyFull)?,
         };
-        self.seats[usize::from(seat)] = SeatOccupant::Human { user: user.clone() };
+        self.seats[usize::from(seat)] = Occupant::Human {
+            player: user.clone(),
+        };
         if let Some(running) = &mut self.game {
             running.bots[usize::from(seat)] = None;
         }
         let user_id = user.id.clone();
-        self.members.push(Member { user, outbox });
+        self.members.push(Member {
+            player: user,
+            outbox,
+        });
         self.abandon_at = None;
         self.note_membership(LobbyNotice::Joined {
             lobby: self.id,
@@ -477,7 +522,7 @@ impl<S: GameStore> Lobby<S> {
         let Some(index) = self
             .members
             .iter()
-            .position(|member| member.user.id == *user && member.outbox.same_connection(outbox))
+            .position(|member| member.player.id == *user && member.outbox.same_connection(outbox))
         else {
             return;
         };
@@ -495,12 +540,12 @@ impl<S: GameStore> Lobby<S> {
         let index = usize::from(seat);
         self.seats[index] = match &mut self.game {
             Some(running) => {
-                let occupant = away_occupant(self.away_policy, self.bot_difficulty, member.user);
+                let occupant = away_occupant(self.away_policy, self.bot_difficulty, member.player);
                 running.bots[index] = stand_in(&occupant, bot_seed(running.seed, index));
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
                 occupant
             }
-            None => SeatOccupant::Open,
+            None => Occupant::Open,
         };
         if self.owner.id == *user {
             if let Some(next) = self.first_human() {
@@ -551,7 +596,7 @@ impl<S: GameStore> Lobby<S> {
     ) -> Result<(), ErrorCode> {
         self.check_owner_before_start(user)?;
         let seat = self.open_seat().ok_or(ErrorCode::LobbyFull)?;
-        self.seats[usize::from(seat)] = SeatOccupant::Bot {
+        self.seats[usize::from(seat)] = Occupant::Bot {
             difficulty,
             reserved_for: None,
         };
@@ -562,10 +607,10 @@ impl<S: GameStore> Lobby<S> {
     fn remove_bot(&mut self, user: &UserId, request_id: u32, seat: Seat) -> Result<(), ErrorCode> {
         self.check_owner_before_start(user)?;
         let index = usize::from(seat);
-        let Some(SeatOccupant::Bot { .. }) = self.seats.get(index) else {
+        let Some(Occupant::Bot { .. }) = self.seats.get(index) else {
             return Err(ErrorCode::NotABot);
         };
-        self.seats[index] = SeatOccupant::Open;
+        self.seats[index] = Occupant::Open;
         self.broadcast_state(Some((user, request_id)));
         Ok(())
     }
@@ -614,7 +659,7 @@ impl<S: GameStore> Lobby<S> {
             .collect();
         let human_seats = (0..)
             .zip(&self.seats)
-            .filter(|(_, occupant)| matches!(occupant, SeatOccupant::Human { .. }))
+            .filter(|(_, occupant)| matches!(occupant, Occupant::Human { .. }))
             .map(|(seat, _)| seat)
             .collect();
         self.game = Some(RunningGame {
@@ -712,7 +757,7 @@ impl<S: GameStore> Lobby<S> {
         running.game.pending_seats().into_iter().any(|seat| {
             let away = matches!(
                 self.seats.get(usize::from(seat)),
-                Some(SeatOccupant::Away { .. })
+                Some(Occupant::Away { .. })
             );
             away && offerer.is_none_or(|offerer| offerer == seat)
         })
@@ -724,7 +769,7 @@ impl<S: GameStore> Lobby<S> {
             return false;
         };
         (0..).zip(&self.seats).any(|(seat, occupant)| {
-            matches!(occupant, SeatOccupant::Human { .. }) && offer.awaits_answer_from(seat)
+            matches!(occupant, Occupant::Human { .. }) && offer.awaits_answer_from(seat)
         })
     }
 
@@ -825,7 +870,7 @@ impl<S: GameStore> Lobby<S> {
             return;
         };
         for member in &self.members {
-            let Some(seat) = self.seat_of(&member.user.id) else {
+            let Some(seat) = self.seat_of(&member.player.id) else {
                 continue;
             };
             let request_id = cause
@@ -847,7 +892,7 @@ impl<S: GameStore> Lobby<S> {
     fn broadcast_state(&self, cause: Option<(&UserId, u32)>) {
         for member in &self.members {
             let echo = cause
-                .filter(|(requester, _)| **requester == member.user.id)
+                .filter(|(requester, _)| **requester == member.player.id)
                 .map(|(_, request_id)| request_id);
             member.outbox.send(ServerMessage::LobbyState {
                 request_id: echo,
@@ -905,37 +950,37 @@ impl<S: GameStore> Lobby<S> {
     fn member_ids(&self) -> Vec<UserId> {
         self.members
             .iter()
-            .map(|member| member.user.id.clone())
+            .map(|member| member.player.id.clone())
             .collect()
     }
 
     fn member(&self, user: &UserId) -> Option<&Member> {
-        self.members.iter().find(|member| member.user.id == *user)
+        self.members.iter().find(|member| member.player.id == *user)
     }
 
     fn seat_of(&self, user: &UserId) -> Option<Seat> {
         self.find_seat(
-            |occupant| matches!(occupant, SeatOccupant::Human { user: seated } if seated.id == *user),
+            |occupant| matches!(occupant, Occupant::Human { player: seated } if seated.id == *user),
         )
     }
 
     /// The seat a player who left the running game comes back to.
     fn reserved_seat(&self, user: &UserId) -> Option<Seat> {
         self.find_seat(|occupant| match occupant {
-            SeatOccupant::Bot {
+            Occupant::Bot {
                 reserved_for: Some(reserved),
                 ..
             }
-            | SeatOccupant::Away { user: reserved } => reserved.id == *user,
+            | Occupant::Away { player: reserved } => reserved.id == *user,
             _ => false,
         })
     }
 
     fn open_seat(&self) -> Option<Seat> {
-        self.find_seat(|occupant| *occupant == SeatOccupant::Open)
+        self.find_seat(|occupant| *occupant == Occupant::Open)
     }
 
-    fn find_seat(&self, wanted: impl Fn(&SeatOccupant) -> bool) -> Option<Seat> {
+    fn find_seat(&self, wanted: impl Fn(&Occupant) -> bool) -> Option<Seat> {
         let index = self.seats.iter().position(wanted)?;
         Seat::try_from(index).ok()
     }
@@ -945,9 +990,9 @@ impl<S: GameStore> Lobby<S> {
         u8::try_from(self.seats.len()).unwrap_or(MAX_SEATS)
     }
 
-    fn first_human(&self) -> Option<User> {
+    fn first_human(&self) -> Option<Player> {
         self.seats.iter().find_map(|occupant| match occupant {
-            SeatOccupant::Human { user } => Some(user.clone()),
+            Occupant::Human { player } => Some(player.clone()),
             _ => None,
         })
     }
@@ -956,7 +1001,7 @@ impl<S: GameStore> Lobby<S> {
         LobbyInfo {
             id: self.id,
             name: self.name.clone(),
-            owner: self.owner.clone(),
+            owner: self.owner.user.clone(),
             has_password: self.has_password,
             started: self.game.is_some(),
             points_to_win: self.points_to_win,
@@ -968,7 +1013,7 @@ impl<S: GameStore> Lobby<S> {
     fn details(&self) -> LobbyDetails {
         LobbyDetails {
             info: self.info(),
-            seats: self.seats.clone(),
+            seats: self.seats.iter().map(Occupant::public).collect(),
         }
     }
 
@@ -976,7 +1021,7 @@ impl<S: GameStore> Lobby<S> {
         let open_seats = self
             .seats
             .iter()
-            .filter(|occupant| **occupant == SeatOccupant::Open)
+            .filter(|occupant| **occupant == Occupant::Open)
             .count();
         LobbySummary {
             info: self.info(),
@@ -1075,32 +1120,30 @@ async fn end_game<S: GameStore>(
 }
 
 /// The seat of a human who is away from a running game, as the lobby's policy says.
-fn away_occupant(policy: AwayPolicy, difficulty: Difficulty, user: User) -> SeatOccupant {
+fn away_occupant(policy: AwayPolicy, difficulty: Difficulty, user: Player) -> Occupant {
     match policy {
-        AwayPolicy::BotTakesOver => SeatOccupant::Bot {
+        AwayPolicy::BotTakesOver => Occupant::Bot {
             difficulty,
             reserved_for: Some(user),
         },
-        AwayPolicy::WaitForPlayer => SeatOccupant::Away { user },
+        AwayPolicy::WaitForPlayer => Occupant::Away { player: user },
     }
 }
 
 /// The bot that plays the seat, where a bot does.
-fn stand_in(occupant: &SeatOccupant, seed: u64) -> Option<Box<dyn Bot>> {
+fn stand_in(occupant: &Occupant, seed: u64) -> Option<Box<dyn Bot>> {
     match occupant {
-        SeatOccupant::Bot { difficulty, .. } => Some(create_bot(*difficulty, seed)),
+        Occupant::Bot { difficulty, .. } => Some(create_bot(*difficulty, seed)),
         _ => None,
     }
 }
 
-fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
+fn seat_player(occupant: &Occupant, fallback: Difficulty) -> SeatPlayer {
     match occupant {
-        SeatOccupant::Human { user } | SeatOccupant::Away { user } => {
-            SeatPlayer::Human(user.clone())
-        }
-        SeatOccupant::Bot { difficulty, .. } => SeatPlayer::Bot(*difficulty),
+        Occupant::Human { player } | Occupant::Away { player } => SeatPlayer::Human(player.clone()),
+        Occupant::Bot { difficulty, .. } => SeatPlayer::Bot(*difficulty),
         // Start requires every seat filled.
-        SeatOccupant::Open => SeatPlayer::Bot(fallback),
+        Occupant::Open => SeatPlayer::Bot(fallback),
     }
 }
 
@@ -1111,12 +1154,13 @@ mod tests {
 
     use settler_island_bot::{create_bot, Bot, Difficulty};
     use settler_island_game::{Action, Phase, PlayerView, Resource, ResourceCounts, Seat};
-    use settler_island_protocol::{AwayPolicy, LobbyId, SeatOccupant, User, UserId, UserKind};
+    use settler_island_protocol::{AwayPolicy, LobbyId, PublicId, User, UserKind};
     use tokio::sync::{mpsc, Notify};
     use tokio::time::Instant;
 
-    use super::{open, Lobby, LobbyNotice, LobbySetup, Member, SeatCount};
+    use super::{open, Lobby, LobbyNotice, LobbySetup, Member, Occupant, SeatCount};
     use crate::config::{Config, SessionSecret};
+    use crate::identity::{Player, UserId};
     use crate::metrics::Metrics;
     use crate::outbox::Outbox;
     use crate::store::MemoryStore;
@@ -1139,10 +1183,13 @@ mod tests {
     }
 
     async fn started_lobby(metrics: Arc<Metrics>, config: Config) -> Lobby<MemoryStore> {
-        let owner = User {
+        let owner = Player {
             id: UserId("ada".to_string()),
-            name: "Ada".to_string(),
-            kind: UserKind::Guest,
+            user: User {
+                id: PublicId("public-ada".to_string()),
+                name: "Ada".to_string(),
+                kind: UserKind::Guest,
+            },
         };
         let (outbox, _) = Outbox::channel(Arc::new(Notify::new()));
         let (notices, mut registry) = mpsc::unbounded_channel();
@@ -1218,7 +1265,7 @@ mod tests {
         };
         let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap()), config).await;
         let member = &lobby.members[0];
-        let (owner, outbox) = (member.user.id.clone(), member.outbox.clone());
+        let (owner, outbox) = (member.player.id.clone(), member.outbox.clone());
 
         lobby.leave(&owner, &outbox);
 
@@ -1256,17 +1303,20 @@ mod tests {
     /// Ada leaves seat 0 while Bob stays connected, so only the away seat can hold the bots back.
     fn ada_leaves_while_bob_stays(lobby: &mut Lobby<MemoryStore>) {
         let member = &lobby.members[0];
-        let (owner, outbox) = (member.user.id.clone(), member.outbox.clone());
+        let (owner, outbox) = (member.player.id.clone(), member.outbox.clone());
         lobby.leave(&owner, &outbox);
-        assert!(matches!(lobby.seats[0], SeatOccupant::Away { .. }));
+        assert!(matches!(lobby.seats[0], Occupant::Away { .. }));
         let (bob_outbox, _) = Outbox::channel(Arc::new(Notify::new()));
-        let bob = User {
+        let bob = Player {
             id: UserId("bob".to_string()),
-            name: "Bob".to_string(),
-            kind: UserKind::Guest,
+            user: User {
+                id: PublicId("public-bob".to_string()),
+                name: "Bob".to_string(),
+                kind: UserKind::Guest,
+            },
         };
         lobby.members.push(Member {
-            user: bob,
+            player: bob,
             outbox: bob_outbox,
         });
     }

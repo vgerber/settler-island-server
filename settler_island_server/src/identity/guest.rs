@@ -4,7 +4,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use settler_island_protocol::{User, UserId, UserKind};
+use settler_island_protocol::UserKind;
+
+use super::UserId;
 use sha2::Sha256;
 
 use crate::config::SessionSecret;
@@ -20,6 +22,13 @@ struct GuestClaims {
     kind: UserKind,
     /// Unix seconds.
     expires: u64,
+}
+
+/// Who a guest token names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Guest {
+    pub id: UserId,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -43,10 +52,10 @@ impl GuestTokens {
     }
 
     /// `now` is in Unix seconds.
-    pub(crate) fn issue(&self, user: &User, now: u64) -> String {
+    pub(crate) fn issue(&self, guest: &Guest, now: u64) -> String {
         let claims = GuestClaims {
-            id: user.id.clone(),
-            name: user.name.clone(),
+            id: guest.id.clone(),
+            name: guest.name.clone(),
             kind: UserKind::Guest,
             expires: now + GUEST_TOKEN_LIFETIME.as_secs(),
         };
@@ -56,7 +65,7 @@ impl GuestTokens {
         format!("{GUEST_TOKEN_PREFIX}{payload}.{signature}")
     }
 
-    pub(crate) fn verify(&self, token: &str, now: u64) -> Result<User, GuestTokenError> {
+    pub(crate) fn verify(&self, token: &str, now: u64) -> Result<Guest, GuestTokenError> {
         let body = token
             .strip_prefix(GUEST_TOKEN_PREFIX)
             .ok_or(GuestTokenError::Malformed)?;
@@ -75,10 +84,9 @@ impl GuestTokens {
         if claims.expires <= now {
             return Err(GuestTokenError::Expired);
         }
-        Ok(User {
+        Ok(Guest {
             id: claims.id,
             name: claims.name,
-            kind: claims.kind,
         })
     }
 
@@ -102,11 +110,10 @@ mod tests {
         )
     }
 
-    fn ada() -> User {
-        User {
+    fn ada() -> Guest {
+        Guest {
             id: UserId("u-1".to_string()),
             name: "Ada".to_string(),
-            kind: UserKind::Guest,
         }
     }
 

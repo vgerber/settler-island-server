@@ -10,13 +10,13 @@ use settler_island_game::{
     replay, Action, Game, GameRecord, GameSettings, Phase, RecordEntry, Seat,
 };
 use settler_island_protocol::{
-    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
-    UserKind,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, PublicId, SeatOccupant,
+    ServerMessage, User, UserKind,
 };
 use settler_island_server::{
     wants_snapshot, Config, GameId, GameStore, IdentityStore, IdentityStoreError,
-    MemoryIdentityStore, NewGame, PoolSettings, PostgresStore, SeatPlayer, StoreError, StoredGame,
-    SNAPSHOT_INTERVAL,
+    MemoryIdentityStore, NewGame, Player, PoolSettings, PostgresStore, SeatPlayer, StoreError,
+    StoredGame, UserId, SNAPSHOT_INTERVAL,
 };
 use sqlx::ConnectOptions;
 
@@ -42,10 +42,13 @@ fn new_game() -> NewGame {
         },
         seats: vec![
             SeatPlayer::Bot(Difficulty::Random),
-            SeatPlayer::Human(User {
+            SeatPlayer::Human(Player {
                 id: UserId("guest-1".to_string()),
-                name: "Ada".to_string(),
-                kind: UserKind::Guest,
+                user: User {
+                    id: PublicId("public-1".to_string()),
+                    name: "Ada".to_string(),
+                    kind: UserKind::Guest,
+                },
             }),
             SeatPlayer::Bot(Difficulty::Heuristic),
         ],
@@ -306,9 +309,9 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     });
 
     let mut human = create_bot(Difficulty::Heuristic, 77);
-    let (token, lobby, played_before) = client_runtime.block_on(async {
+    let (token, lobby, played_before, user_before) = client_runtime.block_on(async {
         let session = guest_session(address_a, "Ada").await;
-        let (mut client, _) = Client::authenticated(address_a, &session.token).await;
+        let (mut client, user) = Client::authenticated(address_a, &session.token).await;
         let (lobby, dealt) = client
             .start_with_bots("Restart", 4, Some(POINTS_TO_WIN), Difficulty::Heuristic)
             .await;
@@ -321,7 +324,7 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
             !play.finished(),
             "the game must still run when the server dies"
         );
-        (session.token, lobby, play.updates)
+        (session.token, lobby, play.updates, user)
     });
     // A crash: every task of server A stops mid-flight.
     drop(server_a);
@@ -335,12 +338,14 @@ fn a_game_survives_a_server_restart_and_finishes_like_an_uninterrupted_replay() 
     });
     let record = client_runtime.block_on(async {
         let (mut client, user) = Client::authenticated(address_b, &token).await;
-        assert_eq!(user.name, "Ada");
+        assert_eq!(user, user_before);
         let details = client
             .try_join(lobby, None)
             .await
             .expect("rejoining after the restart failed");
         assert!(details.info.started);
+        assert_eq!(details.info.owner, user_before);
+        assert_eq!(details.seats[0], SeatOccupant::Human { user: user_before });
         let dealt = client.next_game_started().await;
         let mut play = Play::new(dealt.view, dealt.legal_actions);
         let finish = play_as(&mut client, human.as_mut(), &mut play, |play| {
