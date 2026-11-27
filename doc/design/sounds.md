@@ -23,6 +23,21 @@ Music (optional, off or quiet by default, one looping track in the lobby and one
 | [Medieval: Minstrel Dance](https://opengameart.org/content/medieval-minstrel-dance) | CC0 | upbeat, loop version |
 | [Crowded Pub](https://opengameart.org/content/crowded-pub) | CC0 | short loop, 2025 remix with more parts |
 
+Atmosphere (an `Ambience` bus with its own slider, quiet by default; island bed at the table, calm music in menus):
+| Source | Licence | Use |
+|---|---|---|
+| [Beach Ocean Waves](https://opengameart.org/content/beach-ocean-waves) | CC0 | 4 wave files: the surf bed under the table, crossfaded into a loop |
+| [Sea and river wave sounds](https://opengameart.org/content/sea-and-river-wave-sounds) | CC0 | tagged loop, 5 min cut; softer water layer |
+| [Solo seagull sound effects](https://opengameart.org/content/solo-seagull-sound-effects) | CC0 | single gull calls, played at random every 20-60 s over the waves |
+| [Sea waves and terns (Big Sound Bank)](https://bigsoundbank.com/sea-waves-and-seagulls-s0267.html) | CC0 | ready-made shore recording, alternative bed |
+| [Snow theme](https://opengameart.org/content/snow-theme) | CC0 | 24 s seamless calm loop for the lobby browser |
+| [Town theme RPG](https://opengameart.org/comment/104122) | CC0 | harps and recorders; lobby room or calm table music |
+| [Peaceful Town](https://opengameart.org/node/131208) | CC0 | calm village track, check length before use |
+| [CC0 Calm / Relaxing Music](https://opengameart.org/node/73274) | CC0 | collection to pick further calm tracks from |
+
+Not usable here (attribution or share-alike): Gull Sounds (CC-BY-SA), Snowy Village, Relaxed Village and Peaceful
+village loop (CC-BY).
+
 Avoid for the repository: CC BY sounds (need credits we would have to track), "free with attribution" generator
 sites, and royalty-free commercial packs (licences forbid redistributing the raw files in a public repository).
 
@@ -39,5 +54,5 @@ sites, and royalty-free commercial packs (licences forbid redistributing the raw
 | `sfx_award_road`, `sfx_award_army`, `sfx_victory`, `sfx_game_over` | RPG Audio coins/metal, Interface confirmation |
 | `sfx_turn_start`, `sfx_attention`, `sfx_error`, `sfx_ui_click`, `sfx_ui_hover` | Interface Sounds |
 
-Volume: one `Sfx` bus and one `Music` bus with separate sliders in the settings autoload; music starts muted until
+Volume: `Sfx`, `Music` and `Ambience` buses with separate sliders in the settings autoload; music starts muted until
 the player turns it on.
