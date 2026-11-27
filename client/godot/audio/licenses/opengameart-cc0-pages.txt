@@ -1,0 +1,8 @@
+Pages confirmed as CC0 on 2026-11-27 (license shown on each page, https://creativecommons.org/publicdomain/zero/1.0/):
+- https://opengameart.org/content/beach-ocean-waves (qubodup, recordings by jasinski)
+- https://opengameart.org/content/solo-seagull-sound-effects (Rango Mango)
+- https://opengameart.org/content/snow-theme (CleytonKauffman)
+- https://opengameart.org/content/medieval-the-old-tower-inn (RandomMind)
+- https://opengameart.org/content/rpg-sound-pack (artisticdude)
+- https://opengameart.org/content/boardgame-pack and https://opengameart.org/content/interface-sounds (Kenney, see their own licence files)
+CC0 1.0 Universal: the authors waive all rights; no credit is required, it is given in SOURCES.md anyway.
