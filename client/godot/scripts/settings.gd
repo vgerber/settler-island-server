@@ -23,7 +23,7 @@ var sound_enabled := true
 var sfx_volume := 0.8
 var ambience_volume := 0.4
 var music_volume := 0.0
-var board_view := "2d"
+var board_view := "3d"
 ## `GRAPHICS_NAMES` entry; `High` runs Forward+ after a restart and is not offered on the web.
 var graphics_quality := "Standard"
 
@@ -89,7 +89,7 @@ func _load() -> void:
 	animation_speed = clampi(stored, 0, SPEED_NAMES.size() - 1) as AnimationSpeed
 	skip_when_unfocused = bool(file.get_value("feedback", "skip_when_unfocused", skip_when_unfocused))
 	var view := str(file.get_value("table", "board_view", board_view))
-	board_view = view if BOARD_VIEWS.has(view) else "2d"
+	board_view = view if BOARD_VIEWS.has(view) else "3d"
 	var quality := str(file.get_value("table", "graphics_quality", graphics_quality))
 	graphics_quality = quality if GRAPHICS_NAMES.has(quality) else "Standard"
 	sound_enabled = bool(file.get_value("sound", "sound_enabled", sound_enabled))

@@ -32,7 +32,7 @@ directory is not writable, `High` falls back to the `--rendering-method forward_
 ### W0 foundation (one agent; shared files)
 - `BoardView extends Control` base class with the Board contract (`bind(event_player)`, `set_target_filter`,
   `targets()`, `screen_point(target)`); 2D `Board` extends it; `GameScreen` instantiates by `Settings.board_view`
-  (`"2d"` default until W3 passes); `ui_game.gd` clicks through `screen_point` and runs once per board view.
+  (`"3d"` is the default, `"2d"` stays selectable); `ui_game.gd` clicks through `screen_point` and runs once per board view.
 - EventPlayer additions from 3d-motion.md: `current_pace()`, consumers' `finish_all()` called on collapse and
   resync, `sound_by_consumer` for `DiceRolled`.
 - `Settings.board_view`, `Settings.graphics_quality` with settings popup rows; project renderer settings above.

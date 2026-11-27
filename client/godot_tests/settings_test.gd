@@ -1,6 +1,6 @@
 extends SceneTree
 ## Runs inside a copy of the game project: `Settings` keeps the table view and the graphics quality across a
-## restart, falls back to 2D and Standard for unknown stored values, and writes or removes the renderer override.
+## restart, falls back to 3D and Standard (the defaults) for unknown stored values, and writes or removes the renderer override.
 ## Usage: godot --headless --path <copy of client/godot> -s settings_test.gd
 
 const SettingsScript := preload("res://scripts/settings.gd")
@@ -15,19 +15,24 @@ func _initialize() -> void:
 
 
 func _check_stored_values() -> void:
+	DirAccess.remove_absolute(SettingsScript.PATH)
+	var fresh := SettingsScript.new()
+	fresh._ready()
+	_expect(fresh.board_view == "3d", "the default board view is 3d, got %s" % fresh.board_view)
+	fresh.free()
 	var file := ConfigFile.new()
 	file.set_value("table", "board_view", "hologram")
 	file.set_value("table", "graphics_quality", "Ultra")
 	file.save(SettingsScript.PATH)
 	var settings := SettingsScript.new()
 	settings._ready()
-	_expect(settings.board_view == "2d", "unknown board view falls back to 2d, got %s" % settings.board_view)
+	_expect(settings.board_view == "3d", "unknown board view falls back to 3d, got %s" % settings.board_view)
 	_expect(settings.graphics_quality == "Standard", "unknown quality falls back to Standard, got %s" % settings.graphics_quality)
-	settings.update("board_view", "3d")
+	settings.update("board_view", "2d")
 	settings.update("graphics_quality", "High")
 	var again := SettingsScript.new()
 	again._ready()
-	_expect(again.board_view == "3d" and again.graphics_quality == "High", "both choices survive a reload")
+	_expect(again.board_view == "2d" and again.graphics_quality == "High", "both choices survive a reload")
 	DirAccess.remove_absolute(SettingsScript.PATH)
 	settings.free()
 	again.free()
