@@ -46,13 +46,8 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - 2D follow-up: test that a request after the JWKS failure back-off expires fetches again (make the back-off a constructor parameter so a test can use a short window).
 - Security L10 restore tail: restore loads the full action log because RunningGame keeps the whole GameRecord for GetRecord; a tail-only restore needs the lobby to load the record prefix lazily from the store (0.31 s for 100 games today, low priority).
 
-## Paused 2026-11-26 (resume here)
-- Security waves 0-2 are merged and pushed (doc/reviews/security.md section 5). Wave 3 was in progress:
-  - 3A outbox byte budget (worktree agent-ad4fd3f8892f5298e) and 3B takeover notice (agent-a61a5a7f16ed645ff) were
-    stopped mid-work; their worktrees hold unreviewed, uncommitted changes. Restart both from main with fresh agents
-    rather than trusting the partial work.
-  - 3C dependency advisory check: needs cargo-deny or cargo-audit installed (neither is).
-- CI is disabled (`gh workflow enable CI` to turn it back on); open question to the user: pin the toolchain in
-  rust-toolchain.toml first.
-- Then: wave 4 needs user decisions (turn clock, opaque user ids, retention); the HUD layout step
-  (doc/plans/godot-ui-design.md) with the folded-in review items; the 3D client later.
+## Status 2026-11-27
+- Security waves 0-3 are merged (doc/reviews/security.md section 5); Rust 1.92 is pinned in rust-toolchain.toml,
+  CI is back on and green, cargo-deny runs in the gate and CI.
+- Open: wave 4 needs user decisions (turn clock, opaque user ids, retention of finished games); wave D is the NAS
+  deployment; then the HUD layout step (doc/plans/godot-ui-design.md) with the folded-in review items.
