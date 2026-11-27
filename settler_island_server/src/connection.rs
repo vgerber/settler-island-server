@@ -8,9 +8,10 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerLimit, ServerMessage, User, UserId,
-    DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS,
-    MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MIN_POINTS_TO_WIN,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerLimit, ServerMessage, User,
+    UserId, DEFAULT_AWAY_POLICY, DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN,
+    MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS, MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN,
+    MIN_POINTS_TO_WIN,
 };
 use tokio::sync::Notify;
 use tracing::{debug, error};
@@ -33,6 +34,7 @@ struct LobbyOptions {
     seats: u8,
     points_to_win: Option<u8>,
     bot_difficulty: Option<Difficulty>,
+    away_policy: Option<AwayPolicy>,
 }
 
 /// The one field `probe_request_id` reads.
@@ -225,11 +227,13 @@ impl<I: IdentityStore> Connection<I> {
                 seats,
                 points_to_win,
                 bot_difficulty,
+                away_policy,
             } => {
                 let options = LobbyOptions {
                     seats,
                     points_to_win,
                     bot_difficulty,
+                    away_policy,
                 };
                 self.create(user, request_id, &name, password, options)
                     .await
@@ -336,6 +340,7 @@ impl<I: IdentityStore> Connection<I> {
             seats,
             points_to_win,
             bot_difficulty: options.bot_difficulty.unwrap_or(DEFAULT_BOT_DIFFICULTY),
+            away_policy: options.away_policy.unwrap_or(DEFAULT_AWAY_POLICY),
         };
         self.lobby = Some(self.registry.create(lobby).await?);
         Ok(())

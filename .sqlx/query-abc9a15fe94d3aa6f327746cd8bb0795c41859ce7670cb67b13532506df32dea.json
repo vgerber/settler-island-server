@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, lobby_id, lobby_name,\n                      bot_difficulty AS \"bot_difficulty: Json<Difficulty>\",\n                      settings AS \"settings: Json<RecordSettings>\", seed,\n                      EXTRACT(EPOCH FROM now() - unattended_since)::BIGINT AS \"unattended_seconds?\"\n               FROM games WHERE status = 'running' ORDER BY id",
+  "query": "SELECT id, lobby_id, lobby_name,\n                      bot_difficulty AS \"bot_difficulty: Json<Difficulty>\",\n                      away_policy AS \"away_policy: Json<AwayPolicy>\",\n                      settings AS \"settings: Json<RecordSettings>\", seed,\n                      EXTRACT(EPOCH FROM now() - unattended_since)::BIGINT AS \"unattended_seconds?\"\n               FROM games WHERE status = 'running' ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -25,16 +25,21 @@
       },
       {
         "ordinal": 4,
-        "name": "settings: Json<RecordSettings>",
+        "name": "away_policy: Json<AwayPolicy>",
         "type_info": "Jsonb"
       },
       {
         "ordinal": 5,
+        "name": "settings: Json<RecordSettings>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
         "name": "seed",
         "type_info": "Int8"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "unattended_seconds?",
         "type_info": "Int8"
       }
@@ -49,8 +54,9 @@
       false,
       false,
       false,
+      false,
       null
     ]
   },
-  "hash": "09142291acc01418bf71218e2d476936cd517a037b3f4dd8d8a1c7bc85795be9"
+  "hash": "abc9a15fe94d3aa6f327746cd8bb0795c41859ce7670cb67b13532506df32dea"
 }

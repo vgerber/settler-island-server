@@ -99,6 +99,11 @@ func _check_lobby_browser() -> void:
 		problems.append("lobby name limit %d" % lobby_name.max_length)
 	if difficulty.get_item_text(difficulty.selected) != SiLimits.DEFAULT_BOT_DIFFICULTY:
 		problems.append("difficulty default %s" % difficulty.get_item_text(difficulty.selected))
+	var away: OptionButton = browser.get_node("%AwayOption")
+	if away.item_count != SiAwayPolicy.VALUES.size():
+		problems.append("%d away choices" % away.item_count)
+	elif SiAwayPolicy.VALUES[away.selected] != SiLimits.DEFAULT_AWAY_POLICY:
+		problems.append("away default %s" % SiAwayPolicy.VALUES[away.selected])
 	if not problems.is_empty():
 		_finish(1, "SCREEN_LIMITS_FAILED lobby browser: %s" % ", ".join(problems))
 		return

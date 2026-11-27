@@ -16,6 +16,8 @@ pub const MAX_LOBBY_NAME_CHARS: usize = 40;
 pub const MAX_LOBBIES_PER_PAGE: u32 = 50;
 /// Bots that replace a leaving player play at this level unless `CreateLobby` names another.
 pub const DEFAULT_BOT_DIFFICULTY: Difficulty = Difficulty::Heuristic;
+/// What a lobby does with a leaving player's seat unless `CreateLobby` names another policy.
+pub const DEFAULT_AWAY_POLICY: AwayPolicy = AwayPolicy::BotTakesOver;
 
 /// The port the server listens on unless `SETTLER_BIND` says otherwise.
 pub const DEFAULT_PORT: u16 = 8253;
@@ -38,6 +40,15 @@ pub struct UserId(pub String);
 )]
 #[serde(transparent)]
 pub struct LobbyId(pub u32);
+
+/// What happens to the seat of a human who leaves a running game, until they rejoin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum AwayPolicy {
+    /// A bot of the lobby's `bot_difficulty` plays the seat.
+    BotTakesOver,
+    /// The seat stays theirs and the game waits whenever it needs that seat; bots of other seats wait too.
+    WaitForPlayer,
+}
 
 /// How a user signed in; an upgraded guest keeps its id and becomes an `Account`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -113,6 +124,9 @@ pub enum ClientMessage {
         /// Replaces a player who leaves a running game; `None` means `DEFAULT_BOT_DIFFICULTY`.
         #[serde(default)]
         bot_difficulty: Option<Difficulty>,
+        /// `None` means `DEFAULT_AWAY_POLICY`.
+        #[serde(default)]
+        away_policy: Option<AwayPolicy>,
     },
     JoinLobby {
         request_id: u32,
@@ -225,6 +239,7 @@ pub struct LobbyInfo {
     pub started: bool,
     pub points_to_win: u8,
     pub bot_difficulty: Difficulty,
+    pub away_policy: AwayPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -252,6 +267,10 @@ pub enum SeatOccupant {
     Bot {
         difficulty: Difficulty,
         reserved_for: Option<User>,
+    },
+    /// A player who left a running game under `AwayPolicy::WaitForPlayer`; the game waits for them to rejoin.
+    Away {
+        user: User,
     },
 }
 
@@ -490,6 +509,7 @@ mod tests {
                 seats: 3,
                 points_to_win: None,
                 bot_difficulty: None,
+                away_policy: None,
             }
         );
     }

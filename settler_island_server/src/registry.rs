@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use settler_island_protocol::{
-    Difficulty, ErrorCode, LobbyId, LobbySummary, ServerLimit, User, UserId,
+    AwayPolicy, Difficulty, ErrorCode, LobbyId, LobbySummary, ServerLimit, User, UserId,
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
@@ -24,6 +24,7 @@ pub(crate) struct NewLobby {
     pub seats: SeatCount,
     pub points_to_win: u8,
     pub bot_difficulty: Difficulty,
+    pub away_policy: AwayPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -358,6 +359,7 @@ impl<S: GameStore> Registry<S> {
             seats: lobby.seats,
             points_to_win: lobby.points_to_win,
             bot_difficulty: lobby.bot_difficulty,
+            away_policy: lobby.away_policy,
         };
         let (handle, summary) = lobby::spawn(
             setup,

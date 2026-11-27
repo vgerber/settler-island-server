@@ -7,6 +7,8 @@ const VARIANT := "CreateLobby"
 var request_id: int = 0
 var name: String = ""
 var seats: int = 0
+## `None` means `DEFAULT_AWAY_POLICY`.
+var away_policy: Variant = null
 ## Replaces a player who leaves a running game; `None` means `DEFAULT_BOT_DIFFICULTY`.
 var bot_difficulty: Variant = null
 var password: Variant = null
@@ -18,6 +20,7 @@ static func from_dict(data: Variant) -> SiClientMessageCreateLobby:
 	decoded.request_id = int(data.get("request_id"))
 	decoded.name = str(data.get("name"))
 	decoded.seats = int(data.get("seats"))
+	decoded.away_policy = (null if data.get("away_policy") == null else str(data.get("away_policy")))
 	decoded.bot_difficulty = (null if data.get("bot_difficulty") == null else str(data.get("bot_difficulty")))
 	decoded.password = (null if data.get("password") == null else str(data.get("password")))
 	decoded.points_to_win = (null if data.get("points_to_win") == null else int(data.get("points_to_win")))
@@ -30,6 +33,8 @@ func to_dict() -> Dictionary:
 		"name": name,
 		"seats": seats,
 	}
+	if away_policy != null:
+		encoded["away_policy"] = away_policy
 	if bot_difficulty != null:
 		encoded["bot_difficulty"] = bot_difficulty
 	if password != null:

@@ -22,8 +22,8 @@ use settler_island_game::{
     Port, Resource, ResourceCounts, Resume, TileId,
 };
 use settler_island_protocol::{
-    ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
-    ServerLimit, ServerMessage, User, UserId, UserKind,
+    AwayPolicy, ClientMessage, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary,
+    SeatOccupant, ServerLimit, ServerMessage, User, UserId, UserKind,
 };
 use settler_island_server::{serve, Config, MemoryIdentityStore, MemoryStore, SessionSecret};
 
@@ -489,6 +489,7 @@ fn fixtures() -> Value {
             seats: 4,
             points_to_win: Some(3),
             bot_difficulty: Some(Difficulty::Random),
+            away_policy: Some(AwayPolicy::WaitForPlayer),
         },
         ClientMessage::CreateLobby {
             request_id: 4,
@@ -497,6 +498,7 @@ fn fixtures() -> Value {
             seats: 3,
             points_to_win: None,
             bot_difficulty: None,
+            away_policy: None,
         },
         ClientMessage::JoinLobby {
             request_id: 5,
@@ -534,6 +536,7 @@ fn fixtures() -> Value {
         started: false,
         points_to_win: 3,
         bot_difficulty: Difficulty::Heuristic,
+        away_policy: AwayPolicy::BotTakesOver,
     };
     let lobby = LobbyDetails {
         info: info.clone(),
@@ -550,6 +553,10 @@ fn fixtures() -> Value {
                 reserved_for: None,
             },
             SeatOccupant::Open,
+            // One more seat than a game has, so every occupant kind is sampled.
+            SeatOccupant::Away {
+                user: user("u3", "Cy"),
+            },
         ],
     };
     let mut server = vec![

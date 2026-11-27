@@ -12,6 +12,8 @@ static func from_dict(data: Variant) -> SiSeatOccupant:
 				return SiSeatOccupantHuman.from_dict(data)
 			"Bot":
 				return SiSeatOccupantBot.from_dict(data)
+			"Away":
+				return SiSeatOccupantAway.from_dict(data)
 	push_warning("SiSeatOccupant: unknown variant %s" % [JSON.stringify(data)])
 	return null
 

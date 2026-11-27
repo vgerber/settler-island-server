@@ -1,21 +1,24 @@
 #![allow(dead_code)] // Each test binary uses a different subset of these helpers.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use settler_island_bot::Bot;
-use settler_island_game::{Action, Phase, PlayerView, Seat};
+use settler_island_game::{Action, Game, Phase, PlayerView, RecordEntry, Seat};
 use settler_island_protocol::{
     ClientMessage, Difficulty, ErrorCode, GuestSession, GuestSessionRequest, LobbyDetails, LobbyId,
     ServerMessage, User,
 };
 use settler_island_server::{
-    Config, GameStore, IdentityStore, MemoryIdentityStore, MemoryStore, SessionSecret,
+    Config, GameId, GameStore, IdentityStore, MemoryIdentityStore, MemoryStore, SessionSecret,
+    StoreError, StoredGame,
 };
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{ConnectOptions, Executor};
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::runtime::Runtime;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{client_async, connect_async, MaybeTlsStream, WebSocketStream};
 
@@ -66,6 +69,53 @@ pub async fn start_with(
         .unwrap()
     });
     address
+}
+
+/// A runtime of its own for one server, so dropping it stops that server mid-flight like a crash.
+pub fn server_runtime() -> Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+/// A memory store the test can read and hand to a second server after a restart.
+#[derive(Clone, Default)]
+pub struct SharedStore(pub Arc<MemoryStore>);
+
+impl GameStore for SharedStore {
+    async fn create_game(
+        &self,
+        game: settler_island_server::NewGame,
+    ) -> Result<GameId, StoreError> {
+        self.0.create_game(game).await
+    }
+
+    async fn append_action(
+        &self,
+        game: GameId,
+        action: RecordEntry,
+        snapshot: Option<Game>,
+    ) -> Result<(), StoreError> {
+        self.0.append_action(game, action, snapshot).await
+    }
+
+    async fn load_running(&self) -> Result<Vec<StoredGame>, StoreError> {
+        self.0.load_running().await
+    }
+
+    async fn finish(&self, game: GameId, winner: Seat) -> Result<(), StoreError> {
+        self.0.finish(game, winner).await
+    }
+
+    async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
+        self.0.abandon(game).await
+    }
+
+    async fn set_attended(&self, game: GameId, attended: bool) -> Result<(), StoreError> {
+        self.0.set_attended(game, attended).await
+    }
 }
 
 /// A fresh, empty database on the server in `SETTLER_TEST_DATABASE_URL`, so tests run in parallel;
@@ -379,6 +429,7 @@ impl Client {
                 seats,
                 points_to_win,
                 bot_difficulty: None,
+                away_policy: None,
             })
             .await;
         lobby.info.id

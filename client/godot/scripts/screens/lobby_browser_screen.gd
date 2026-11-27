@@ -13,6 +13,7 @@ extends Control
 @onready var _seats_option: OptionButton = %SeatsOption
 @onready var _points_spin: SpinBox = %PointsSpin
 @onready var _difficulty_option: OptionButton = %DifficultyOption
+@onready var _away_option: OptionButton = %AwayOption
 @onready var _create_password_edit: LineEdit = %CreatePasswordEdit
 @onready var _create_button: Button = %CreateButton
 @onready var _refresh_timer: Timer = %RefreshTimer
@@ -33,6 +34,9 @@ func _ready() -> void:
 	for difficulty in SiDifficulty.VALUES:
 		_difficulty_option.add_item(difficulty)
 	_difficulty_option.select(SiDifficulty.VALUES.find(SiLimits.DEFAULT_BOT_DIFFICULTY))
+	for policy in SiAwayPolicy.VALUES:
+		_away_option.add_item(AwayPolicyText.choice(policy))
+	_away_option.select(SiAwayPolicy.VALUES.find(SiLimits.DEFAULT_AWAY_POLICY))
 	if Net.user != null:
 		_user_label.text = "Playing as %s" % Net.user.name
 		_lobby_name_edit.text = "%s's table" % Net.user.name
@@ -65,8 +69,9 @@ func _describe(lobby: SiLobbySummary) -> String:
 	var info := lobby.info
 	var state := "running" if info.started else "%d of %d seats open" % [lobby.open_seats, lobby.seats]
 	var lock := "  [password]" if info.has_password else ""
-	return "%s  -  %s  -  %s  -  %d points, %s bots%s" % [
-		info.name, info.owner.name, state, info.points_to_win, info.bot_difficulty, lock,
+	return "%s  -  %s  -  %s  -  %d points, %s bots, %s%s" % [
+		info.name, info.owner.name, state, info.points_to_win, info.bot_difficulty,
+		AwayPolicyText.summary(info.away_policy), lock,
 	]
 
 
@@ -94,6 +99,7 @@ func _on_create() -> void:
 	Net.client.send_create_lobby(
 		_lobby_name_edit.text.strip_edges(),
 		_seat_choices[_seats_option.selected],
+		SiAwayPolicy.VALUES[_away_option.selected],
 		SiDifficulty.VALUES[_difficulty_option.selected],
 		null if password.is_empty() else password,
 		int(_points_spin.value),

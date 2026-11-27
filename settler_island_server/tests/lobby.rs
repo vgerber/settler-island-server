@@ -2,7 +2,8 @@ mod common;
 
 use common::{guest_session, start, test_config, Client};
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerLimit, ServerMessage,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, Event, SeatOccupant, ServerLimit,
+    ServerMessage,
 };
 
 fn create_with(
@@ -16,6 +17,7 @@ fn create_with(
         seats: 3,
         points_to_win,
         bot_difficulty,
+        away_policy: None,
     }
 }
 
@@ -309,6 +311,7 @@ async fn a_user_is_in_at_most_one_lobby() {
         seats: 3,
         points_to_win: None,
         bot_difficulty: None,
+        away_policy: None,
     };
     assert_eq!(first.expect_error(create).await, ErrorCode::AlreadyInLobby);
     assert_eq!(
@@ -423,6 +426,7 @@ async fn requests_need_authenticate_first_and_valid_names() {
         seats: 3,
         points_to_win: None,
         bot_difficulty: None,
+        away_policy: None,
     };
     assert_eq!(
         client.expect_error(long_lobby).await,
@@ -435,6 +439,7 @@ async fn requests_need_authenticate_first_and_valid_names() {
         seats: 5,
         points_to_win: None,
         bot_difficulty: None,
+        away_policy: None,
     };
     assert_eq!(
         client.expect_error(five_seats).await,
@@ -449,6 +454,7 @@ async fn lobby_settings_default_and_reach_the_game() {
     let defaults = client.expect_lobby(create_with(None, None)).await;
     assert_eq!(defaults.info.points_to_win, 10);
     assert_eq!(defaults.info.bot_difficulty, Difficulty::Heuristic);
+    assert_eq!(defaults.info.away_policy, AwayPolicy::BotTakesOver);
     client.request(leave).await;
 
     let custom = client

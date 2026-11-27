@@ -7,7 +7,7 @@ use settler_island_bot::Difficulty;
 use settler_island_game::{
     replay, Game, GameError, GameRecord, GameSettings, RecordEntry, ReplayError, Seat,
 };
-use settler_island_protocol::{LobbyId, User};
+use settler_island_protocol::{AwayPolicy, LobbyId, User};
 
 /// A snapshot every this many actions bounds the replay work of a restart.
 pub const SNAPSHOT_INTERVAL: u32 = 50;
@@ -35,6 +35,8 @@ pub struct NewGame {
     pub lobby_name: String,
     /// Plays for humans who are away.
     pub bot_difficulty: Difficulty,
+    /// What a seat whose human is away does.
+    pub away_policy: AwayPolicy,
 }
 
 /// The game state after the first `actions` actions.
@@ -286,6 +288,7 @@ mod tests {
             lobby: LobbyId(4),
             lobby_name: "Table".to_string(),
             bot_difficulty: Difficulty::Heuristic,
+            away_policy: AwayPolicy::BotTakesOver,
         }
     }
 

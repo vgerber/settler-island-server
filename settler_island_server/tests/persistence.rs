@@ -2,13 +2,16 @@ mod common;
 
 use std::time::Duration;
 
-use common::{guest_session, play_as, start_with, test_config, test_database, Client, Play};
+use common::{
+    guest_session, play_as, server_runtime, start_with, test_config, test_database, Client, Play,
+};
 use settler_island_bot::create_bot;
 use settler_island_game::{
     replay, Action, Game, GameRecord, GameSettings, Phase, RecordEntry, Seat,
 };
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId, UserKind,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
+    UserKind,
 };
 use settler_island_server::{
     wants_snapshot, Config, GameId, GameStore, IdentityStore, IdentityStoreError,
@@ -16,7 +19,6 @@ use settler_island_server::{
     SNAPSHOT_INTERVAL,
 };
 use sqlx::ConnectOptions;
-use tokio::runtime::Runtime;
 
 const SEED: u64 = 23;
 const POINTS_TO_WIN: u8 = 6;
@@ -50,6 +52,8 @@ fn new_game() -> NewGame {
         lobby: LobbyId(7),
         lobby_name: "Harbour".to_string(),
         bot_difficulty: Difficulty::Heuristic,
+        // Not the column default, so a reload proves the policy is stored.
+        away_policy: AwayPolicy::WaitForPlayer,
     }
 }
 
@@ -279,14 +283,6 @@ async fn an_action_the_store_rejects_is_never_broadcast() {
         .send(|request_id| ClientMessage::GetState { request_id })
         .await;
     assert_eq!(client.next_game_started().await.view, view);
-}
-
-fn server_runtime() -> Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap()
 }
 
 #[test]

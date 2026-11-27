@@ -82,7 +82,7 @@ func _log_in() -> void:
 
 func _create_lobby() -> void:
 	_client.lobby_state_received.connect(_on_lobby_state)
-	_client.send_create_lobby("Screenshot table", 4, SiDifficulty.HEURISTIC, null, 10)
+	_client.send_create_lobby("Screenshot table", 4, null, SiDifficulty.HEURISTIC, null, 10)
 
 
 func _on_lobby_state(message: SiServerMessageLobbyState) -> void:

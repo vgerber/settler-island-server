@@ -8,8 +8,8 @@ use settler_island_game::{
 
 use crate::store::StoredGame;
 use settler_island_protocol::{
-    ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant, ServerMessage, User,
-    UserId,
+    AwayPolicy, ErrorCode, LobbyDetails, LobbyId, LobbyInfo, LobbySummary, SeatOccupant,
+    ServerMessage, User, UserId,
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep_until, Instant};
@@ -150,6 +150,7 @@ pub(crate) struct LobbySetup {
     pub seats: SeatCount,
     pub points_to_win: u8,
     pub bot_difficulty: Difficulty,
+    pub away_policy: AwayPolicy,
 }
 
 struct Member {
@@ -185,16 +186,6 @@ impl RunningGame {
             .iter()
             .any(|entry| self.human_seats.contains(&entry.seat))
     }
-
-    /// A human asked in the open trade who has not answered yet.
-    fn human_answer_pending(&self) -> bool {
-        let Some(offer) = self.game.phase().trade_offer() else {
-            return false;
-        };
-        (0..)
-            .zip(&self.bots)
-            .any(|(seat, bot)| bot.is_none() && offer.awaits_answer_from(seat))
-    }
 }
 
 struct Lobby<S> {
@@ -204,8 +195,9 @@ struct Lobby<S> {
     has_password: bool,
     seats: Vec<SeatOccupant>,
     points_to_win: u8,
-    /// Plays for a player who leaves a running game.
+    /// Plays for a player who leaves a running game under `AwayPolicy::BotTakesOver`.
     bot_difficulty: Difficulty,
+    away_policy: AwayPolicy,
     members: Vec<Member>,
     game: Option<RunningGame>,
     bot_deadline: Instant,
@@ -253,6 +245,7 @@ fn open<S: GameStore>(
         seats,
         points_to_win: setup.points_to_win,
         bot_difficulty: setup.bot_difficulty,
+        away_policy: setup.away_policy,
         members: vec![Member {
             user: setup.owner,
             outbox: setup.outbox,
@@ -268,8 +261,8 @@ fn open<S: GameStore>(
     }
 }
 
-/// Recreates the lobby of a game that was running when the server stopped: every human seat waits for its
-/// player under a bot, which only moves once a human is back.
+/// Recreates the lobby of a game that was running when the server stopped: every human seat is away, under a bot
+/// or waiting as the lobby's policy says, and bots only move once a human is back.
 pub(crate) fn restore<S: GameStore>(
     stored: &StoredGame,
     game: Game,
@@ -285,18 +278,18 @@ pub(crate) fn restore<S: GameStore>(
     let mut bots = Vec::with_capacity(stored.game.seats.len());
     let mut human_seats = Vec::new();
     for (seat, player) in stored.game.seats.iter().enumerate() {
-        let (difficulty, reserved_for) = match player {
-            SeatPlayer::Human(user) => (away, Some(user.clone())),
-            SeatPlayer::Bot(difficulty) => (*difficulty, None),
+        let occupant = match player {
+            SeatPlayer::Human(user) => {
+                human_seats.extend(Seat::try_from(seat).ok());
+                away_occupant(stored.game.away_policy, away, user.clone())
+            }
+            SeatPlayer::Bot(difficulty) => SeatOccupant::Bot {
+                difficulty: *difficulty,
+                reserved_for: None,
+            },
         };
-        if reserved_for.is_some() {
-            human_seats.extend(Seat::try_from(seat).ok());
-        }
-        bots.push(Some(create_bot(difficulty, bot_seed(seed, seat))));
-        seats.push(SeatOccupant::Bot {
-            difficulty,
-            reserved_for,
-        });
+        bots.push(stand_in(&occupant, bot_seed(seed, seat)));
+        seats.push(occupant);
     }
     let owner = stored.game.seats.iter().find_map(|player| match player {
         SeatPlayer::Human(user) => Some(user.clone()),
@@ -310,6 +303,7 @@ pub(crate) fn restore<S: GameStore>(
         seats,
         points_to_win: stored.game.settings.points_to_win,
         bot_difficulty: away,
+        away_policy: stored.game.away_policy,
         members: Vec::new(),
         game: Some(RunningGame {
             id: stored.id,
@@ -501,13 +495,10 @@ impl<S: GameStore> Lobby<S> {
         let index = usize::from(seat);
         self.seats[index] = match &mut self.game {
             Some(running) => {
-                let seed = bot_seed(running.seed, index);
-                running.bots[index] = Some(create_bot(self.bot_difficulty, seed));
+                let occupant = away_occupant(self.away_policy, self.bot_difficulty, member.user);
+                running.bots[index] = stand_in(&occupant, bot_seed(running.seed, index));
                 self.bot_deadline = Instant::now() + self.config.bot_delay;
-                SeatOccupant::Bot {
-                    difficulty: self.bot_difficulty,
-                    reserved_for: Some(member.user),
-                }
+                occupant
             }
             None => SeatOccupant::Open,
         };
@@ -603,6 +594,7 @@ impl<S: GameStore> Lobby<S> {
             lobby: self.id,
             lobby_name: self.name.clone(),
             bot_difficulty: self.bot_difficulty,
+            away_policy: self.away_policy,
         };
         let stored = self.store.create_game(new_game).await;
         let id = stored.inspect_err(|error| {
@@ -618,12 +610,7 @@ impl<S: GameStore> Lobby<S> {
             .seats
             .iter()
             .enumerate()
-            .map(|(seat, occupant)| match occupant {
-                SeatOccupant::Bot { difficulty, .. } => {
-                    Some(create_bot(*difficulty, bot_seed(settings.seed, seat)))
-                }
-                _ => None,
-            })
+            .map(|(seat, occupant)| stand_in(occupant, bot_seed(settings.seed, seat)))
             .collect();
         let human_seats = (0..)
             .zip(&self.seats)
@@ -685,12 +672,16 @@ impl<S: GameStore> Lobby<S> {
     }
 
     /// The bot seat to move next and when. Bots wait while no human is connected, so a restored or abandoned game
-    /// does not play itself out; a bot that offered a trade waits for the humans it asked, up to `answers_due`.
+    /// does not play itself out, and while the game waits for an away player; a bot that offered a trade waits for
+    /// the connected humans it asked, up to `answers_due`.
     fn bot_move(&self) -> Option<(Seat, Instant)> {
         if self.members.is_empty() {
             return None;
         }
         let running = self.game.as_ref().filter(|running| !running.stalled)?;
+        if self.waits_for_away_player(running) {
+            return None;
+        }
         let seat = running
             .game
             .pending_seats()
@@ -702,10 +693,39 @@ impl<S: GameStore> Lobby<S> {
             .trade_offer()
             .is_some_and(|offer| offer.offerer == seat);
         let at = match self.answers_due {
-            Some(due) if offering && running.human_answer_pending() => due.max(self.bot_deadline),
+            Some(due) if offering && self.human_answer_pending(running) => {
+                due.max(self.bot_deadline)
+            }
             _ => self.bot_deadline,
         };
         Some((seat, at))
+    }
+
+    /// An away seat is pending and the game cannot go on without it; one merely asked in another seat's trade offer
+    /// does not hold the game up, as the offerer may close the trade without that answer.
+    fn waits_for_away_player(&self, running: &RunningGame) -> bool {
+        let offerer = running
+            .game
+            .phase()
+            .trade_offer()
+            .map(|offer| offer.offerer);
+        running.game.pending_seats().into_iter().any(|seat| {
+            let away = matches!(
+                self.seats.get(usize::from(seat)),
+                Some(SeatOccupant::Away { .. })
+            );
+            away && offerer.is_none_or(|offerer| offerer == seat)
+        })
+    }
+
+    /// A connected human asked in the open trade who has not answered yet; away players cannot answer.
+    fn human_answer_pending(&self, running: &RunningGame) -> bool {
+        let Some(offer) = running.game.phase().trade_offer() else {
+            return false;
+        };
+        (0..).zip(&self.seats).any(|(seat, occupant)| {
+            matches!(occupant, SeatOccupant::Human { .. }) && offer.awaits_answer_from(seat)
+        })
     }
 
     /// Starts the answer window when a trade opens and ends it when the trade closes.
@@ -899,9 +919,15 @@ impl<S: GameStore> Lobby<S> {
         )
     }
 
+    /// The seat a player who left the running game comes back to.
     fn reserved_seat(&self, user: &UserId) -> Option<Seat> {
-        self.find_seat(|occupant| {
-            matches!(occupant, SeatOccupant::Bot { reserved_for: Some(reserved), .. } if reserved.id == *user)
+        self.find_seat(|occupant| match occupant {
+            SeatOccupant::Bot {
+                reserved_for: Some(reserved),
+                ..
+            }
+            | SeatOccupant::Away { user: reserved } => reserved.id == *user,
+            _ => false,
         })
     }
 
@@ -935,6 +961,7 @@ impl<S: GameStore> Lobby<S> {
             started: self.game.is_some(),
             points_to_win: self.points_to_win,
             bot_difficulty: self.bot_difficulty,
+            away_policy: self.away_policy,
         }
     }
 
@@ -1047,9 +1074,30 @@ async fn end_game<S: GameStore>(
     }
 }
 
+/// The seat of a human who is away from a running game, as the lobby's policy says.
+fn away_occupant(policy: AwayPolicy, difficulty: Difficulty, user: User) -> SeatOccupant {
+    match policy {
+        AwayPolicy::BotTakesOver => SeatOccupant::Bot {
+            difficulty,
+            reserved_for: Some(user),
+        },
+        AwayPolicy::WaitForPlayer => SeatOccupant::Away { user },
+    }
+}
+
+/// The bot that plays the seat, where a bot does.
+fn stand_in(occupant: &SeatOccupant, seed: u64) -> Option<Box<dyn Bot>> {
+    match occupant {
+        SeatOccupant::Bot { difficulty, .. } => Some(create_bot(*difficulty, seed)),
+        _ => None,
+    }
+}
+
 fn seat_player(occupant: &SeatOccupant, fallback: Difficulty) -> SeatPlayer {
     match occupant {
-        SeatOccupant::Human { user } => SeatPlayer::Human(user.clone()),
+        SeatOccupant::Human { user } | SeatOccupant::Away { user } => {
+            SeatPlayer::Human(user.clone())
+        }
         SeatOccupant::Bot { difficulty, .. } => SeatPlayer::Bot(*difficulty),
         // Start requires every seat filled.
         SeatOccupant::Open => SeatPlayer::Bot(fallback),
@@ -1061,12 +1109,13 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use settler_island_bot::{Bot, Difficulty};
-    use settler_island_game::{Action, PlayerView, ResourceCounts};
-    use settler_island_protocol::{LobbyId, User, UserId, UserKind};
+    use settler_island_bot::{create_bot, Bot, Difficulty};
+    use settler_island_game::{Action, Phase, PlayerView, Resource, ResourceCounts, Seat};
+    use settler_island_protocol::{AwayPolicy, LobbyId, SeatOccupant, User, UserId, UserKind};
     use tokio::sync::{mpsc, Notify};
+    use tokio::time::Instant;
 
-    use super::{open, Lobby, LobbyNotice, LobbySetup, SeatCount};
+    use super::{open, Lobby, LobbyNotice, LobbySetup, Member, SeatCount};
     use crate::config::{Config, SessionSecret};
     use crate::metrics::Metrics;
     use crate::outbox::Outbox;
@@ -1115,6 +1164,7 @@ mod tests {
             seats: SeatCount::new(3).unwrap(),
             points_to_win: 10,
             bot_difficulty: Difficulty::Random,
+            away_policy: AwayPolicy::BotTakesOver,
         };
         let store = Arc::new(MemoryStore::default());
         let mut lobby = open(setup, store, Arc::new(config), metrics, notices);
@@ -1174,5 +1224,87 @@ mod tests {
 
         assert!(lobby.members.is_empty());
         assert_eq!(lobby.abandon_at, None);
+    }
+
+    /// A card `seat` holds while it is in its main turn.
+    fn card_to_offer(lobby: &Lobby<MemoryStore>, seat: Seat) -> Option<Resource> {
+        let game = &lobby.game.as_ref()?.game;
+        if *game.phase() != Phase::Main || game.current_seat() != seat {
+            return None;
+        }
+        let hand = game.view(Some(seat)).own?.hand;
+        Resource::ALL
+            .into_iter()
+            .find(|resource| hand.get(*resource) > 0)
+    }
+
+    /// A started `WaitForPlayer` lobby whose bots (one standing in for Ada on seat 0) played until `seat` has its main
+    /// turn with a card in hand; returns that card.
+    async fn lobby_where_seat_can_offer(seat: Seat) -> (Lobby<MemoryStore>, Resource) {
+        let mut lobby = started_lobby(Arc::new(Metrics::new().unwrap()), config()).await;
+        lobby.away_policy = AwayPolicy::WaitForPlayer;
+        lobby.game.as_mut().unwrap().bots[0] = Some(create_bot(Difficulty::Random, 1));
+        for _ in 0..2000 {
+            if let Some(card) = card_to_offer(&lobby, seat) {
+                return (lobby, card);
+            }
+            lobby.play_bot().await;
+        }
+        panic!("seat {seat} never had a main turn with cards");
+    }
+
+    /// Ada leaves seat 0 while Bob stays connected, so only the away seat can hold the bots back.
+    fn ada_leaves_while_bob_stays(lobby: &mut Lobby<MemoryStore>) {
+        let member = &lobby.members[0];
+        let (owner, outbox) = (member.user.id.clone(), member.outbox.clone());
+        lobby.leave(&owner, &outbox);
+        assert!(matches!(lobby.seats[0], SeatOccupant::Away { .. }));
+        let (bob_outbox, _) = Outbox::channel(Arc::new(Notify::new()));
+        let bob = User {
+            id: UserId("bob".to_string()),
+            name: "Bob".to_string(),
+            kind: UserKind::Guest,
+        };
+        lobby.members.push(Member {
+            user: bob,
+            outbox: bob_outbox,
+        });
+    }
+
+    fn offer_one(give: Resource, to: Option<Seat>) -> Action {
+        let receive = Resource::ALL
+            .into_iter()
+            .find(|resource| *resource != give)
+            .unwrap();
+        let mut gives = ResourceCounts::default();
+        gives.set(give, 1);
+        let mut receives = ResourceCounts::default();
+        receives.set(receive, 1);
+        Action::OfferTrade {
+            give: gives,
+            receive: receives,
+            to,
+        }
+    }
+
+    #[tokio::test]
+    async fn an_away_player_asked_in_a_bot_trade_neither_holds_up_nor_delays_the_offerer() {
+        let (mut lobby, card) = lobby_where_seat_can_offer(1).await;
+        ada_leaves_while_bob_stays(&mut lobby);
+        let offer = offer_one(card, Some(0));
+        lobby.game.as_mut().unwrap().game.apply(1, offer).unwrap();
+        lobby.answers_due = Some(Instant::now() + Duration::from_secs(3600));
+
+        assert_eq!(lobby.bot_move(), Some((1, lobby.bot_deadline)));
+    }
+
+    #[tokio::test]
+    async fn bots_asked_in_the_trade_of_an_away_player_wait_for_them() {
+        let (mut lobby, card) = lobby_where_seat_can_offer(0).await;
+        let offer = offer_one(card, None);
+        lobby.game.as_mut().unwrap().game.apply(0, offer).unwrap();
+        ada_leaves_while_bob_stays(&mut lobby);
+
+        assert_eq!(lobby.bot_move(), None);
     }
 }

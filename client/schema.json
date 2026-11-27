@@ -338,6 +338,21 @@
         }
       ]
     },
+    "AwayPolicy": {
+      "description": "What happens to the seat of a human who leaves a running game, until they rejoin.",
+      "oneOf": [
+        {
+          "const": "BotTakesOver",
+          "description": "A bot of the lobby's `bot_difficulty` plays the seat.",
+          "type": "string"
+        },
+        {
+          "const": "WaitForPlayer",
+          "description": "The seat stays theirs and the game waits whenever it needs that seat; bots of other seats wait too.",
+          "type": "string"
+        }
+      ]
+    },
     "Board": {
       "description": "The layout plus the pieces on it.",
       "properties": {
@@ -482,6 +497,18 @@
         },
         {
           "properties": {
+            "away_policy": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AwayPolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "`None` means `DEFAULT_AWAY_POLICY`."
+            },
             "bot_difficulty": {
               "anyOf": [
                 {
@@ -2077,6 +2104,9 @@
     "LobbyInfo": {
       "description": "What the lobby list and the lobby room both show about a lobby.",
       "properties": {
+        "away_policy": {
+          "$ref": "#/$defs/AwayPolicy"
+        },
         "bot_difficulty": {
           "$ref": "#/$defs/Difficulty"
         },
@@ -2111,7 +2141,8 @@
         "has_password",
         "started",
         "points_to_win",
-        "bot_difficulty"
+        "bot_difficulty",
+        "away_policy"
       ],
       "type": "object"
     },
@@ -2721,6 +2752,23 @@
           "required": [
             "type",
             "difficulty"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A player who left a running game under `AwayPolicy::WaitForPlayer`; the game waits for them to rejoin.",
+          "properties": {
+            "type": {
+              "const": "Away",
+              "type": "string"
+            },
+            "user": {
+              "$ref": "#/$defs/User"
+            }
+          },
+          "required": [
+            "type",
+            "user"
           ],
           "type": "object"
         }

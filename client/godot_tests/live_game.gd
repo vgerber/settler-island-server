@@ -74,7 +74,7 @@ func _on_disconnected(code: int, reason: String) -> void:
 
 func _on_welcome(message: SiServerMessageWelcome) -> void:
 	print("welcomed as %s" % message.user.name)
-	_pending_request = _client.send_create_lobby("Godot table", 4, SiDifficulty.RANDOM, null, 3)
+	_pending_request = _client.send_create_lobby("Godot table", 4, null, SiDifficulty.RANDOM, null, 3)
 
 
 func _on_lobby_state(message: SiServerMessageLobbyState) -> void:

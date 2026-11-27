@@ -147,6 +147,15 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="AwayLabel" type="Label" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+layout_mode = 2
+text = "If a player leaves"
+
+[node name="AwayOption" type="OptionButton" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows/Options"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="CreatePasswordEdit" type="LineEdit" parent="Margin/Rows/Columns/CreatePanel/CreateMargin/CreateRows"]
 unique_name_in_owner = true
 layout_mode = 2

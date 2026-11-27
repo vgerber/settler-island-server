@@ -1,55 +1,17 @@
 mod common;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
-use common::{eventually, start_with, test_config, Client, Dealt};
-use settler_island_game::{Game, GameSettings, RecordEntry};
+use common::{eventually, start_with, test_config, Client, Dealt, SharedStore};
+use settler_island_game::GameSettings;
 use settler_island_protocol::{
-    ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId, UserKind,
+    AwayPolicy, ClientMessage, Difficulty, ErrorCode, LobbyId, ServerMessage, User, UserId,
+    UserKind,
 };
-use settler_island_server::{
-    Config, GameId, GameStore, MemoryIdentityStore, MemoryStore, NewGame, SeatPlayer, StoreError,
-    StoredGame,
-};
+use settler_island_server::{Config, GameStore, MemoryIdentityStore, NewGame, SeatPlayer};
 
 const ABANDON_AFTER: Duration = Duration::from_millis(400);
-
-/// Lets the test read the store the server writes to.
-#[derive(Clone, Default)]
-struct SharedStore(Arc<MemoryStore>);
-
-impl GameStore for SharedStore {
-    async fn create_game(&self, game: NewGame) -> Result<GameId, StoreError> {
-        self.0.create_game(game).await
-    }
-
-    async fn append_action(
-        &self,
-        game: GameId,
-        action: RecordEntry,
-        snapshot: Option<Game>,
-    ) -> Result<(), StoreError> {
-        self.0.append_action(game, action, snapshot).await
-    }
-
-    async fn load_running(&self) -> Result<Vec<StoredGame>, StoreError> {
-        self.0.load_running().await
-    }
-
-    async fn finish(&self, game: GameId, winner: u8) -> Result<(), StoreError> {
-        self.0.finish(game, winner).await
-    }
-
-    async fn abandon(&self, game: GameId) -> Result<(), StoreError> {
-        self.0.abandon(game).await
-    }
-
-    async fn set_attended(&self, game: GameId, attended: bool) -> Result<(), StoreError> {
-        self.0.set_attended(game, attended).await
-    }
-}
 
 async fn started_game(client: &mut Client, name: &str) -> LobbyId {
     client
@@ -297,5 +259,6 @@ fn stored_game(name: &str) -> NewGame {
         lobby: LobbyId(1),
         lobby_name: name.to_string(),
         bot_difficulty: Difficulty::Random,
+        away_policy: AwayPolicy::BotTakesOver,
     }
 }

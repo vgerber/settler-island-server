@@ -10,6 +10,7 @@ var has_password: bool = false
 var started: bool = false
 var points_to_win: int = 0
 var bot_difficulty: String = ""
+var away_policy: String = ""
 
 static func from_dict(data: Dictionary) -> SiLobbyInfo:
 	var decoded := SiLobbyInfo.new()
@@ -20,6 +21,7 @@ static func from_dict(data: Dictionary) -> SiLobbyInfo:
 	decoded.started = bool(data.get("started"))
 	decoded.points_to_win = int(data.get("points_to_win"))
 	decoded.bot_difficulty = str(data.get("bot_difficulty"))
+	decoded.away_policy = str(data.get("away_policy"))
 	return decoded
 
 func to_dict() -> Dictionary:
@@ -31,5 +33,6 @@ func to_dict() -> Dictionary:
 		"started": started,
 		"points_to_win": points_to_win,
 		"bot_difficulty": bot_difficulty,
+		"away_policy": away_policy,
 	}
 	return encoded

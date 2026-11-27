@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use settler_island_bot::Difficulty;
 use settler_island_game::{Action, Event, Game, GameSettings, RecordEntry, RecordSettings, Seat};
-use settler_island_protocol::{LobbyId, User, UserId, UserKind};
+use settler_island_protocol::{AwayPolicy, LobbyId, User, UserId, UserKind};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::types::Json;
 use sqlx::{ConnectOptions, Connection, PgPool, Postgres, Transaction};
@@ -141,6 +141,7 @@ impl PostgresStore {
                 lobby: LobbyId(lobby),
                 lobby_name: row.lobby_name,
                 bot_difficulty: row.bot_difficulty.0,
+                away_policy: row.away_policy.0,
             },
             actions,
             snapshot,
@@ -207,6 +208,7 @@ struct GameRow {
     lobby_id: i32,
     lobby_name: String,
     bot_difficulty: Json<Difficulty>,
+    away_policy: Json<AwayPolicy>,
     settings: Json<RecordSettings>,
     seed: i64,
     unattended_seconds: Option<i64>,
@@ -221,11 +223,12 @@ impl GameStore for PostgresStore {
             points_to_win: game.settings.points_to_win,
         };
         let id = sqlx::query_scalar!(
-            "INSERT INTO games (lobby_id, lobby_name, bot_difficulty, settings, seed)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            "INSERT INTO games (lobby_id, lobby_name, bot_difficulty, away_policy, settings, seed)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             lobby,
             game.lobby_name,
             Json(game.bot_difficulty) as _,
+            Json(game.away_policy) as _,
             Json(settings) as _,
             // Stored as the same 64 bits.
             i64::from_ne_bytes(game.settings.seed.to_ne_bytes()),
@@ -288,6 +291,7 @@ impl GameStore for PostgresStore {
             GameRow,
             r#"SELECT id, lobby_id, lobby_name,
                       bot_difficulty AS "bot_difficulty: Json<Difficulty>",
+                      away_policy AS "away_policy: Json<AwayPolicy>",
                       settings AS "settings: Json<RecordSettings>", seed,
                       EXTRACT(EPOCH FROM now() - unattended_since)::BIGINT AS "unattended_seconds?"
                FROM games WHERE status = 'running' ORDER BY id"#,

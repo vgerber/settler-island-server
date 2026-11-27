@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO games (lobby_id, lobby_name, bot_difficulty, settings, seed)\n             VALUES ($1, $2, $3, $4, $5) RETURNING id",
+  "query": "INSERT INTO games (lobby_id, lobby_name, bot_difficulty, away_policy, settings, seed)\n             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -15,6 +15,7 @@
         "Text",
         "Jsonb",
         "Jsonb",
+        "Jsonb",
         "Int8"
       ]
     },
@@ -22,5 +23,5 @@
       false
     ]
   },
-  "hash": "c91e4be7ab29c663fb9aae36fefefad1f6924d047d62cd5373debcf9bdfd7002"
+  "hash": "3a207a47fe812cde300ae62252bfe9f3252b989ddf7244c96cdc0bf1c3d1406f"
 }

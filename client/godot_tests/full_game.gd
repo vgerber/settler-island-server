@@ -71,7 +71,7 @@ func _on_online(user: SiUser, running_lobby: Variant) -> void:
 	print("online as %s, running lobby %s" % [user.name, running_lobby])
 	if not _reconnected:
 		_user_id = user.id
-		_pending_request = _client.send_create_lobby("Godot full game", 4, SiDifficulty.HEURISTIC, null, 3)
+		_pending_request = _client.send_create_lobby("Godot full game", 4, null, SiDifficulty.HEURISTIC, null, 3)
 		return
 	if user.id != _user_id or running_lobby == null or int(running_lobby) != _lobby_id:
 		_finish(1, "FULL_GAME_FAILED login after reconnect did not return the running game")

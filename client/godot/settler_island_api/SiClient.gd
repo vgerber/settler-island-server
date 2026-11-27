@@ -91,10 +91,11 @@ func send_list_lobbies(page: int, per_page: int) -> int:
 	message.per_page = per_page
 	return send_message(message)
 
-func send_create_lobby(name_value: String, seats: int, bot_difficulty: Variant = null, password: Variant = null, points_to_win: Variant = null) -> int:
+func send_create_lobby(name_value: String, seats: int, away_policy: Variant = null, bot_difficulty: Variant = null, password: Variant = null, points_to_win: Variant = null) -> int:
 	var message := SiClientMessageCreateLobby.new()
 	message.name = name_value
 	message.seats = seats
+	message.away_policy = away_policy
 	message.bot_difficulty = bot_difficulty
 	message.password = password
 	message.points_to_win = points_to_win
