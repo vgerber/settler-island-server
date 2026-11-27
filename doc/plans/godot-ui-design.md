@@ -45,3 +45,7 @@ script errors in the log; `tools/check.sh` green.
   replace it; the HUD stays a 2D overlay.
 - ui-feedback: build EventPlayer render-agnostic plus HUD feedback (toasts, turn cue, counts, waiting indicator);
   skip 2D board animations (road placement, dice, flying cards) — those are built once, in 3D.
+
+## Small HUD follow-ups (from the live screenshot 2026-11-27)
+- The steal line in the log has no seat chip (the steal event names its seats differently from `seat`).
+- At 1600x900 the top log line can be half clipped while the log follows new lines.
