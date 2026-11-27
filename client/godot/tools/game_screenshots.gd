@@ -4,7 +4,7 @@ extends SceneTree
 ## The states derive from the two board fixtures of settler_island_client_generator/tests/godot.rs
 ## (target/tmp/godot-board-fixtures.json); the view is edited, not simulated, so only the look is real.
 ## Needs a window. Quits by itself.
-## Usage: godot --path client/godot --resolution 1600x900 --position 200,200 -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix]
+## Usage: godot --path client/godot --resolution 1600x900 --position 200,200 -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix] [board view 2d|3d]
 
 const SETTLE_FRAMES := 12
 const OWN_SEAT_NAMES := ["Mira", "Rolf", "Kai", "Lin"]
@@ -12,6 +12,7 @@ const OWN_SEAT_NAMES := ["Mira", "Rolf", "Kai", "Lin"]
 var _fixtures: Dictionary = {}
 var _output_directory := ""
 var _suffix := ""
+var _board_view := "2d"
 var _steps: Array[Callable] = []
 ## The game screen, untyped: `GameScreen` uses the `Net` autoload, which a -s script cannot name.
 var _screen: Control = null
@@ -23,12 +24,13 @@ var _exit_code := 0
 func _init() -> void:
 	var arguments := OS.get_cmdline_user_args()
 	if arguments.size() < 2:
-		push_error("usage: -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix]")
+		push_error("usage: -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix] [board view]")
 		quit(1)
 		return
 	_fixtures = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
 	_output_directory = arguments[1]
 	_suffix = arguments[2] if arguments.size() > 2 else ""
+	_board_view = arguments[3] if arguments.size() > 3 else "2d"
 	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over, _feedback_turn, _feedback_waiting, _settings]
 
 
@@ -214,6 +216,7 @@ func _show(key: String, message: Dictionary) -> void:
 	if _screen != null:
 		_screen.free()
 	_name = key
+	root.get_node("Settings").set("board_view", _board_view)
 	var net := root.get_node("Net")
 	net.set("lobby", _lobby(int(message["seat"]), (message["view"]["players"] as Array).size()))
 	message["type"] = "GameStarted"
@@ -251,7 +254,7 @@ func _press_key(keycode: Key) -> void:
 
 
 func _hover_first_target() -> void:
-	var board := _screen.get_node("%Board") as Board
+	var board := _screen.get_node("%Board") as BoardView
 	# Hover waits one frame: the board is only sized after the first layout pass.
 	await process_frame
 	await process_frame
@@ -260,7 +263,7 @@ func _hover_first_target() -> void:
 		return
 	var target := targets[targets.size() / 2]
 	var motion := InputEventMouseMotion.new()
-	motion.position = board.get_global_transform_with_canvas() * board.to_pixels(target.point)
+	motion.position = board.screen_point(target)
 	motion.global_position = motion.position
 	root.push_input(motion)
 
