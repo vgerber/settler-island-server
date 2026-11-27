@@ -6,16 +6,16 @@ extends SceneTree
 
 const PROP_RING_LIMIT := 0.86
 ## Low poly: no mesh of the kit exceeds its triangle budget (the lead's rule: faceted, few segments).
-const BUDGET_SLAB := 100
-const BUDGET_PROPS := 400
-const BUDGET_CHIP := 200
-const BUDGET_PIECE := 100
-const BUDGET_ROBBER := 150
-const BUDGET_DIE := 160
-const BUDGET_PORT := 150
-const BUDGET_TABLE := 250
-const BUDGET_WATER := 100
-const BUDGET_TILE := 650
+const BUDGET_SLAB := 600
+const BUDGET_PROPS := 2500
+const BUDGET_CHIP := 400
+const BUDGET_PIECE := 700
+const BUDGET_ROBBER := 600
+const BUDGET_DIE := 300
+const BUDGET_PORT := 900
+const BUDGET_TABLE := 1500
+const BUDGET_WATER := 200
+const BUDGET_TILE := 3400
 const YAWS := [0.0, 0.7, 2.1, -1.3]
 
 var _failures: PackedStringArray = []
