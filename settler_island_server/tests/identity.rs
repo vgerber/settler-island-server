@@ -37,6 +37,8 @@ static KEYS: LazyLock<[RsaPrivateKey; 2]> = LazyLock::new(|| {
     ]
 });
 
+const JWKS_FAILURE_BACKOFF: Duration = Duration::from_millis(300);
+
 struct Realm {
     issuer: String,
     jwks_requests: Arc<AtomicUsize>,
@@ -95,6 +97,7 @@ async fn start_with_misbehaving_realm(behaviour: RealmBehaviour) -> (SocketAddr,
         keycloak: Some(KeycloakConfig {
             issuer: realm.issuer.clone(),
             audience: AUDIENCE.to_string(),
+            jwks_failure_backoff: JWKS_FAILURE_BACKOFF,
         }),
         ..test_config()
     };
@@ -229,6 +232,10 @@ async fn a_failed_key_fetch_is_a_server_error_and_backs_off_further_fetches() {
     assert_eq!(rejection(address, &token).await, ErrorCode::Internal);
 
     assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 1);
+
+    tokio::time::sleep(JWKS_FAILURE_BACKOFF).await;
+    Client::authenticated(address, &token).await;
+    assert_eq!(realm.jwks_requests.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

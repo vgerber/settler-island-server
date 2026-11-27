@@ -12,8 +12,6 @@ use crate::config::KeycloakConfig;
 
 /// Bounds how often an unknown `kid` (rotation, or a forger guessing) makes us refetch the realm keys.
 const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
-/// After a failed fetch every request gets the same error for this long, so a down realm is not hammered.
-const FAILURE_BACKOFF: Duration = Duration::from_secs(5);
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The claims we read from a Keycloak access token.
@@ -53,6 +51,8 @@ pub(crate) struct KeycloakVerifier {
     jwks_url: String,
     validation: Validation,
     http: reqwest::Client,
+    /// After a failed fetch every request gets the same error for this long, so a down realm is not hammered.
+    failure_backoff: Duration,
     // A plain mutex: it is never held across an await.
     cache: Mutex<KeyCache>,
     // Serialises fetches, so concurrent misses wait for one fetch instead of each starting their own.
@@ -70,6 +70,7 @@ impl KeycloakVerifier {
             jwks_url: config.jwks_url(),
             validation,
             http: reqwest::Client::new(),
+            failure_backoff: config.jwks_failure_backoff,
             cache: Mutex::new(KeyCache::default()),
             refresh: tokio::sync::Mutex::new(RefreshState::default()),
         }
@@ -92,7 +93,7 @@ impl KeycloakVerifier {
             return Ok(key);
         }
         if let Some((failed_at, error)) = &refresh.last_failure {
-            if failed_at.elapsed() < FAILURE_BACKOFF {
+            if failed_at.elapsed() < self.failure_backoff {
                 return Err(AccountTokenError::KeysUnavailable(error.clone()));
             }
         }

@@ -198,6 +198,8 @@ impl fmt::Debug for SessionSecret {
     }
 }
 
+const DEFAULT_JWKS_FAILURE_BACKOFF: Duration = Duration::from_secs(5);
+
 /// The realm whose access tokens are accepted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeycloakConfig {
@@ -205,6 +207,8 @@ pub struct KeycloakConfig {
     pub issuer: String,
     /// Required in the tokens' `aud`.
     pub audience: String,
+    /// How long a failed key fetch is answered with the same error before the realm is asked again.
+    pub jwks_failure_backoff: Duration,
 }
 
 impl KeycloakConfig {
@@ -420,7 +424,11 @@ fn keycloak_from(
     audience: Option<String>,
 ) -> Result<Option<KeycloakConfig>, ConfigError> {
     match (issuer, audience) {
-        (Some(issuer), Some(audience)) => Ok(Some(KeycloakConfig { issuer, audience })),
+        (Some(issuer), Some(audience)) => Ok(Some(KeycloakConfig {
+            issuer,
+            audience,
+            jwks_failure_backoff: DEFAULT_JWKS_FAILURE_BACKOFF,
+        })),
         (None, None) => Ok(None),
         _ => Err(ConfigError::IncompleteKeycloak),
     }
@@ -544,6 +552,7 @@ mod tests {
                 keycloak: Some(KeycloakConfig {
                     issuer: "http://kc/realms/r".to_string(),
                     audience: "game".to_string(),
+                    jwks_failure_backoff: Duration::from_secs(5),
                 }),
                 database_url: Some("postgres://u:p@db/x".parse().unwrap()),
                 log_filter: "debug".to_string(),
