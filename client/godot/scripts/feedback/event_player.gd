@@ -91,7 +91,8 @@ func animated() -> bool:
 
 
 func play_sound(hook: StringName) -> void:
-	if sfx != null and not _instant():
+	# Events without a cue have an empty hook.
+	if sfx != null and hook != &"" and not _instant():
 		sfx.play(hook)
 
 

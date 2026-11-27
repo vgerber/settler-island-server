@@ -23,6 +23,8 @@ var _last_played_milliseconds: Dictionary[StringName, int] = {}
 var _warned: Dictionary[StringName, bool] = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
+## Headless runs have no audio output, and playbacks still running at quit are reported as leaks.
+var _silent := DisplayServer.get_name() == "headless"
 
 
 func _ready() -> void:
@@ -55,7 +57,8 @@ func play(hook: StringName) -> bool:
 	var player := _free_player()
 	player.stream = stream
 	player.pitch_scale = randf_range(1.0 - PITCH_SPREAD, 1.0 + PITCH_SPREAD)
-	player.play()
+	if not _silent:
+		player.play()
 	return true
 
 
