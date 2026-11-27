@@ -926,6 +926,21 @@ fn hud_event_log_has_a_line_for_every_event() {
 }
 
 #[test]
+fn every_sound_hook_has_a_file_and_repeats_are_dropped() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+
+    run_script(
+        &godot,
+        Project::Game,
+        "sfx_atmosphere.gd",
+        "",
+        "SFX_ATMOSPHERE_OK",
+    );
+}
+
+#[test]
 fn net_goes_online_after_a_failed_start() {
     let Some(godot) = godot_binary() else {
         return;

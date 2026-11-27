@@ -40,6 +40,7 @@ func _show(scene: PackedScene) -> Node:
 		_screen.queue_free()
 	_screen = scene.instantiate()
 	_screen_parent.add_child(_screen)
+	Atmosphere.set_mood(Atmosphere.MOOD_TABLE if scene == GAME_SCENE else Atmosphere.MOOD_MENU)
 	return _screen
 
 
