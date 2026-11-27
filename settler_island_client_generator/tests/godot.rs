@@ -207,7 +207,10 @@ fn run_script(godot: &Path, project: Project, script: &str, argument: &str, mark
 /// `run_script` with several arguments; the home is named after all of them, so one script can run twice.
 fn run_script_with(godot: &Path, project: Project, script: &str, arguments: &[&str], marker: &str) {
     let root = project_root(godot, project);
-    let home = root.join("homes").join(script).join(arguments[1..].join("-"));
+    let home = root
+        .join("homes")
+        .join(script)
+        .join(arguments[1..].join("-"));
     let mut command = vec!["-s", script, "--"];
     command.extend(arguments);
     let output = run_godot(godot, root, &home, &command);
