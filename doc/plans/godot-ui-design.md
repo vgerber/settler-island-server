@@ -18,7 +18,7 @@ Resolved open questions:
 1. `ui-style` (board and theme): `theme/main_theme.tres`, fonts, palette, `board_painter.gd` changes from
    visual-style.md, seat colours, gold target glow. Files: `client/godot/theme/`, `assets/`, `scripts/board/board_painter.gd`,
    `project.godot` (theme setting only).
-2. `ui-layout` (in parallel with 1): restructure the HUD to layout.md (opponent panels right, hand/dice/actions bottom,
+2. `ui-layout` (done; open: the compact paths (stacked dev cards, log popup) are checked by screenshots only, the mouse-only playtest runs at 1600x900; no top-bar menu yet, sound and animation settings arrive with step 3) (in parallel with 1): restructure the HUD to layout.md (opponent panels right, hand/dice/actions bottom,
    log), build mode with `Board.set_target_filter` (the only change in `scripts/board/board.gd`), compact mode, names
    from LobbyState. Files: `scripts/hud/`, `scenes/game.tscn`, hud scenes, `scripts/board/board.gd` (filter only),
    `scripts/net.gd` (keep last LobbyState only).
