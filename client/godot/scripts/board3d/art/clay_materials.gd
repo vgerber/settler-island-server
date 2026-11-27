@@ -6,10 +6,13 @@ extends RefCounted
 ## none of that is needed here, and the materials look the same under both.
 
 const CLAY_SHADER := "res://shaders/clay.gdshader"
-const SEA_SHADER := "res://shaders/sea.gdshader"
+const WATER_SHADER := "res://shaders/water.gdshader"
 ## Rim colours: light on dark pieces, dark on light ones (the outline rule of visual-style.md).
 const RIM_LIGHT := Palette.KEYLINE
 const RIM_DARK := Palette.OUTLINE
+
+## Brightness of the inlay of a seat that is not on the move.
+const STAND_DIM := 0.5
 
 static var _cache: Dictionary = {}
 
@@ -35,18 +38,26 @@ static func stock() -> ShaderMaterial:
 	return _clay("stock", Color.WHITE, 0.28, RIM_DARK, 0.018)
 
 
+## The inlay of a seat stand: the seat colour, dimmed unless the seat is lit (current or pending).
+static func stand(seat_index: int, lit: bool) -> ShaderMaterial:
+	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.IVORY_SEAT else RIM_LIGHT
+	var tint := ClayPalette.seat(seat_index)
+	return _clay("stand%d%s" % [seat_index, lit], tint if lit else ClayPalette.shade(tint, STAND_DIM), 0.7, rim, 0.018)
+
+
 static func table() -> ShaderMaterial:
 	return _clay("table", Color.WHITE, 0.0, RIM_LIGHT, 0.02, 0.06)
 
 
-static func sea() -> ShaderMaterial:
-	if not _cache.has("sea"):
+## Water hexes: one material, the shader varies colour and bob per instance.
+static func water() -> ShaderMaterial:
+	if not _cache.has("water"):
 		var material := ShaderMaterial.new()
-		material.shader = load(SEA_SHADER)
+		material.shader = load(WATER_SHADER)
 		material.set_shader_parameter("deep_color", ClayPalette.mute(Palette.SEA))
 		material.set_shader_parameter("crest_color", ClayPalette.mute(Palette.WAVE))
-		_cache["sea"] = material
-	return _cache["sea"]
+		_cache["water"] = material
+	return _cache["water"]
 
 
 static func _clay(

@@ -113,7 +113,7 @@ func _build_viewport() -> void:
 func _build_scene() -> void:
 	_add_environment()
 	_add_mesh(TableArt.table(), ClayMaterials.table(), Vector3.ZERO)
-	_add_mesh(TableArt.sea(), ClayMaterials.sea(), Vector3.ZERO)
+	_add_water()
 	for tile: Array in TILES:
 		_add_tile(tile[0], tile[1], tile[2], tile[3])
 	_add_pieces_on_island()
@@ -122,6 +122,15 @@ func _build_scene() -> void:
 	_add_swatches(Vector3(0.0, 0.0, 9.0))
 	_add_stands()
 	_add_dice()
+
+
+## Water hexes on every free lattice cell around the gallery island (the lineup and ports stand on them).
+func _add_water() -> void:
+	var land: Array[Vector2] = []
+	for tile: Array in TILES:
+		var position := _tile_position(tile[0], tile[1])
+		land.append(Vector2(position.x, position.z))
+	_world.add_child(BoardArt.water(WaterArt.cells(land)))
 
 
 func _add_environment() -> void:
@@ -213,24 +222,24 @@ func _add_port(q: int, r: int, degrees: float, ratio: int, resource: String) -> 
 	_add_mesh(PortArt.flag(ratio, resource), ClayMaterials.terrain(), tip + Vector3(0.0, PortArt.DECK_HEIGHT, 0.0))
 
 
-## Every seat's settlement, city and road in rows on the sea sheet, with chips, the robber and a die beside them.
+## Every seat's settlement, city and road in rows on the water, with chips, the robber and a die beside them.
 func _add_lineup(origin: Vector3) -> void:
 	for seat in 4:
 		var x := (seat - 1.5) * 1.1
-		_add_piece(PieceArt.settlement(), seat, origin + Vector3(x, TableArt.SEA_LEVEL, -0.5))
-		_add_piece(PieceArt.city(), seat, origin + Vector3(x, TableArt.SEA_LEVEL, 0.2), deg_to_rad(20.0))
-		_add_piece(PieceArt.road(), seat, origin + Vector3(x, TableArt.SEA_LEVEL, 0.7))
-	_add_mesh(ChipArt.chip(6), ClayMaterials.stock(), origin + Vector3(-3.2, TableArt.SEA_LEVEL, 0.0))
-	_add_mesh(ChipArt.chip(10), ClayMaterials.stock(), origin + Vector3(-3.2, TableArt.SEA_LEVEL, 0.7))
-	_add_mesh(ChipArt.chip(4), ClayMaterials.stock(), origin + Vector3(3.2, TableArt.SEA_LEVEL, 0.0))
-	_add_mesh(RobberArt.robber(), ClayMaterials.robber(), origin + Vector3(3.2, TableArt.SEA_LEVEL, 0.7))
+		_add_piece(PieceArt.settlement(), seat, origin + Vector3(x, WaterArt.HEIGHT, -0.5))
+		_add_piece(PieceArt.city(), seat, origin + Vector3(x, WaterArt.HEIGHT, 0.2), deg_to_rad(20.0))
+		_add_piece(PieceArt.road(), seat, origin + Vector3(x, WaterArt.HEIGHT, 0.7))
+	_add_mesh(ChipArt.chip(6), ClayMaterials.stock(), origin + Vector3(-3.2, WaterArt.HEIGHT, 0.0))
+	_add_mesh(ChipArt.chip(10), ClayMaterials.stock(), origin + Vector3(-3.2, WaterArt.HEIGHT, 0.7))
+	_add_mesh(ChipArt.chip(4), ClayMaterials.stock(), origin + Vector3(3.2, WaterArt.HEIGHT, 0.0))
+	_add_mesh(RobberArt.robber(), ClayMaterials.robber(), origin + Vector3(3.2, WaterArt.HEIGHT, 0.7))
 
 
 ## One slab per terrain with a settlement of every seat on the front and the back corners.
 func _add_swatches(origin: Vector3) -> void:
 	for index in SWATCH_TERRAINS.size():
 		var terrain: String = SWATCH_TERRAINS[index]
-		var centre := origin + Vector3((index - 2.5) * 2.0, TableArt.SEA_LEVEL, 0.0)
+		var centre := origin + Vector3((index - 2.5) * 2.0, 0.0, 0.0)
 		_add_mesh(HexSlabArt.slab(terrain), ClayMaterials.terrain(), centre)
 		var top := centre + Vector3(0.0, HexSlabArt.HEIGHT, 0.0)
 		_add_mesh(TerrainPropsArt.props(terrain, index, 3), ClayMaterials.terrain(), top)
@@ -241,10 +250,10 @@ func _add_swatches(origin: Vector3) -> void:
 
 func _add_stands() -> void:
 	var placements := [
-		[Vector3(0.0, 0.0, TableArt.SEA_HALF_DEPTH + 1.3), 0.0, 0],
-		[Vector3(0.0, 0.0, -TableArt.SEA_HALF_DEPTH - 1.3), 0.0, 1],
-		[Vector3(-TableArt.SEA_HALF_WIDTH - 1.3, 0.0, 0.0), PI * 0.5, 2],
-		[Vector3(TableArt.SEA_HALF_WIDTH + 1.3, 0.0, 0.0), PI * 0.5, 3],
+		[Vector3(0.0, 0.0, WaterArt.HALF_DEPTH + 1.6), 0.0, 0],
+		[Vector3(0.0, 0.0, -WaterArt.HALF_DEPTH - 1.6), 0.0, 1],
+		[Vector3(-WaterArt.HALF_WIDTH - 1.6, 0.0, 0.0), PI * 0.5, 2],
+		[Vector3(WaterArt.HALF_WIDTH + 1.6, 0.0, 0.0), PI * 0.5, 3],
 	]
 	for placement: Array in placements:
 		var position: Vector3 = placement[0]

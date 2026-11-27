@@ -26,14 +26,14 @@ static func builder(number: int) -> ClayBuilder:
 	var result := ClayBuilder.new()
 	var face := ClayPalette.mute(ClayPalette.CHIP_FACE)
 	var rim := ClayPalette.mute(Palette.CHIP_RIM)
-	result.add_lathe(_disc_profile(RIM_RADIUS, RIM_HEIGHT), Transform3D.IDENTITY, rim, 0.6, 32)
-	result.add_lathe(_disc_profile(RADIUS, HEIGHT), Transform3D.IDENTITY, face, 0.85, 32)
+	result.add_lathe(_rim_profile(), Transform3D.IDENTITY, rim, 0.6)
+	result.add_lathe(_face_profile(), Transform3D.IDENTITY, face, 0.85)
 	var ink := Palette.HOT_NUMBER if number == 6 or number == 8 else Palette.INK
 	var top := HEIGHT + INLAY_LIFT
 	StrokeFont.add_text(result, str(number), Transform3D(Basis.IDENTITY, Vector3(0.0, top, -0.035)), TEXT_HEIGHT, STROKE_WIDTH, ink)
 	for index in dot_count(number):
 		var x := (index - (dot_count(number) - 1) * 0.5) * 0.046
-		StrokeFont.add_disc(result, Transform3D(Basis.IDENTITY, Vector3(x, top, 0.145)), 0.014, ink, 8)
+		StrokeFont.add_disc(result, Transform3D(Basis.IDENTITY, Vector3(x, top, 0.145)), 0.016, ink, 5)
 	return result
 
 
@@ -42,13 +42,11 @@ static func dot_count(number: int) -> int:
 	return 6 - absi(7 - number)
 
 
-## A rounded puck: flat top, soft edge, `radius` and `height`.
-static func _disc_profile(radius: float, height: float) -> PackedVector2Array:
-	var profile := PackedVector2Array([Vector2(0.0, 0.0), Vector2(radius * 0.97, 0.0)])
-	var rounding := height * 0.45
-	for step in 5:
-		var angle := PI * 0.5 * step / 4.0
-		profile.append(Vector2(radius - rounding + cos(angle) * rounding, height - rounding + sin(angle) * rounding))
-	profile.append(Vector2(radius * 0.5, height))
-	profile.append(Vector2(0.0, height))
-	return profile
+## The ring under the face: a chamfered wall.
+static func _rim_profile() -> PackedVector2Array:
+	return PackedVector2Array([Vector2(RIM_RADIUS, 0.0), Vector2(RIM_RADIUS, RIM_HEIGHT * 0.6), Vector2(RIM_RADIUS - 0.015, RIM_HEIGHT)])
+
+
+## A puck: one chamfer from the wall to the flat top.
+static func _face_profile() -> PackedVector2Array:
+	return PackedVector2Array([Vector2(RADIUS, 0.0), Vector2(RADIUS, HEIGHT * 0.45), Vector2(RADIUS - 0.03, HEIGHT), Vector2(0.0, HEIGHT)])

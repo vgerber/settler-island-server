@@ -1,14 +1,16 @@
 class_name ClayBuilder
 extends RefCounted
-## Collects smooth, vertex-coloured triangle meshes for the clay kit. Every part is built in its own unit
-## space and placed with a `Transform3D`; normals are analytic or taken from the grid, and the vertex colour
-## carries the albedo already multiplied by a baked ambient occlusion (darker toward the part's base and
+## Collects low-poly, flat-shaded, vertex-coloured triangle meshes for the clay kit. Every part is built in its
+## own unit space and placed with a `Transform3D`; `to_mesh` gives every triangle its own face normal (the
+## faceted look), and the vertex colour carries the albedo already multiplied by a baked ambient occlusion (darker toward the part's base and
 ## creases), which is the Compatibility renderer's stand-in for SSAO (a Forward+ Environment adds real SSAO
 ## on top, see `ClayMaterials`). Colour values are sRGB; `clay.gdshader` converts them.
 
-const DEFAULT_SEGMENTS := 14
-## Grid rows of a slab bevel quarter circle.
-const BEVEL_STEPS := 4
+const DEFAULT_SEGMENTS := 7
+## Round shapes never get more segments than this, whatever the caller asks (low poly).
+const MAX_SEGMENTS := 8
+## A slab bevel is one chamfer.
+const BEVEL_STEPS := 1
 ## Orients grid normals of slabs: far below, so every upward or outward normal points away from it.
 const ORIENT_POINT := Vector3(0.0, -1000.0, 0.0)
 
@@ -22,16 +24,31 @@ func is_empty() -> bool:
 	return _indices.is_empty()
 
 
+## The mesh with one normal per triangle: vertices are not shared, so the facets stay hard.
 func to_mesh() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	if _indices.is_empty():
 		return mesh
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	for triangle in _indices.size() / 3:
+		var corners := [_indices[triangle * 3], _indices[triangle * 3 + 1], _indices[triangle * 3 + 2]]
+		var edge := _vertices[corners[1]] - _vertices[corners[0]]
+		# Godot's front faces are clockwise, so the outward normal is against the cross product.
+		var normal := -edge.cross(_vertices[corners[2]] - _vertices[corners[0]]).normalized()
+		for corner: int in corners:
+			indices.append(vertices.size())
+			vertices.append(_vertices[corner])
+			normals.append(normal)
+			colors.append(_colors[corner])
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = _vertices
-	arrays[Mesh.ARRAY_NORMAL] = _normals
-	arrays[Mesh.ARRAY_COLOR] = _colors
-	arrays[Mesh.ARRAY_INDEX] = _indices
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
 
@@ -90,6 +107,7 @@ func _add_triangle(first: int, second: int, third: int) -> void:
 
 ## Unit sphere, scaled by the transform into an ellipsoid.
 func add_sphere(transform: Transform3D, color: Color, ao_floor := 0.7, segments := DEFAULT_SEGMENTS) -> void:
+	segments = mini(segments, MAX_SEGMENTS)
 	var rings := maxi(segments / 2, 4)
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -108,6 +126,7 @@ func add_sphere(transform: Transform3D, color: Color, ao_floor := 0.7, segments 
 func add_lathe(
 	profile: PackedVector2Array, transform: Transform3D, color: Color, ao_floor := 0.7, segments := DEFAULT_SEGMENTS
 ) -> void:
+	segments = mini(segments, MAX_SEGMENTS)
 	var points := PackedVector3Array()
 	var normals := PackedVector3Array()
 	for index in profile.size():
@@ -134,54 +153,61 @@ static func capsule_profile(radius: float, half_length: float, steps := 5) -> Pa
 	return profile
 
 
-## Box with round edges of `radius` (flat faces stay flat, so pips and numbers sit on them).
-func add_round_box(
-	transform: Transform3D, half_extents: Vector3, radius: float, color: Color, ao_floor := 0.7
-) -> void:
-	var rounding := minf(radius, minf(half_extents.x, minf(half_extents.y, half_extents.z)) * 0.99)
-	var inner := half_extents - Vector3.ONE * rounding
+## A box of `half_extents` with sharp edges.
+func add_box(transform: Transform3D, half_extents: Vector3, color: Color, ao_floor := 0.7) -> void:
+	var faces: Array[PackedVector3Array] = []
+	var outward := PackedVector3Array()
 	for axis in 3:
 		for sign_value in [-1.0, 1.0]:
-			_add_box_face(transform, half_extents, inner, rounding, axis, sign_value, color, ao_floor)
+			var normal := Vector3.ZERO
+			normal[axis] = sign_value
+			var first := Vector3.ZERO
+			first[(axis + 1) % 3] = half_extents[(axis + 1) % 3]
+			var second := Vector3.ZERO
+			second[(axis + 2) % 3] = half_extents[(axis + 2) % 3]
+			var centre := normal * half_extents[axis]
+			faces.append(PackedVector3Array([centre - first - second, centre + first - second, centre + first + second, centre - first + second]))
+			outward.append(normal)
+	_add_faces(transform, faces, outward, color, ao_floor)
 
 
-func _add_box_face(
-	transform: Transform3D,
-	half_extents: Vector3,
-	inner: Vector3,
-	rounding: float,
-	axis: int,
-	sign_value: float,
-	color: Color,
-	ao_floor: float
+## A gable roof: ridge along x at y = `height`, eaves at y = 0 on z = +-`half_depth`, triangular ends. Faces the
+## camera with a steep slope when `height` is about 1.4 times `half_depth`.
+func add_gable(
+	transform: Transform3D, half_length: float, half_depth: float, height: float, color: Color, ao_floor := 0.8
 ) -> void:
-	var first := (axis + 1) % 3
-	var second := (axis + 2) % 3
-	var first_values := _box_values(half_extents[first], rounding)
-	var second_values := _box_values(half_extents[second], rounding)
-	var points := PackedVector3Array()
-	var normals := PackedVector3Array()
-	for first_value in first_values:
-		for second_value in second_values:
-			var corner := Vector3.ZERO
-			corner[axis] = sign_value * half_extents[axis]
-			corner[first] = first_value
-			corner[second] = second_value
-			var core := corner.clamp(-inner, inner)
-			var direction := (corner - core).normalized()
-			points.append(transform * (core + direction * rounding))
-			normals.append(_transform_normal(transform, direction))
-	add_surface(
-		points, normals, _occluded_colors(points, color, ao_floor), first_values.size(), second_values.size(), false
+	var faces: Array[PackedVector3Array] = [
+		PackedVector3Array([Vector3(-half_length, 0.0, half_depth), Vector3(half_length, 0.0, half_depth), Vector3(half_length, height, 0.0), Vector3(-half_length, height, 0.0)]),
+		PackedVector3Array([Vector3(-half_length, 0.0, -half_depth), Vector3(-half_length, height, 0.0), Vector3(half_length, height, 0.0), Vector3(half_length, 0.0, -half_depth)]),
+		PackedVector3Array([Vector3(-half_length, 0.0, -half_depth), Vector3(-half_length, 0.0, half_depth), Vector3(-half_length, height, 0.0)]),
+		PackedVector3Array([Vector3(half_length, 0.0, -half_depth), Vector3(half_length, height, 0.0), Vector3(half_length, 0.0, half_depth)]),
+	]
+	var outward := PackedVector3Array(
+		[Vector3(0.0, half_depth, height), Vector3(0.0, half_depth, -height), Vector3.LEFT, Vector3.RIGHT]
 	)
+	_add_faces(transform, faces, outward, color, ao_floor)
 
 
-static func _box_values(half: float, rounding: float) -> PackedFloat32Array:
-	var third := rounding / 3.0
-	return PackedFloat32Array(
-		[-half, -half + third, -half + 2.0 * third, -half + rounding, 0.0,
-		half - rounding, half - 2.0 * third, half - third, half]
-	)
+## Convex planar faces (corner lists) with their outward normals; the AO spans all of them.
+func _add_faces(
+	transform: Transform3D, faces: Array[PackedVector3Array], outward: PackedVector3Array, color: Color, ao_floor: float
+) -> void:
+	var all_points := PackedVector3Array()
+	for face in faces:
+		for point in face:
+			all_points.append(transform * point)
+	var colors := _occluded_colors(all_points, color, ao_floor)
+	var cursor := 0
+	for index in faces.size():
+		var offset := _vertices.size()
+		var normal := _transform_normal(transform, outward[index])
+		for point_index in faces[index].size():
+			_vertices.append(all_points[cursor])
+			_normals.append(normal)
+			_colors.append(colors[cursor])
+			cursor += 1
+		for corner in faces[index].size() - 2:
+			_add_triangle(offset, offset + corner + 1, offset + corner + 2)
 
 
 ## A flat-bottomed slab with a rounded top edge. `outline` is `Callable(angle: float, inset: float) -> float`,

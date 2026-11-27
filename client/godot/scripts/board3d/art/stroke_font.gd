@@ -6,6 +6,8 @@ extends RefCounted
 const GLYPH_WIDTH := 0.6
 const GLYPH_GAP := 0.2
 const COLON_ADVANCE := 0.15
+## Round joints between ribbons are small polygons.
+const JOINT_SEGMENTS := 4
 
 const _STROKES := {
 	"0": [[[0.3, 1.0], [0.52, 0.9], [0.6, 0.5], [0.52, 0.1], [0.3, 0.0], [0.08, 0.1], [0.0, 0.5], [0.08, 0.9], [0.3, 1.0]]],
@@ -59,7 +61,7 @@ static func _add_stroke(
 	for index in points.size() - 1:
 		_add_ribbon(builder, points[index], points[index + 1], transform, stroke_width, color)
 	for point in points:
-		add_disc(builder, Transform3D(transform.basis, transform * point), stroke_width * 0.5, color, 8)
+		add_disc(builder, Transform3D(transform.basis, transform * point), stroke_width * 0.5, color, JOINT_SEGMENTS)
 
 
 static func _add_ribbon(

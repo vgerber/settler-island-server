@@ -5,6 +5,17 @@ extends SceneTree
 ## Usage: godot --headless --path <copy of client/godot> -s clay_kit_test.gd
 
 const PROP_RING_LIMIT := 0.86
+## Low poly: no mesh of the kit exceeds its triangle budget (the lead's rule: faceted, few segments).
+const BUDGET_SLAB := 100
+const BUDGET_PROPS := 400
+const BUDGET_CHIP := 200
+const BUDGET_PIECE := 100
+const BUDGET_ROBBER := 150
+const BUDGET_DIE := 160
+const BUDGET_PORT := 150
+const BUDGET_TABLE := 250
+const BUDGET_WATER := 100
+const BUDGET_TILE := 650
 const YAWS := [0.0, 0.7, 2.1, -1.3]
 
 var _failures: PackedStringArray = []
@@ -14,6 +25,9 @@ func _init() -> void:
 	_check_meshes_are_not_empty()
 	_check_props_are_deterministic()
 	_check_props_stay_on_the_tile()
+	_check_triangle_budgets()
+	_check_flat_shading()
+	_check_water_cells()
 	_check_hot_numbers()
 	_check_dice_faces()
 	if _failures.is_empty():
@@ -52,7 +66,7 @@ func _check_meshes_are_not_empty() -> void:
 	_expect_mesh(PieceArt.city(), "city")
 	_expect_mesh(DieArt.die(), "die")
 	_expect_mesh(TableArt.table(), "table")
-	_expect_mesh(TableArt.sea(), "sea")
+	_expect_mesh(WaterArt.hex(), "water hex")
 	_expect_mesh(TableArt.seat_stand_base(), "seat stand base")
 	_expect_mesh(TableArt.seat_stand_inlay(), "seat stand inlay")
 	for seat in 4:
@@ -108,3 +122,65 @@ func _pips_on_face(normal: Vector3) -> int:
 			return DieArt.is_pip_color(color) and position.dot(normal) > DieArt.HALF
 	)
 	return vertices / StrokeFont.disc_vertex_count(DieArt.PIP_SEGMENTS)
+
+
+func _triangles(mesh: ArrayMesh) -> int:
+	return (mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+
+
+func _expect_budget(mesh: ArrayMesh, budget: int, label: String) -> void:
+	var count := _triangles(mesh)
+	_expect(count <= budget, "%s has %d triangles, budget %d" % [label, count, budget])
+	print("TRIANGLES %s %d" % [label, count])
+
+
+func _check_triangle_budgets() -> void:
+	for terrain in HexSlabArt.terrains():
+		_expect_budget(HexSlabArt.slab(terrain), BUDGET_SLAB, "slab %s" % terrain)
+		_expect_budget(TerrainPropsArt.props(terrain, 2, -1), BUDGET_PROPS, "props %s" % terrain)
+		var number := 8 if terrain != HexSlabArt.DESERT else 0
+		var tile := _triangles(HexSlabArt.slab(terrain)) + _triangles(TerrainPropsArt.props(terrain, 2, -1))
+		tile += _triangles(ChipArt.chip(number)) if number > 0 else 0
+		_expect(tile <= BUDGET_TILE, "tile %s has %d triangles, budget %d" % [terrain, tile, BUDGET_TILE])
+	for number in range(2, 13):
+		_expect_budget(ChipArt.chip(number), BUDGET_CHIP, "chip %d" % number)
+	_expect_budget(PieceArt.road(), BUDGET_PIECE, "road")
+	_expect_budget(PieceArt.settlement(), BUDGET_PIECE, "settlement")
+	_expect_budget(PieceArt.city(), BUDGET_PIECE, "city")
+	_expect_budget(RobberArt.robber(), BUDGET_ROBBER, "robber")
+	_expect_budget(DieArt.die(), BUDGET_DIE, "die")
+	_expect_budget(PortArt.pier(), BUDGET_PORT, "pier")
+	_expect_budget(PortArt.flag(3, ""), BUDGET_PORT, "flag")
+	_expect_budget(TableArt.table(), BUDGET_TABLE, "table")
+	_expect_budget(TableArt.seat_stand_base(), BUDGET_TABLE, "stand base")
+	_expect_budget(TableArt.seat_stand_inlay(), BUDGET_TABLE, "stand inlay")
+	_expect_budget(WaterArt.hex(), BUDGET_WATER, "water hex")
+
+
+## Flat shading: every triangle's three vertices carry one and the same normal, and it is the face normal.
+func _check_flat_shading() -> void:
+	for mesh: ArrayMesh in [PieceArt.settlement(), PieceArt.road(), HexSlabArt.slab("Wood"), RobberArt.robber(), DieArt.die()]:
+		var arrays := mesh.surface_get_arrays(0)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for triangle in indices.size() / 3:
+			var first := indices[triangle * 3]
+			var second := indices[triangle * 3 + 1]
+			var third := indices[triangle * 3 + 2]
+			var face := -(vertices[second] - vertices[first]).cross(vertices[third] - vertices[first]).normalized()
+			# Godot stores normals compressed, so compare with a tolerance.
+			var flat := normals[first].dot(face) > 0.99 and normals[second].dot(face) > 0.99 and normals[third].dot(face) > 0.99
+			if not flat:
+				_failures.append("triangle %d of a kit mesh is not flat" % triangle)
+				break
+
+
+## The water fills the free lattice cells around the land and never overlaps a land tile.
+func _check_water_cells() -> void:
+	var land: Array[Vector2] = [Vector2.ZERO, Vector2(BoardGeometry.SQUARE_ROOT_OF_THREE, 0.0)]
+	var cells := WaterArt.cells(land)
+	_expect(cells.size() > 30, "only %d water cells" % cells.size())
+	for cell in cells:
+		_expect(not land.has(cell), "water on land tile %s" % cell)
+	_expect(cells.has(Vector2(-BoardGeometry.SQUARE_ROOT_OF_THREE, 0.0)), "no water next to the land")
