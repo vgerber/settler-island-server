@@ -695,6 +695,16 @@ fn generated_classes_round_trip_every_message() {
 
 /// A server with instant bots on an ephemeral port, running on `runtime` until the test ends; `seed`
 /// fixes the board, dice and bots of every game.
+/// Two workers per test server: one runtime per test with a thread per core exhausts the virtual memory ceiling of
+/// `tools/run_limited.sh` once the tests run in parallel.
+fn test_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
 fn start_server(runtime: &tokio::runtime::Runtime, seed: Option<u64>) -> String {
     let address = runtime.block_on(async {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -723,7 +733,7 @@ fn generated_client_plays_against_a_real_server() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, None);
 
     run_script(&godot, Project::Api, "live_game.gd", &server, "LIVE_OK");
@@ -734,7 +744,7 @@ fn game_client_plays_a_full_game_and_rejoins_it() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, None);
 
     run_script(
@@ -751,7 +761,7 @@ fn main_scene_plays_a_full_game_with_mouse_clicks_only() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, Some(4));
 
     run_script(&godot, Project::Game, "ui_game.gd", &server, "UI_GAME_OK");
@@ -762,7 +772,7 @@ fn main_scene_plays_a_full_game_on_the_3d_board_with_mouse_clicks_only() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, Some(4));
 
     run_script_with(
@@ -1038,7 +1048,7 @@ fn net_goes_online_after_a_failed_start() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, None);
 
     run_script(
@@ -1055,7 +1065,7 @@ fn net_replaces_a_refused_stored_token_with_a_fresh_guest_session() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let server = start_server(&runtime, None);
 
     run_script(
@@ -1072,7 +1082,7 @@ fn screens_take_their_limits_from_the_protocol() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = test_runtime();
     let fixture = json!({
         "server": start_server(&runtime, None),
         "invalid_name_message": ErrorCode::InvalidName.description(),
