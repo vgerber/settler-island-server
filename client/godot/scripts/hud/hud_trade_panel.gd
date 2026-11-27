@@ -51,14 +51,14 @@ func _init() -> void:
 	hide()
 
 
-func show_trade(state: GameState, names: SeatNames) -> void:
-	if not state.view.phase is SiPhaseTradeOffered:
+func show_trade(state: EventPlayer, names: SeatNames) -> void:
+	if not state.shown_view.phase is SiPhaseTradeOffered:
 		hide()
 		return
-	var offer := (state.view.phase as SiPhaseTradeOffered).offer
+	var offer := (state.shown_view.phase as SiPhaseTradeOffered).offer
 	_title_label.text = _title(offer, names)
 	_offer_label.text = _terms(offer, names)
-	_show_answers(offer, state.view.players.size(), names)
+	_show_answers(offer, state.shown_view.players.size(), names)
 	_show_buttons(state, names)
 	show()
 
@@ -100,7 +100,7 @@ func _answer_of(offer: SiTradeOffer, seat: int) -> String:
 	return "waiting"
 
 
-func _show_buttons(state: GameState, names: SeatNames) -> void:
+func _show_buttons(state: EventPlayer, names: SeatNames) -> void:
 	_actions = [_first(state, SiActionAcceptTrade), _first(state, SiActionRejectTrade), _first(state, SiActionCancelTrade)]
 	_accept.visible = _actions[0] != null
 	_decline.visible = _actions[1] != null
@@ -113,7 +113,7 @@ func _show_buttons(state: GameState, names: SeatNames) -> void:
 			_confirms[index].text = "Trade with %s" % names.name_of((confirms[index] as SiActionConfirmTrade).with)
 
 
-func _first(state: GameState, script: Script) -> SiAction:
+func _first(state: EventPlayer, script: Script) -> SiAction:
 	var matching := state.legal_of(script)
 	return null if matching.is_empty() else matching[0]
 

@@ -56,3 +56,11 @@ func _on_primary() -> void:
 
 func _on_card() -> void:
 	act_requested.emit(SiActionBuyDevelopmentCard)
+
+
+## One scale bounce of Roll or End turn when it becomes the thing to press.
+func bounce_primary() -> void:
+	_primary.pivot_offset = _primary.size / 2.0
+	var tween := _primary.create_tween()
+	tween.tween_property(_primary, "scale", Vector2.ONE * 1.12, 0.1)
+	tween.tween_property(_primary, "scale", Vector2.ONE, 0.12)

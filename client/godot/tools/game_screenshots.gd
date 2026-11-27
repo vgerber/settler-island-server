@@ -29,7 +29,7 @@ func _init() -> void:
 	_fixtures = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
 	_output_directory = arguments[1]
 	_suffix = arguments[2] if arguments.size() > 2 else ""
-	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over]
+	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over, _feedback_turn, _feedback_waiting]
 
 
 func _process(_delta: float) -> bool:
@@ -111,6 +111,36 @@ func _trade() -> void:
 	message["legal_actions"] = [{"type": "AcceptTrade"}, {"type": "RejectTrade"}]
 	_show("trade", message)
 	_emit_dice(2, 5)
+
+
+## Own turn: the turn banner and an error toast over the board.
+func _feedback_turn() -> void:
+	var message := _middle_message()
+	var view: Dictionary = message["view"]
+	view["phase"] = {"type": "Main"}
+	view["current"] = message["seat"]
+	view["own"]["hand"] = [2, 3, 1, 2, 2]
+	message["legal_actions"] = _build_actions(view, message["seat"])
+	_show("feedback-turn", message)
+	var hud := _screen.get_node("%Hud") as Hud
+	var log := hud.get("_log") as HudEventLog
+	for turn in 14:
+		var rolled := SiEvent.from_dict({"type": "DiceRolled", "seat": turn % 4, "first": 2, "second": 1 + turn % 6})
+		log.add_events([rolled] as Array[SiEvent], hud.names)
+	hud.call("_on_turn_cue", &"turn")
+	hud.toasts.push("Not enough resources for a city", &"error")
+	hud.toasts.push("Rolf stole a card from you", &"alert")
+
+
+## A bot's turn: the active glow, the hourglass badge and the waiting line.
+func _feedback_waiting() -> void:
+	var message := _middle_message()
+	var view: Dictionary = message["view"]
+	view["phase"] = {"type": "Main"}
+	view["current"] = 1
+	message["legal_actions"] = []
+	_show("feedback-waiting", message)
+	(_screen.get_node("%Hud") as Hud).toasts.push("While you were away:\nRolf rolled 3 + 5 = 8", &"info")
 
 
 func _game_over() -> void:

@@ -1,7 +1,7 @@
 class_name Board
 extends Control
 ## The island: tiles, buildings and click targets from the legal actions (step 2 of
-## doc/plans/godot-client.md). Reads only its `GameState`, never `Net`. Fits and centres the island
+## doc/plans/godot-client.md). Draws what its `EventPlayer` shows, never `Net`. Fits and centres the island
 ## in its own rect and re-fits when the rect changes.
 
 const MARGIN := 16.0
@@ -10,7 +10,7 @@ const PICK_RADIUS := 0.32
 ## Pick radius around a tile centre, in hex units (inside the hexagon's inner circle).
 const TILE_PICK_RADIUS := 0.8
 
-var state: GameState = null
+var player: EventPlayer = null
 ## Pixels per hex unit and the pixel position of the unit origin, set by `_fit`.
 var hex_size := 1.0
 var origin := Vector2.ZERO
@@ -50,9 +50,9 @@ func targets() -> Array[BoardTarget]:
 	return _targets
 
 
-func bind(game_state: GameState) -> void:
-	state = game_state
-	state.changed.connect(func(_events: Array[SiEvent]) -> void: _refresh())
+func bind(event_player: EventPlayer) -> void:
+	player = event_player
+	player.committed.connect(_refresh)
 	_refresh()
 
 
@@ -63,7 +63,7 @@ func corner_position(corner: int) -> Vector2:
 
 ## Pixel position of corner `index` of a tile, computed from that tile alone.
 func tile_corner_position(tile_index: int, index: int) -> Vector2:
-	return to_pixels(BoardGeometry.tile_corner(state.view.board.tiles[tile_index].coordinates, index))
+	return to_pixels(BoardGeometry.tile_corner(player.shown_view.board.tiles[tile_index].coordinates, index))
 
 
 func to_pixels(point: Vector2) -> Vector2:
@@ -72,8 +72,8 @@ func to_pixels(point: Vector2) -> Vector2:
 
 func _refresh() -> void:
 	# The layout never changes during a game; only a new game brings a new board.
-	if geometry == null or geometry.corner_points.size() != state.view.board.corners.size():
-		geometry = BoardGeometry.new(state.view.board)
+	if geometry == null or geometry.corner_points.size() != player.shown_view.board.corners.size():
+		geometry = BoardGeometry.new(player.shown_view.board)
 		_fit()
 	_collect_targets()
 	_set_hovered(_target_at(get_local_mouse_position()) if is_visible_in_tree() else null)
@@ -94,7 +94,7 @@ func _fit() -> void:
 func _collect_targets() -> void:
 	_targets.clear()
 	for script: Script in _filter:
-		for action in state.legal_of(script):
+		for action in player.legal_of(script):
 			_targets.append(_target_of(action))
 
 
@@ -127,7 +127,7 @@ func _set_hovered(target: BoardTarget) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if state == null or geometry == null:
+	if player == null or geometry == null:
 		return
 	if event is InputEventMouseMotion:
 		_set_hovered(_target_at((event as InputEventMouseMotion).position))
@@ -139,13 +139,13 @@ func _gui_input(event: InputEvent) -> void:
 	if target == null:
 		return
 	accept_event()
-	state.act(target.action)
+	player.act(target.action)
 
 
 func _draw() -> void:
-	if state == null or geometry == null:
+	if player == null or geometry == null:
 		return
-	var painter := BoardPainter.new(self, state.view.board, geometry)
+	var painter := BoardPainter.new(self, player.shown_view.board, geometry)
 	painter.draw_sea()
 	painter.draw_tiles()
 	# Piers reach under the tiles' edge, so ports go on top of them.
@@ -153,7 +153,7 @@ func _draw() -> void:
 	painter.draw_roads()
 	painter.draw_buildings()
 	painter.draw_robber()
-	painter.draw_targets(_targets, _hovered, state.seat, _pulse())
+	painter.draw_targets(_targets, _hovered, player.seat, _pulse())
 
 
 ## Brightness of the target glow, 0.55 to 1.

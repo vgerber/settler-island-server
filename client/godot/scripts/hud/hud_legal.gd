@@ -2,10 +2,10 @@ class_name HudLegal
 extends RefCounted
 ## Questions the HUD asks of the legal actions: what may the own seat do now, and which picks lead to a legal action.
 
-var _state: GameState
+var _state: EventPlayer
 
 
-func _init(game_state: GameState) -> void:
+func _init(game_state: EventPlayer) -> void:
 	_state = game_state
 
 
@@ -16,7 +16,7 @@ func has(script: Script) -> bool:
 ## Offers are not among the legal actions (their contents are free); the server accepts them in the own
 ## Main phase, which is when ending the turn is legal. A server-side `can_offer_trade` would replace this.
 func can_offer_trade() -> bool:
-	var own := _state.view.own
+	var own := _state.shown_view.own
 	return has(SiActionEndTurn) and own != null and HudText.total(own.hand) > 0
 
 
@@ -46,4 +46,4 @@ func matches(action: SiAction, filter: Dictionary) -> bool:
 
 ## The server's rate for `resource` from the own view (4, or 3 and 2 with ports).
 func bank_rate(resource: String) -> int:
-	return _state.view.own.bank_rates[SiResource.VALUES.find(resource)]
+	return _state.shown_view.own.bank_rates[SiResource.VALUES.find(resource)]

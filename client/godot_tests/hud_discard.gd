@@ -22,7 +22,10 @@ func _check(started: SiServerMessageGameStarted) -> void:
 	var state := GameState.new(client, started)
 	var hud := Hud.new()
 	root.add_child(hud)
-	hud.bind(state)
+	var player := EventPlayer.new()
+	hud.add_child(player)
+	player.bind(state)
+	hud.bind(player)
 	var dialog := hud.get("_discard_dialog") as HudDiscardDialog
 	var legal := state.legal_of(SiActionDiscard)
 	var hand := state.view.own.hand

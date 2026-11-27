@@ -11,12 +11,16 @@ func _init(compact: bool = false) -> void:
 	add_theme_constant_override("separation", 6)
 
 
-func show_players(view: SiPlayerView, names: SeatNames) -> void:
+## `breathing` false (animations off) keeps the active seat's glow still.
+func show_players(view: SiPlayerView, names: SeatNames, breathing: bool) -> void:
 	if _panels.is_empty():
 		_create_panels(view.players.size(), names.own_seat)
 	for panel in _panels:
 		var status := HudText.status_text(view, panel.seat, names)
 		panel.show_player(view.players[panel.seat], view, names, status)
+		var playing := not view.phase is SiPhaseFinished
+		var waiting := playing and HudText.pending_seats(view).has(panel.seat)
+		panel.mark(playing and view.current == panel.seat, waiting, names.is_bot(panel.seat), breathing)
 
 
 func set_compact(compact: bool) -> void:

@@ -2,10 +2,11 @@ class_name Hud
 extends Control
 ## The game screen's overlay (doc/design/layout.md): top bar, opponents and log at the right, hand, dice and
 ## actions at the bottom. The board's rect is `board_slot`, the free area in the middle; dialogs, the open trade
-## and the result live over it. Every widget is built once and updated on `GameState.changed`. Reads only its
-## `GameState`, never `Net`; legal actions decide what is enabled.
+## and the result live over it. Every widget is built once and updated when its `EventPlayer` commits a beat. Reads only
+## the player, never `Net`; legal actions decide what is enabled.
 
 signal leave_requested
+signal settings_requested
 ## The action variants whose board targets are shown: everything, or only the armed build kind in `Main`.
 signal target_filter_changed(kinds: Array[Script])
 
@@ -15,7 +16,7 @@ const BOTTOM_HEIGHT := 176.0
 const COMPACT_BELOW := 800
 
 
-var state: GameState = null
+var player: EventPlayer = null
 var _build_keys := {KEY_1: SiActionBuildRoad, KEY_2: SiActionBuildSettlement, KEY_3: SiActionBuildCity}
 var names := SeatNames.new()
 ## The free middle of the screen; the board is laid over exactly this rect.
@@ -25,6 +26,7 @@ var _legal: HudLegal = null
 var _top_bar := HudTopBar.new()
 var _players := HudPlayers.new()
 var _log := HudEventLog.new()
+var _log_slot := Control.new()
 var _log_panel := HudUi.panel()
 var _log_button := HudUi.button("Log", _toggle_log)
 var _side_column := HudUi.vbox(8)
@@ -32,6 +34,7 @@ var _own_summary: HudOwnSummary = null
 var _hand := HudHand.new()
 var _dev_row := HudDevRow.new()
 var _dice := HudDice.new()
+var _waiting := HudWaiting.new()
 var _action_bar := HudActionBar.new()
 var _trade_card := HudTradePanel.new()
 var _discard_dialog := HudDiscardDialog.new()
@@ -51,6 +54,10 @@ var _unread_lines := 0
 var _result_shown := false
 var _compact := false
 var _refresh_queued := false
+## Messages at the top right of the board; the game screen and the player feed them.
+var toasts := HudToasts.new()
+var _turn_banner := HudTurnBanner.new()
+var _beat_events: Array[SiEvent] = []
 
 
 func _init() -> void:
@@ -63,10 +70,13 @@ func _init() -> void:
 	layout.add_child(_build_bottom_bar())
 	add_child(layout)
 	_top_bar.results_requested.connect(_game_over.show)
+	_top_bar.settings_requested.connect(settings_requested.emit)
 	# Closing the overlay brings back the "Results" button.
 	_game_over.visibility_changed.connect(_queue_refresh)
 	_game_over.leave_requested.connect(leave_requested.emit)
 	board_slot.add_child(_game_over)
+	board_slot.add_child(_turn_banner)
+	board_slot.add_child(toasts)
 	_connect_actions()
 
 
@@ -76,26 +86,31 @@ func _ready() -> void:
 
 
 ## Starts showing `game_state`. `seat_names` falls back to "Seat N" when no lobby is known.
-func bind(game_state: GameState, seat_names: SeatNames = null) -> void:
-	state = game_state
+func bind(event_player: EventPlayer, seat_names: SeatNames = null) -> void:
+	player = event_player
 	names = seat_names if seat_names != null else SeatNames.new()
-	names.own_seat = state.seat
-	_legal = HudLegal.new(state)
+	names.own_seat = player.seat
+	_legal = HudLegal.new(player)
 	_own_summary.set_seat(names.own_seat)
-	state.changed.connect(_on_changed)
+	player.names = names
+	player.beat_started.connect(_on_beat_started)
+	player.event_started.connect(_on_event_started)
+	player.committed.connect(_on_committed)
+	player.toast_requested.connect(toasts.push)
+	player.turn_cue.connect(_on_turn_cue)
 	_unread_lines = 0
-	_log.add_events(state.events, names)
 	_refresh()
 
 
 ## Takes the seats of a newer `LobbyState`, as players leave and rejoin during the game.
 func show_names(seat_names: SeatNames) -> void:
 	names = seat_names
+	player.names = names
 	_queue_refresh()
 
 
 func _input(event: InputEvent) -> void:
-	if state == null or not is_visible_in_tree():
+	if player == null or not is_visible_in_tree():
 		return
 	var click := event as InputEventMouseButton
 	if click != null and click.pressed:
@@ -144,8 +159,12 @@ func _build_side_column() -> VBoxContainer:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 	column.add_child(header)
-	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(_log)
+	_log_slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_log_slot.custom_minimum_size = Vector2(0.0, 60.0)
+	_log_slot.clip_contents = true
+	_log_slot.add_child(_log)
+	_log_slot.resized.connect(_fit_log)
+	column.add_child(_log_slot)
 	_log_panel.add_child(column)
 	_side_column.add_child(_log_panel)
 	return _side_column
@@ -162,8 +181,12 @@ func _build_bottom_bar() -> PanelContainer:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_bottom_row.add_child(spacer)
-	_dice.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_bottom_row.add_child(_dice)
+	var dice_column := HudUi.vbox(4)
+	dice_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	dice_column.custom_minimum_size = Vector2(210.0, 0.0)
+	dice_column.add_child(_dice)
+	dice_column.add_child(_waiting)
+	_bottom_row.add_child(dice_column)
 	_action_bar.custom_minimum_size = Vector2(330.0, 0.0)
 	_bottom_row.add_child(_action_bar)
 	bar.add_child(_bottom_row)
@@ -208,7 +231,7 @@ func _apply_compact() -> void:
 	_dev_row.set_compact(_compact)
 	_log_button.visible = _compact
 	_set_log_open(not _compact)
-	if state != null:
+	if player != null:
 		_queue_refresh()
 
 
@@ -232,14 +255,39 @@ func _update_log_button() -> void:
 	_log_button.text = "Log (%d new)" % _unread_lines if _unread_lines > 0 else "Log"
 
 
-func _on_changed(events: Array[SiEvent]) -> void:
-	var added := _log.add_events(events, names)
+## The log fills its slot in whole lines, from the top.
+func _fit_log() -> void:
+	var step := maxf(1.0, _log.line_step())
+	_log.position = Vector2.ZERO
+	_log.size = Vector2(_log_slot.size.x, maxf(step, floorf(_log_slot.size.y / step) * step))
+
+
+func _on_beat_started(events: Array[SiEvent]) -> void:
+	_beat_events = events
+
+
+## The log line appears when the event starts, so the log never runs ahead of the shown state.
+func _on_event_started(event: SiEvent) -> void:
+	var added := _log.add_events([event] as Array[SiEvent], names)
+	_fit_log.call_deferred()
 	if _compact and not _log_panel.visible:
 		_unread_lines += added
 		_update_log_button()
-	_remember_dice(events)
-	if _armed != null and not _shift_on_click and _built_by_own_seat(events):
+	_remember_dice([event] as Array[SiEvent])
+
+
+## The own turn starts or a duty (discard, answer) falls to the own seat.
+func _on_turn_cue(kind: StringName) -> void:
+	_turn_banner.announce("Your turn" if kind == &"turn" else "Your move", player.speed_factor > 0.0)
+	if player.speed_factor > 0.0:
+		HudGlow.pulse(_own_summary)
+		_action_bar.bounce_primary()
+
+
+func _on_committed() -> void:
+	if _armed != null and not _shift_on_click and _built_by_own_seat(_beat_events):
 		_armed = null
+	_beat_events = []
 	_queue_refresh()
 
 
@@ -260,7 +308,7 @@ func _remember_dice(events: Array[SiEvent]) -> void:
 
 ## Deferred so a button press that acts never sees its widgets change under it.
 func _queue_refresh() -> void:
-	if state == null or _refresh_queued:
+	if player == null or _refresh_queued:
 		return
 	_refresh_queued = true
 	_refresh.call_deferred()
@@ -269,23 +317,26 @@ func _queue_refresh() -> void:
 func _refresh() -> void:
 	_refresh_queued = false
 	_keep_armed_kind_valid()
-	var view := state.view
-	var prompt := HudText.prompt(state, names, _armed)
+	var view := player.shown_view
+	var prompt := HudText.prompt(player, names, _armed)
 	var away := names.away_note()
-	if not away.is_empty() and not state.is_finished():
+	if not away.is_empty() and not player.is_finished():
 		prompt = away if prompt.is_empty() else "%s  |  %s" % [prompt, away]
-	var results_available := state.is_finished() and not _game_over.visible
-	_top_bar.show_state(state, names, prompt, results_available)
-	_players.show_players(view, names)
-	_own_summary.show_own(view, names)
+	var results_available := player.is_finished() and not _game_over.visible
+	_top_bar.show_state(player, names, prompt, results_available)
+	var breathing := player.animated()
+	toasts.animated = breathing
+	_players.show_players(view, names, breathing)
+	_own_summary.show_own(view, names, breathing)
+	_waiting.show_waiting(view, names, breathing)
 	_hand.show_hand(view.own)
-	_dev_row.show_cards(view.own, state)
+	_dev_row.show_cards(view.own, player)
 	_dice.show_roll(_last_dice)
 	_action_bar.show_actions(_legal, _armed)
-	_trade_card.show_trade(state, names)
+	_trade_card.show_trade(player, names)
 	_refresh_dialogs()
 	_refresh_target_filter()
-	if state.is_finished() and not _result_shown:
+	if player.is_finished() and not _result_shown:
 		_result_shown = true
 		_game_over.show_result(view, names)
 
@@ -294,16 +345,16 @@ func _refresh() -> void:
 func _keep_armed_kind_valid() -> void:
 	if _armed == null:
 		return
-	if not state.view.phase is SiPhaseMain:
+	if not player.shown_view.phase is SiPhaseMain:
 		_armed = null
 	# An empty list is the moment between an action and its answer, not a verdict.
-	elif not state.legal_actions.is_empty() and not _legal.has(_armed):
+	elif not player.shown_legal_actions.is_empty() and not _legal.has(_armed):
 		_armed = null
 
 
 func _refresh_target_filter() -> void:
 	var kinds: Array[Script] = BoardTarget.all_scripts
-	if state.view.phase is SiPhaseMain:
+	if player.shown_view.phase is SiPhaseMain:
 		kinds = []
 		if _armed != null:
 			kinds.append(_armed)
@@ -315,21 +366,21 @@ func _refresh_target_filter() -> void:
 
 func _refresh_dialogs() -> void:
 	# Between an action and its answer nothing is legal; dialogs stay until the answer says otherwise.
-	if not state.legal_actions.is_empty():
+	if not player.shown_legal_actions.is_empty():
 		for dialog: HudDialog in [_picker, _steal_list, _trade_dialog]:
 			if dialog.visible and not _legal.has(dialog.depends_on):
 				dialog.hide()
 	if _trade_dialog.visible:
 		_trade_dialog.refresh(_legal)
-	var hand: Array[int] = [] if state.view.own == null else state.view.own.hand
-	_discard_dialog.offer(state.legal_of(SiActionDiscard), hand)
-	var steals := state.legal_of(SiActionSteal)
+	var hand: Array[int] = [] if player.shown_view.own == null else player.shown_view.own.hand
+	_discard_dialog.offer(player.legal_of(SiActionDiscard), hand)
+	var steals := player.legal_of(SiActionSteal)
 	if not steals.is_empty() and not _steal_list.visible:
 		_open_steal(steals)
 
 
 func _arm(script: Script) -> void:
-	if state.view.phase is SiPhaseMain and _legal.has(script):
+	if player.shown_view.phase is SiPhaseMain and _legal.has(script):
 		_armed = script
 		_queue_refresh()
 
@@ -347,18 +398,18 @@ func _toggle_build(script: Script) -> void:
 
 
 func _act(action: SiAction) -> void:
-	state.act(action)
+	player.act(action)
 
 
 func _act_first(script: Script) -> void:
-	var matching := state.legal_of(script)
+	var matching := player.legal_of(script)
 	if not matching.is_empty():
-		state.act(matching[0])
+		player.act(matching[0])
 
 
 func _send_offer(action: SiActionOfferTrade) -> void:
 	if _legal.can_offer_trade():
-		state.offer_trade(action)
+		player.offer_trade(action)
 
 
 func _play_card(card: String) -> void:
@@ -375,13 +426,13 @@ func _open_steal(steals: Array[SiAction]) -> void:
 	var entries: Array = []
 	for action in steals:
 		var victim := (action as SiActionSteal).victim
-		var cards := state.view.players[victim].resource_count
+		var cards := player.shown_view.players[victim].resource_count
 		entries.append(["%s  (%d cards)" % [names.name_of(victim), cards], action, victim])
 	_steal_list.open("Rob a player", entries, SiActionSteal)
 
 
 func _open_trade() -> void:
-	_trade_dialog.open(_legal, state.view.own.hand, state.view.players.size(), names)
+	_trade_dialog.open(_legal, player.shown_view.own.hand, player.shown_view.players.size(), names)
 
 
 func _open_monopoly() -> void:

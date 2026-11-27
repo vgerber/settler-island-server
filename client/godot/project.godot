@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.7")
 [autoload]
 
 Net="*res://scripts/net.gd"
+Settings="*res://scripts/settings.gd"
 Sfx="*res://scripts/feedback/sfx.gd"
 Atmosphere="*res://scripts/feedback/atmosphere.gd"
 

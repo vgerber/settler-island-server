@@ -54,7 +54,7 @@ func set_compact(compact: bool) -> void:
 	_apply_visibility()
 
 
-func show_cards(own: SiOwnView, state: GameState) -> void:
+func show_cards(own: SiOwnView, state: EventPlayer) -> void:
 	_holding = 0
 	for card in SiDevelopmentCard.VALUES:
 		var fresh := 0 if own == null else own.new_development_cards.count(card)

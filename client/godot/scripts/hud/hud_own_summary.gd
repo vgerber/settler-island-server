@@ -29,8 +29,10 @@ func set_seat(own_seat: int) -> void:
 	_chip.seat = own_seat
 
 
-func show_own(view: SiPlayerView, names: SeatNames) -> void:
+func show_own(view: SiPlayerView, names: SeatNames, breathing: bool) -> void:
 	var player := view.players[names.own_seat]
 	_name_label.text = names.name_of(names.own_seat)
 	_points_label.text = "%d / %d points" % [player.points, view.points_to_win]
 	_pieces_label.text = "left: %d roads, %d settlements, %d cities" % [player.roads_left, player.settlements_left, player.cities_left]
+	var active := view.current == names.own_seat and not view.phase is SiPhaseFinished
+	HudGlow.apply(self, names.own_seat, active, false, breathing)

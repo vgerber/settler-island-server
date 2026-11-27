@@ -16,6 +16,7 @@ var _status_label := HudUi.label("", &"MutedLabel")
 var _knights_label := HudUi.label("", &"SmallLabel")
 var _army_label := HudUi.label("Army", &"CountLabel")
 var _road_label := HudUi.label("Road", &"CountLabel")
+var _hourglass := HudHourglass.new()
 var _army_badge := HudUi.label("A", &"CountLabel")
 var _road_badge := HudUi.label("R", &"CountLabel")
 var _pieces_label := HudUi.label("", &"SmallLabel")
@@ -75,6 +76,12 @@ func show_player(player: SiPublicPlayerView, view: SiPlayerView, names: SeatName
 	_pieces_label.text = "pieces %d/%d/%d" % [player.roads_left, player.settlements_left, player.cities_left]
 
 
+## The active-seat glow and the hourglass of a seat the game waits for.
+func mark(active: bool, waiting: bool, bot: bool, breathing: bool) -> void:
+	_hourglass.visible = waiting
+	HudGlow.apply(self, seat, active, bot, breathing)
+
+
 func _variation(pending: bool) -> StringName:
 	if _compact:
 		return &"PlayerPanelCompactCurrent" if pending else &"PlayerPanelCompact"
@@ -96,6 +103,7 @@ func _second_row() -> HBoxContainer:
 	row.add_child(_cards_label)
 	row.add_child(_dev_label)
 	row.add_child(_status_label)
+	row.add_child(_hourglass)
 	row.add_child(_army_badge)
 	row.add_child(_road_badge)
 	return row

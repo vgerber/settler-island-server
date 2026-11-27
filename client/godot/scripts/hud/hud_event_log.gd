@@ -34,9 +34,26 @@ func add_events(events: Array[SiEvent], names: SeatNames) -> int:
 func _add_line(event: SiEvent, names: SeatNames) -> void:
 	if _line_count > 0:
 		newline()
-	var seat: Variant = event.get("seat")
-	if seat is int:
+	var seat := _seat_of(event)
+	if seat >= 0:
 		add_image(HudSeatChip.texture(seat), 16, 16)
 		add_text(" ")
 	add_text(HudText.event_line(event, names))
 	_line_count += 1
+
+
+## The acting seat of an event, or -1; a steal names its seats `thief` and `victim`, not `seat`.
+func _seat_of(event: SiEvent) -> int:
+	if event is SiEventResourceStolen:
+		return (event as SiEventResourceStolen).thief
+	var seat: Variant = event.get("seat")
+	return seat if seat is int else -1
+
+
+## Height of one line of text, measured once two lines exist. The HUD sizes the log to whole lines of it, so
+## following the newest line never leaves a half cut line at the top.
+func line_step() -> float:
+	if get_line_count() >= 2:
+		return float(get_line_offset(1) - get_line_offset(0))
+	var font := get_theme_font(&"normal_font")
+	return ceilf(font.get_height(get_theme_font_size(&"normal_font_size"))) + get_theme_constant(&"line_separation")

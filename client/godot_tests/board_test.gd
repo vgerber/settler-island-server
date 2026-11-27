@@ -54,7 +54,7 @@ func _fail(reason: String) -> bool:
 
 func _release() -> void:
 	for board in _boards:
-		board.state.release()
+		board.player.release()
 		board.free()
 	for client in _clients:
 		client.free()
@@ -67,11 +67,11 @@ func _check_setup() -> String:
 	var failure := _corner_failure(board) + _port_failure(board)
 	if not failure.is_empty():
 		return "setup: " + failure
-	var settlements := board.state.legal_of(SiActionPlaceSettlement)
+	var settlements := board.player.legal_of(SiActionPlaceSettlement)
 	if settlements.is_empty():
 		return "setup has no PlaceSettlement"
 	# A tile centre is no target in the setup phase.
-	_click(board, board.to_pixels(BoardGeometry.tile_center(board.state.view.board.tiles[0].coordinates)))
+	_click(board, board.to_pixels(BoardGeometry.tile_center(board.player.shown_view.board.tiles[0].coordinates)))
 	if not client.sent.is_empty():
 		return "a click beside every target sent %s" % client.sent[0].to_dict()
 	var wanted := settlements[settlements.size() / 2] as SiActionPlaceSettlement
@@ -88,11 +88,11 @@ func _check_middle() -> String:
 	var failure := _corner_failure(board)
 	if not failure.is_empty():
 		return "middle: " + failure
-	var robber_moves := board.state.legal_of(SiActionMoveRobber)
+	var robber_moves := board.player.legal_of(SiActionMoveRobber)
 	if robber_moves.is_empty():
 		return "middle has no MoveRobber"
 	var wanted := robber_moves[robber_moves.size() - 1] as SiActionMoveRobber
-	var tile := board.state.view.board.tiles[wanted.tile]
+	var tile := board.player.shown_view.board.tiles[wanted.tile]
 	_click(board, board.to_pixels(BoardGeometry.tile_center(tile.coordinates)))
 	if client.sent.size() != 1 or client.sent[0] != wanted:
 		return "clicking tile %d sent %d actions" % [wanted.tile, client.sent.size()]
@@ -112,7 +112,10 @@ func _bound_board(key: String) -> Array:
 	root.add_child(board)
 	board.position = Vector2(0.0, 56.0)
 	board.size = Vector2(1220.0, 644.0)
-	board.bind(state)
+	var player := EventPlayer.new()
+	board.add_child(player)
+	player.bind(state)
+	board.bind(player)
 	return [board, client]
 
 
@@ -130,7 +133,7 @@ func _port_failure(board: Board) -> String:
 
 
 func _corner_failure(board: Board) -> String:
-	var tiles := board.state.view.board.tiles
+	var tiles := board.player.shown_view.board.tiles
 	for tile_index in tiles.size():
 		for index in 6:
 			var corner := tiles[tile_index].corners[index]

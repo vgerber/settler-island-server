@@ -911,6 +911,29 @@ fn game_state_offers_a_rate_limited_act_again() {
 }
 
 #[test]
+fn event_player_shows_a_view_only_after_its_events() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let game = Game::new(GameSettings {
+        seats: 4,
+        points_to_win: 10,
+        seed: 5,
+    })
+    .unwrap();
+    let fixture_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-event-player.json");
+    fs::write(&fixture_path, game_started(&game, 0).to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "event_player_test.gd",
+        fixture_path.to_str().unwrap(),
+        "EVENT_PLAYER_OK",
+    );
+}
+
+#[test]
 fn hud_event_log_has_a_line_for_every_event() {
     let Some(godot) = godot_binary() else {
         return;

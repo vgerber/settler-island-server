@@ -4,6 +4,7 @@ extends PanelContainer
 ## the development deck. Built once; `show_state` only sets texts.
 
 signal results_requested
+signal settings_requested
 
 var _chip := HudSeatChip.new(0, 24.0)
 var _banner := HudUi.label("", &"CreamCountLabel")
@@ -27,12 +28,15 @@ func _init() -> void:
 	row.add_child(_bank_row())
 	_results_button.hide()
 	row.add_child(_results_button)
+	var gear := HudGearButton.new()
+	gear.pressed.connect(settings_requested.emit)
+	row.add_child(gear)
 	add_child(row)
 	custom_minimum_size = Vector2(0.0, 48.0)
 
 
-func show_state(state: GameState, names: SeatNames, prompt: String, results_available: bool) -> void:
-	var view := state.view
+func show_state(state: EventPlayer, names: SeatNames, prompt: String, results_available: bool) -> void:
+	var view := state.shown_view
 	_chip.seat = view.current
 	_chip.visible = not state.is_finished()
 	if state.is_finished():

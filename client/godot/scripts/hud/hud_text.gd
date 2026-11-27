@@ -134,9 +134,9 @@ static func status_text(view: SiPlayerView, seat: int, names: SeatNames) -> Stri
 
 
 ## One line for the own seat: what to do now, or whom to wait for.
-static func prompt(state: GameState, names: SeatNames, armed: Script) -> String:
+static func prompt(state: EventPlayer, names: SeatNames, armed: Script) -> String:
 	var legal := HudLegal.new(state)
-	var view := state.view
+	var view := state.shown_view
 	if state.is_finished():
 		return "The game is over"
 	if armed != null:
@@ -151,8 +151,8 @@ static func prompt(state: GameState, names: SeatNames, armed: Script) -> String:
 	return _waiting_prompt(view, names)
 
 
-static func _forced_prompt(state: GameState, legal: HudLegal) -> String:
-	var phase := state.view.phase
+static func _forced_prompt(state: EventPlayer, legal: HudLegal) -> String:
+	var phase := state.shown_view.phase
 	if legal.has(SiActionPlaceSettlement):
 		var second := phase is SiPhaseSetupSettlement and setup_round_number((phase as SiPhaseSetupSettlement).round) == 2
 		return "Place your second settlement: it yields its neighbours' resources" if second else "Place your first settlement"

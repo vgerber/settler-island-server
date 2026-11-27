@@ -57,6 +57,8 @@ func _process(_delta: float) -> bool:
 		_main = (load("res://scenes/main.tscn") as PackedScene).instantiate() as Control
 		root.add_child(_main)
 		root.get_node("Net").get("client").error_received.connect(_on_server_error)
+		# Every beat commits at once, so the mouse-only player never clicks into a state that is still playing.
+		root.get_node("Settings").set("animation_speed", 0)
 		return false
 	if Time.get_ticks_msec() < _next_step:
 		return false
@@ -389,11 +391,11 @@ func _note_use(button: Button) -> void:
 
 
 func _click_target(board: Board, target: BoardTarget) -> void:
-	var state := board.state
+	var state := board.player
 	var point := board.get_global_transform_with_canvas() * board.to_pixels(target.point)
 	_used["board " + str(target.action.to_dict()["type"])] = true
 	_click_at(point)
-	if not state.legal_actions.is_empty():
+	if not state.shown_legal_actions.is_empty():
 		_finish(1, "UI_GAME_FAILED clicking the highlighted target at %s sent nothing %s" % [point, _describe_state()])
 
 
