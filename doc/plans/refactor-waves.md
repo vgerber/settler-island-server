@@ -51,3 +51,4 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
   CI is back on and green, cargo-deny runs in the gate and CI.
 - Open: wave 4 needs user decisions (turn clock, opaque user ids, retention of finished games); wave D is the NAS
   deployment; then the HUD layout step (doc/plans/godot-ui-design.md) with the folded-in review items.
+- Wave 4 done 2026-11-27: away policy per lobby (4a), opaque public ids (4b); games are kept forever (4c, no work).
