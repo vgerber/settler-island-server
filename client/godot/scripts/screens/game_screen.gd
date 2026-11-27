@@ -28,6 +28,7 @@ func _ready() -> void:
 	add_child(_settings_popup)
 	_hud.settings_requested.connect(_open_settings)
 	_hud.leave_requested.connect(func() -> void: Net.client.send_leave_lobby())
+	_board.hand_slot = _hud.hand_slot_center
 	_hud.target_filter_changed.connect(_board.set_target_filter)
 	Net.client.lobby_state_received.connect(_on_lobby_state)
 	_hud.board_slot.item_rect_changed.connect(_fit_board)

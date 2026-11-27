@@ -16,6 +16,7 @@ const STILL_PULSE := 0.8
 var camera_rig := CameraRig.new()
 var scene := BoardScene.new()
 var markers := TargetMarkers.new()
+var motion := BoardMotion.new()
 
 var _viewport := SubViewport.new()
 var _picking := Picking.new(camera_rig)
@@ -35,6 +36,7 @@ func _ready() -> void:
 	_viewport.msaa_3d = Viewport.MSAA_2X
 	container.add_child(_viewport)
 	_viewport.add_child(scene)
+	_viewport.add_child(motion)
 	_viewport.add_child(markers)
 	_viewport.add_child(camera_rig)
 	add_child(_reset_button())
@@ -45,7 +47,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	if is_instance_valid(player):
-		player.unregister_consumer(_finish_animations)
+		motion.unbind()
 
 
 func _process(delta: float) -> void:
@@ -57,7 +59,7 @@ func _process(delta: float) -> void:
 func bind(event_player: EventPlayer) -> void:
 	player = event_player
 	player.committed.connect(_sync)
-	player.register_consumer(_finish_animations)
+	motion.bind(player, scene, camera_rig, self)
 	_sync()
 
 
@@ -76,11 +78,6 @@ func target_at(pixel: Vector2) -> BoardTarget:
 	return _picking.pick(_targets, pixel)
 
 
-## Nothing animates yet; the motion layer ends its running tweens here when the player collapses or resyncs.
-func _finish_animations() -> void:
-	pass
-
-
 ## Makes the scene equal to the shown view; running it twice on the same view changes nothing.
 func _sync() -> void:
 	var board := player.shown_view.board
@@ -90,6 +87,7 @@ func _sync() -> void:
 		camera_rig.frame(geometry)
 	scene.build(board, geometry)
 	scene.sync(board, geometry)
+	motion.commit(geometry)
 	_collect_targets()
 	markers.show_targets(_targets, board, geometry)
 	_update_hover()

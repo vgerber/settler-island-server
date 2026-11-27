@@ -74,6 +74,17 @@ func project(point: Vector3) -> Vector2:
 	return viewport_size / 2.0 + Vector2(local.x, -local.y) * _pixels_per_unit(-local.z)
 
 
+## The world point `depth` in front of the camera that appears at `pixel`; pixels outside the viewport work too.
+func unproject(pixel: Vector2, depth: float) -> Vector3:
+	var offset := (pixel - viewport_size / 2.0) / _pixels_per_unit(depth)
+	return _current * Vector3(offset.x, -offset.y, -depth)
+
+
+## Distance in front of the camera of a world point.
+func depth_of(point: Vector3) -> float:
+	return -(_current.affine_inverse() * point).z
+
+
 ## Pixels of one world unit at `depth` in front of the camera.
 func _pixels_per_unit(depth: float) -> float:
 	return viewport_size.y / 2.0 / (tan(deg_to_rad(FIELD_OF_VIEW) / 2.0) * depth)

@@ -85,6 +85,11 @@ func _ready() -> void:
 	_apply_compact()
 
 
+## The global centre of the hand card of `resource`.
+func hand_slot_center(resource: String) -> Vector2:
+	return _hand.slot_center(resource)
+
+
 ## The gear button's rect in this control's coordinates, where the settings popup opens.
 func settings_anchor() -> Rect2:
 	return _top_bar.gear.get_global_rect()

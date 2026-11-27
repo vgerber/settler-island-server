@@ -7,15 +7,15 @@ extends RefCounted
 const HOLD_MILLISECONDS := {
 	&"DiceRolled": 350,
 	&"TurnStarted": 250,
-	&"RobberMoved": 250,
+	&"RobberMoved": 500,
 	&"ResourceStolen": 250,
 	&"TradeCompleted": 250,
 	&"DevelopmentCardPlayed": 300,
 	&"LongestRoadChanged": 250,
 	&"LargestArmyChanged": 250,
-	&"SettlementPlaced": 150,
-	&"RoadPlaced": 150,
-	&"CityBuilt": 150,
+	&"SettlementPlaced": 350,
+	&"RoadPlaced": 250,
+	&"CityBuilt": 400,
 }
 
 

@@ -883,6 +883,23 @@ fn board3d_picks_every_target_type_frames_the_island_and_syncs_once() {
     );
 }
 
+#[test]
+fn board3d_motion_lands_dice_on_the_server_faces_and_leaves_nothing_in_flight() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-motion-fixtures.json");
+    fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "motion_test.gd",
+        fixtures_path.to_str().unwrap(),
+        "MOTION_OK",
+    );
+}
+
 /// `GameStarted` for a seat that must discard and has more than one way to do it, from a bot game.
 fn discard_fixture() -> Value {
     for seed in 1..50 {

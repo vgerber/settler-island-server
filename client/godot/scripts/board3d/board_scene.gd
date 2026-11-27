@@ -46,6 +46,22 @@ func sync(board: SiBoard, geometry: BoardGeometry) -> void:
 	_show("robber", "tile %d" % board.robber, func() -> Node3D: return PlaceholderArt.robber(center))
 
 
+## Where a piece stands for a table position in hex units; the motion layer starts and ends its ghosts here.
+func rest_point(point: Vector2) -> Vector3:
+	return Vector3(point.x, PlaceholderArt.SURFACE_HEIGHT, point.y)
+
+
+## Where the robber stands on the tile with this centre.
+func robber_point(tile_center: Vector2) -> Vector3:
+	return rest_point(tile_center + PlaceholderArt.ROBBER_OFFSET)
+
+
+## The static piece node of a key (`c<corner>`, `e<edge>`, `robber`), or null.
+func node_of(key: String) -> Node3D:
+	var entry: Variant = _shown.get(key)
+	return null if entry == null else entry["node"]
+
+
 ## Number of piece nodes, for tests.
 func piece_count() -> int:
 	return _pieces.get_child_count()

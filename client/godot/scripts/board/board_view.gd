@@ -22,6 +22,10 @@ func set_target_filter(_kinds: Array[Script]) -> void:
 	push_error("BoardView.set_target_filter is abstract")
 
 
+## Takes a resource name and gives the global pixel of its card in the HUD hand; a 3D board flies cards there.
+var hand_slot := Callable()
+
+
 ## The targets currently shown.
 func targets() -> Array[BoardTarget]:
 	return _targets

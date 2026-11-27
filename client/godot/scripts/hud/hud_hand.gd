@@ -29,3 +29,9 @@ func show_hand(own: SiOwnView) -> void:
 func set_compact(compact: bool) -> void:
 	for card in _cards:
 		card.custom_minimum_size = Vector2(72.0, 92.0 if compact else 100.0)
+
+
+## The global centre of the card of `resource`, where a flying card lands or leaves.
+func slot_center(resource: String) -> Vector2:
+	var card := _cards[SiResource.VALUES.find(resource)]
+	return card.global_position + card.size / 2.0
