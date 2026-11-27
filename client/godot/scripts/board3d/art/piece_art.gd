@@ -3,13 +3,14 @@ extends RefCounted
 ## Road, settlement and city as faceted clay, in neutral light grey with baked AO so one mesh serves every seat:
 ## `ClayMaterials.piece(seat)` tints it (and sets the rim colour of the outline rule). Origin at the base
 ## centre, resting on y = 0. Pieces are small enough to sit on a tile corner or edge without covering the chip.
-## The road lies along local x, `ROAD_LENGTH` long (0.16 to 0.84 of a hex side like the 2D painter); the board
+## The road lies along local x, `ROAD_LENGTH` long (0.19 to 0.81 of a hex side, clear of the houses); the board
 ## turns it with `Basis(Vector3.UP, atan2(-edge_direction.y, edge_direction.x))` for a 2D direction.
 ## Houses face the camera (+z) with the ridge along x; a city is a hall with a tower on its +x side and a
 ## smaller house on its -x side, on a stone base plate.
 
-const ROAD_LENGTH := 0.68
-const ROAD_RADIUS := 0.062
+const ROAD_LENGTH := 0.62
+const ROAD_RADIUS := 0.065
+const ROAD_HEIGHT := 0.09
 const BODY := Color(0.96, 0.96, 0.96)
 const ROOF := Color(0.46, 0.46, 0.46)
 ## The roof is this much higher than it is deep: a pitch of about 55 degrees, which reads from a camera at 55 to 58.
@@ -45,29 +46,18 @@ static func _mesh(key: String, build: Callable) -> ArrayMesh:
 	return _cache[key]
 
 
-## A bed with chamfered ends, kerb stones along both edges and cross planks between them.
+## A chunky bevelled wooden bar like a board-game road, solid in the seat colour so ownership reads at a glance,
+## with two grain grooves on top and darker end grain.
 static func _build_road(result: ClayBuilder) -> void:
-	var half_length := ROAD_LENGTH * 0.5
-	var half_width := ROAD_RADIUS
-	var chamfer := 0.05
-	var outline := PackedVector2Array([
-		Vector2(-half_length, -half_width + chamfer), Vector2(-half_length + chamfer, -half_width),
-		Vector2(half_length - chamfer, -half_width), Vector2(half_length, -half_width + chamfer),
-		Vector2(half_length, half_width - chamfer), Vector2(half_length - chamfer, half_width),
-		Vector2(-half_length + chamfer, half_width), Vector2(-half_length, half_width - chamfer),
-	])
-	var bed_height := 0.04
-	result.add_prism(Transform3D.IDENTITY, outline, bed_height, STONE, 0.6)
+	var half := Vector3(ROAD_LENGTH * 0.5, ROAD_HEIGHT * 0.5, ROAD_RADIUS)
+	result.add_bevelled_box(Transform3D(Basis.IDENTITY, Vector3(0.0, half.y, 0.0)), half, 0.016, BODY, 0.6)
+	var grain := ClayPalette.shade(BODY, 0.82)
 	for side in [-1.0, 1.0]:
-		var kerb := Transform3D(Basis.IDENTITY, Vector3(0.0, bed_height + 0.012, side * (half_width - 0.012)))
-		result.add_box(kerb, Vector3(half_length - chamfer - 0.01, 0.012, 0.012), BODY, 0.8)
-	var planks := 8
-	var span := (half_length - chamfer) * 2.0
-	for index in planks:
-		var along := -span * 0.5 + span * (index + 0.5) / planks
-		var plank := Transform3D(Basis.IDENTITY, Vector3(along, bed_height + 0.008, 0.0))
-		var shade := 1.0 if index % 2 == 0 else 0.86
-		result.add_box(plank, Vector3(span / planks * 0.5 - 0.006, 0.008, half_width - 0.028), ClayPalette.shade(BODY, shade), 0.85)
+		var groove := Transform3D(Basis.IDENTITY, Vector3(side * 0.03, ROAD_HEIGHT + 0.001, side * 0.018))
+		result.add_box(groove, Vector3(half.x * 0.62, 0.0015, 0.0035), grain, 1.0)
+	for end in [-1.0, 1.0]:
+		var face := Transform3D(Basis.IDENTITY, Vector3(end * (half.x + 0.001), half.y, 0.0))
+		result.add_box(face, Vector3(0.0015, half.y - 0.016, half.z - 0.016), grain, 0.8)
 
 
 static func _build_settlement(result: ClayBuilder) -> void:
