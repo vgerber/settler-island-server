@@ -2,6 +2,7 @@
 name = "settler_island_client_generator"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 settler_island_protocol = { path = "../settler_island_protocol" }

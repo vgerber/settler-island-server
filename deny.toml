@@ -1,0 +1,38 @@
+# `cargo deny check` in tools/check.sh and CI: known advisories, licences, crate sources.
+
+[advisories]
+ignore = [
+    # Marvin timing attack in rsa, no fixed release; rsa is only a dev-dependency that signs test Keycloak tokens.
+    { id = "RUSTSEC-2023-0071", reason = "dev-only: tests sign fake realm tokens, the server never uses rsa" },
+]
+
+[licenses]
+# Permissive licences only; a new licence fails the gate until it is reviewed and added here.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+
+[licenses.private]
+# The workspace crates are `publish = false` and carry no licence of their own.
+ignore = true
+
+[bans]
+# Several crates pull two major versions of rand, syn or windows-sys; that is noise, not a risk.
+multiple-versions = "allow"
+wildcards = "deny"
+# Workspace crates depend on each other by path without a version.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

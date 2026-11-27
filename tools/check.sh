@@ -2,7 +2,8 @@
 # The single place that documents the gates: tools/check.sh [--force] [mode]
 #
 # Modes:
-#   (none) = full  cargo fmt --check, clippy on all targets with -D warnings, cargo test --workspace (doc tests included).
+#   (none) = full  cargo fmt --check, clippy on all targets with -D warnings, cargo deny check (advisories, licences,
+#                  sources; deny.toml), cargo test --workspace (doc tests included).
 #   quick          clippy and the tests of the crates whose files changed against main (falls back to full when none).
 #   fmt            cargo fmt --check only.
 #   db             the full gate plus the Postgres-backed server tests: starts this project's own container
@@ -157,6 +158,11 @@ case "$mode" in
     export SETTLER_REQUIRE_GODOT=1
     run_step "fmt" cargo fmt --all -- --check
     run_step "clippy" cargo clippy --workspace --all-targets -- -D warnings
+    if ! command -v cargo-deny >/dev/null 2>&1; then
+      echo "deny FAILED: cargo-deny is missing; install it with: cargo +stable install cargo-deny --locked" >&2
+      exit 1
+    fi
+    run_step "deny" cargo deny check
     run_step "tests" cargo test --workspace
     test_totals
     postgres_note

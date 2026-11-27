@@ -19,6 +19,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Advisories, licences and sources from deny.toml; the action brings its own cargo-deny binary.
+      - uses: EmbarkStudios/cargo-deny-action@v2
       # The Godot client tests skip themselves when no godot binary is installed.
       - run: cargo test --workspace
 
