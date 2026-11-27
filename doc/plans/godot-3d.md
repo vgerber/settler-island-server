@@ -71,3 +71,11 @@ machine, no script errors. Then `Settings.board_view` defaults to `"3d"`.
   `SETTLER_BOT_DELAY_MILLISECONDS=50`).
 - Standard quality: at least 60 fps at 1600x900 in Compatibility on this machine; High: at least 45 fps in Forward+.
 - Screenshots of the five acceptance states in Standard and High, reviewed by the lead.
+
+## Status 2026-11-27
+- W0, 3A, 3B, 3D landed. Motion deviations: the dice hold stays 350 ms (620 ms broke the collapse budget test), so
+  production flights may start while the dice land; only ghosts finish at commit, flights finish on collapse,
+  resync and focus-out; the tray sits in the near right corner; more than 12 cards per event are dropped.
+- Motion not built yet (needs a follow-up part, each listed cut gets an ignored test): chip and tile pulses after
+  the dice, dim of the robber's tile, city flash, dev-play and monopoly flights, award badge flights, game-won
+  motion, seat stand shakes; card faces are flat coloured quads.
