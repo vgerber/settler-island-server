@@ -36,9 +36,32 @@ func _check(window: Vector2i, state: String) -> void:
 	var viewport := Vector2(window) / minf(window.x / 1600.0, window.y / 900.0)
 	if needed.x > viewport.x or needed.y > viewport.y:
 		_failures.append("%s at %s needs %s" % [state, window, needed])
+	if state == "trade":
+		_check_trade_card_off_board(hud, window)
+	if state == "setup":
+		_check_banner_covers_prompt(hud, window)
 	game_state.release()
 	hud.free()
 	client.free()
+
+
+## The open offer sits in the side column; the board's area, which holds the island, stays free.
+func _check_trade_card_off_board(hud: Hud, window: Vector2i) -> void:
+	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var card := hud.find_children("*", "HudTradePanel", true, false)[0] as Control
+	if not card.is_visible_in_tree():
+		_failures.append("the trade card is hidden at %s" % window)
+		return
+	if card.get_global_rect().intersects(hud.board_slot.get_global_rect()):
+		_failures.append("the trade card %s covers the board %s at %s" % [card.get_global_rect(), hud.board_slot.get_global_rect(), window])
+
+
+## The turn banner slides over the top bar's centre, where the prompt stands; the prompt hides while it shows.
+func _check_banner_covers_prompt(hud: Hud, window: Vector2i) -> void:
+	var prompt := (hud.get("_top_bar") as HudTopBar).get("_prompt") as Label
+	hud.call("_on_turn_cue", &"turn")
+	if prompt.modulate.a > 0.0:
+		_failures.append("the prompt shows under the turn banner at %s" % window)
 
 
 ## The same edits as tools/game_screenshots.gd makes for its states.

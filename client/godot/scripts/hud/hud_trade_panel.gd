@@ -1,6 +1,6 @@
 class_name HudTradePanel
 extends PanelContainer
-## The open player trade as a card at the top of the board: the terms, one row per addressed seat with its
+## The open player trade as a card in the side column, between the opponents and the log: the terms, one row per addressed seat with its
 ## answer, and the legal answers of the own seat (accept or decline when addressed, confirm with an accepting
 ## seat or withdraw when offering). Built once; `show_trade` sets texts and which buttons show.
 
@@ -22,7 +22,6 @@ var _confirm_actions: Array[SiAction] = []
 
 func _init() -> void:
 	theme_type_variation = &"TradeCard"
-	custom_minimum_size = Vector2(480.0, 0.0)
 	var column := HudUi.vbox(6)
 	column.add_child(_title_label)
 	_offer_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

@@ -52,6 +52,11 @@ func show_state(state: EventPlayer, names: SeatNames, prompt: String, results_av
 	_results_button.visible = results_available
 
 
+## The turn banner covers the prompt's place while it shows, so the prompt steps aside.
+func set_prompt_covered(covered: bool) -> void:
+	_prompt.modulate.a = 0.0 if covered else 1.0
+
+
 func _bank_row() -> HBoxContainer:
 	var row := HudUi.hbox(10)
 	row.tooltip_text = "The bank's cards and the development deck"

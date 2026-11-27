@@ -239,7 +239,7 @@ top-bar deck to the dev row and flips (own seat) or to the panel (others, stays 
    chip. "Offer" sends `OfferTrade`.
 2. `OfferTrade` is not in `legal_actions` (the server cannot enumerate offers), so the Players tab is enabled when
    `EndTurn` is legal (own turn, Main phase), and the server validates; a refused offer shows its error as a toast.
-3. Phase `TradeOffered`, addressed seats: a **trade card** slides in at the top centre of the board (not modal):
+3. Phase `TradeOffered`, addressed seats: a **trade card** shows in the side column between the opponents and the log, never over the island (not modal):
    offerer colour and name, "gives 2 Wood, wants 1 Ore", buttons Accept (only when `AcceptTrade` is legal, which
    also means the player holds the cards) and Decline (`RejectTrade`). The own hand highlights the cards that would
    leave it.

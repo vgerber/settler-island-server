@@ -76,6 +76,7 @@ func _init() -> void:
 	_game_over.leave_requested.connect(leave_requested.emit)
 	board_slot.add_child(_game_over)
 	add_child(_turn_banner)
+	_turn_banner.visibility_changed.connect(func() -> void: _top_bar.set_prompt_covered(_turn_banner.visible))
 	board_slot.add_child(toasts)
 	_connect_actions()
 
@@ -160,6 +161,8 @@ func _build_middle() -> HBoxContainer:
 func _build_side_column() -> VBoxContainer:
 	_side_column.custom_minimum_size = Vector2(SIDE_WIDTH, 0.0)
 	_side_column.add_child(_players)
+	# Docked in the column so an open offer never hides the island.
+	_side_column.add_child(_trade_card)
 	_side_column.add_child(_log_button)
 	_log_button.hide()
 	_log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -170,7 +173,7 @@ func _build_side_column() -> VBoxContainer:
 	header.add_child(title)
 	column.add_child(header)
 	_log_slot.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_log_slot.custom_minimum_size = Vector2(0.0, 60.0)
+	_log_slot.custom_minimum_size = Vector2(0.0, 0.0)
 	_log_slot.clip_contents = true
 	_log_slot.add_child(_log)
 	_log_slot.resized.connect(_fit_log)
@@ -203,7 +206,7 @@ func _build_bottom_bar() -> PanelContainer:
 	return bar
 
 
-## The modal dialogs centred over the board, the trade card on top of it.
+## The modal dialogs centred over the board.
 func _build_dialog_area() -> Control:
 	var area := Control.new()
 	area.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -214,8 +217,6 @@ func _build_dialog_area() -> Control:
 	for dialog: HudDialog in [_discard_dialog, _picker, _steal_list, _trade_dialog]:
 		center.add_child(dialog)
 	area.add_child(center)
-	_trade_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 12)
-	area.add_child(_trade_card)
 	return area
 
 
