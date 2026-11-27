@@ -15,9 +15,9 @@ use settler_island_server::{
 };
 use sqlx::postgres::PgConnectOptions;
 use sqlx::{ConnectOptions, Executor};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio_tungstenite::tungstenite::{self, Message};
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{client_async, connect_async, MaybeTlsStream, WebSocketStream};
 
 /// Long enough for a debug build under load, short enough that a deadlock fails the test.
 pub const RECEIVE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -193,6 +193,22 @@ impl Client {
         })
     }
 
+    /// A connection whose kernel receive buffer is `bytes`, so a client that stops reading backs up
+    /// into the server after kilobytes instead of megabytes.
+    pub async fn connect_with_receive_buffer(address: SocketAddr, bytes: u32) -> Client {
+        let tcp = TcpSocket::new_v4().unwrap();
+        tcp.set_recv_buffer_size(bytes).unwrap();
+        let stream = tcp.connect(address).await.unwrap();
+        let url = format!("ws://{address}/api/v1/ws");
+        let (socket, _) = client_async(url, MaybeTlsStream::Plain(stream))
+            .await
+            .unwrap();
+        Client {
+            socket,
+            next_request: 0,
+        }
+    }
+
     /// A new guest session on a new connection.
     pub async fn welcomed(address: SocketAddr, name: &str) -> (Client, User) {
         let session = guest_session(address, name).await;
@@ -230,6 +246,24 @@ impl Client {
     pub async fn send_raw_unchecked(&mut self, text: String) {
         // A reset during the write is the outcome the caller provokes; it checks the close afterwards.
         let _ = self.socket.send(Message::text(text)).await;
+    }
+
+    /// Sends one message per millisecond and never reads; the count sent before a send failed,
+    /// or `None` when all `limit` went through.
+    pub async fn send_unread_until_closed(
+        &mut self,
+        limit: usize,
+        build: impl Fn(u32) -> ClientMessage,
+    ) -> Option<usize> {
+        for sent in 0..limit {
+            self.next_request += 1;
+            let text = serde_json::to_string(&build(self.next_request)).unwrap();
+            if self.socket.send(Message::text(text)).await.is_err() {
+                return Some(sent);
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        None
     }
 
     /// The next server message; panics on timeout or close so a stuck server fails the test.

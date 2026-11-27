@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -11,7 +12,7 @@ use settler_island_protocol::{
     DEFAULT_BOT_DIFFICULTY, DEFAULT_POINTS_TO_WIN, MAX_LOBBIES_PER_PAGE, MAX_LOBBY_NAME_CHARS,
     MAX_MESSAGE_BYTES, MAX_POINTS_TO_WIN, MIN_POINTS_TO_WIN,
 };
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::Notify;
 use tracing::{debug, error};
 
 use crate::config::Config;
@@ -19,10 +20,13 @@ use crate::identity::{Identity, IdentityStore};
 use crate::lobby::{LobbyCommand, LobbyHandle, LobbyRequest, SeatCount};
 use crate::metrics::Metrics;
 use crate::names::clean_name;
-use crate::outbox::{Outbox, OUTBOX_CAPACITY};
+use crate::outbox::{Outbox, OutboxReceiver};
 use crate::password::{self, GuessLimiter, Guesser};
 use crate::rate_limit::TokenBucket;
 use crate::registry::{LobbyEntry, NewLobby, RegistryHandle};
+
+/// How long one message may wait for the client to accept it before the connection is closed.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The unvalidated settings of a `CreateLobby` request.
 struct LobbyOptions {
@@ -66,11 +70,12 @@ pub(crate) async fn run<I: IdentityStore>(
 ) {
     metrics.connections.inc();
     let (sink, stream) = socket.split();
-    let (sender, receiver) = mpsc::channel(OUTBOX_CAPACITY);
     let kick = Arc::new(Notify::new());
+    let (outbox, receiver) = Outbox::channel(kick.clone());
+    let stalled = outbox.stalled_flag();
     let mut writer = tokio::spawn(write_loop(sink, receiver));
     let mut connection = Connection {
-        outbox: Outbox::new(sender, kick.clone()),
+        outbox,
         registry,
         identity,
         user: None,
@@ -93,10 +98,12 @@ pub(crate) async fn run<I: IdentityStore>(
     // Dropping the senders ends the writer once it has flushed what is queued, e.g. a takeover notice.
     let authenticated = connection.user.is_some();
     drop(connection);
-    if tokio::time::timeout(WRITER_FLUSH_TIMEOUT, &mut writer)
-        .await
-        .is_err()
-    {
+    // A client that stopped reading cannot take a flush; waiting would only keep its socket open.
+    let flushed = !stalled.load(Ordering::Relaxed)
+        && tokio::time::timeout(WRITER_FLUSH_TIMEOUT, &mut writer)
+            .await
+            .is_ok();
+    if !flushed {
         writer.abort();
     }
     metrics.connections.dec();
@@ -105,21 +112,18 @@ pub(crate) async fn run<I: IdentityStore>(
     }
 }
 
-async fn write_loop(
-    mut sink: SplitSink<WebSocket, Message>,
-    mut receiver: mpsc::Receiver<ServerMessage>,
-) {
-    while let Some(message) = receiver.recv().await {
-        let text = match serde_json::to_string(&message) {
-            Ok(text) => text,
-            Err(error) => {
-                error!(%error, "serializing a server message failed");
-                continue;
-            }
-        };
-        if sink.send(Message::Text(text.into())).await.is_err() {
-            break;
+/// Stops the connection when a write fails or the client takes longer than `WRITE_TIMEOUT` to
+/// accept one message.
+async fn write_loop(mut sink: SplitSink<WebSocket, Message>, mut outbox: OutboxReceiver) {
+    while let Some(text) = outbox.recv().await {
+        let bytes = text.len();
+        let sent = tokio::time::timeout(WRITE_TIMEOUT, sink.send(Message::Text(text.into()))).await;
+        if !matches!(sent, Ok(Ok(()))) {
+            debug!("write failed or stalled, disconnecting the client");
+            outbox.disconnect();
+            return;
         }
+        outbox.written(bytes);
     }
 }
 

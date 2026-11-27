@@ -1069,7 +1069,7 @@ mod tests {
     use super::{open, Lobby, LobbyNotice, LobbySetup, SeatCount};
     use crate::config::{Config, SessionSecret};
     use crate::metrics::Metrics;
-    use crate::outbox::{Outbox, OUTBOX_CAPACITY};
+    use crate::outbox::Outbox;
     use crate::store::MemoryStore;
 
     /// Always asks for something the game never accepts from it.
@@ -1095,7 +1095,7 @@ mod tests {
             name: "Ada".to_string(),
             kind: UserKind::Guest,
         };
-        let (sender, _) = mpsc::channel(OUTBOX_CAPACITY);
+        let (outbox, _) = Outbox::channel(Arc::new(Notify::new()));
         let (notices, mut registry) = mpsc::unbounded_channel();
         // Stands in for the registry, which admits every start.
         tokio::spawn(async move {
@@ -1109,7 +1109,7 @@ mod tests {
             id: LobbyId(1),
             name: "Table".to_string(),
             owner: owner.clone(),
-            outbox: Outbox::new(sender, Arc::new(Notify::new())),
+            outbox,
             request_id: 1,
             has_password: false,
             seats: SeatCount::new(3).unwrap(),
