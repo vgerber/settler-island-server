@@ -13,6 +13,8 @@ const RIM_DARK := Palette.OUTLINE
 
 ## Brightness of the inlay of a seat that is not on the move.
 const STAND_DIM := 0.5
+## Brightness of the tile under the robber (design: 60%).
+const TILE_DIM := 0.6
 
 static var _cache: Dictionary = {}
 
@@ -43,6 +45,11 @@ static func stand(seat_index: int, lit: bool) -> ShaderMaterial:
 	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.IVORY_SEAT else RIM_LIGHT
 	var tint := ClayPalette.seat(seat_index)
 	return _clay("stand%d%s" % [seat_index, lit], tint if lit else ClayPalette.shade(tint, STAND_DIM), 0.7, rim, 0.018)
+
+
+## The tile the robber stands on: the terrain clay at `TILE_DIM` of its brightness.
+static func dimmed_terrain() -> ShaderMaterial:
+	return _clay("terrain_dim", Color.WHITE * TILE_DIM, 0.0, RIM_LIGHT, 0.022)
 
 
 static func table() -> ShaderMaterial:

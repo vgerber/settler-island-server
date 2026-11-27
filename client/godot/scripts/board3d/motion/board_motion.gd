@@ -7,11 +7,14 @@ extends Node3D
 var dice := DiceTray.new()
 var pieces := PieceMotion.new()
 var cards := CardFlights.new()
+var pulses := BoardPulses.new()
+var awards := AwardBadges.new()
+var celebration := WinCelebration.new()
 
 var _player: EventPlayer = null
 var _scene: BoardScene = null
 var _layout: TableLayout = null
-var _layers: Array[MotionLayer] = [dice, pieces, cards]
+var _layers: Array[MotionLayer] = [dice, pieces, cards, pulses, awards, celebration]
 var _built_corners := -1
 var _committed: SiPlayerView = null
 
@@ -26,6 +29,8 @@ func bind(event_player: EventPlayer, board_scene: BoardScene, rig: CameraRig, fl
 	_player = event_player
 	_scene = board_scene
 	pieces.scene = board_scene
+	pulses.scene = board_scene
+	celebration.scene = board_scene
 	cards.rig = rig
 	cards.attach_flat_tokens(flat_parent)
 	for layer in _layers:
@@ -50,7 +55,7 @@ func commit(geometry: BoardGeometry) -> void:
 	var view := _player.shown_view
 	var new_game := view.board.corners.size() != _built_corners
 	_built_corners = view.board.corners.size()
-	_layout = TableLayout.new(_scene, geometry, _player.seat, view.players.size())
+	_layout = TableLayout.new(_scene, geometry)
 	for layer in _layers:
 		layer.layout = _layout
 	dice.place(_layout, new_game)
@@ -67,6 +72,8 @@ func _on_event(event: SiEvent) -> void:
 		dice.roll(event as SiEventDiceRolled, _player.animated())
 	if not _player.animated():
 		return
+	if event is SiEventDiceRolled:
+		pulses.dice(event as SiEventDiceRolled)
 	if event is SiEventSettlementPlaced:
 		pieces.settlement(event as SiEventSettlementPlaced)
 	elif event is SiEventRoadPlaced:
@@ -75,4 +82,10 @@ func _on_event(event: SiEvent) -> void:
 		pieces.city(event as SiEventCityBuilt)
 	elif event is SiEventRobberMoved:
 		pieces.robber(event as SiEventRobberMoved)
+	elif event is SiEventLongestRoadChanged:
+		awards.road(event as SiEventLongestRoadChanged)
+	elif event is SiEventLargestArmyChanged:
+		awards.army(event as SiEventLargestArmyChanged)
+	elif event is SiEventGameWon:
+		celebration.win(event as SiEventGameWon)
 	cards.on_event(event)

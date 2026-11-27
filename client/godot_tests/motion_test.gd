@@ -34,6 +34,10 @@ func _run() -> void:
 	_build_board()
 	_check_every_roll()
 	await _check_animated_throw()
+	_check_dice_pulse_the_producing_tiles()
+	_check_robber_tile_is_dimmed()
+	_check_dev_cards_monopoly_and_awards_fly()
+	await _check_win_celebration()
 	_check_burst_finishes_clean()
 	_check_commit_replaces_the_ghost()
 	_check_nothing_animates_when_off()
@@ -109,7 +113,7 @@ func _check_burst_finishes_clean() -> void:
 
 func _expect_idle(when: String) -> void:
 	var motion := _board.motion
-	for layer: MotionLayer in [motion.dice, motion.pieces, motion.cards]:
+	for layer: MotionLayer in [motion.dice, motion.pieces, motion.cards, motion.pulses, motion.awards, motion.celebration]:
 		_expect(layer.running_tweens() == 0, "%s: %s still has tweens" % [when, layer.name])
 	_expect(motion.pieces.ghost_count() == 0, "%s: ghosts left" % when)
 	_expect(motion.cards.flights_in_air() == 0 and motion.cards.tokens_in_use() == 0, "%s: tokens in flight" % when)
@@ -154,6 +158,23 @@ func _events(view: SiPlayerView, counts: Array[int]) -> Array[SiEvent]:
 	traded.gave = counts
 	traded.received = counts
 	events.append(traded)
+	var played := SiEventDevelopmentCardPlayed.new()
+	played.seat = seat
+	played.card = SiDevelopmentCard.KNIGHT
+	events.append(played)
+	var monopoly := SiEventMonopolyTaken.new()
+	monopoly.seat = seat
+	monopoly.resource = SiResource.VALUES[1]
+	monopoly.amount = 3
+	events.append(monopoly)
+	var road_award := SiEventLongestRoadChanged.new()
+	road_award.length = 5
+	road_award.holder = other
+	events.append(road_award)
+	var army_award := SiEventLargestArmyChanged.new()
+	army_award.knights = 3
+	army_award.holder = seat
+	events.append(army_award)
 	return events
 
 
@@ -189,3 +210,66 @@ func _check_nothing_animates_when_off() -> void:
 	player.event_started.emit(_dice_event(4, 4))
 	_expect_idle("animation off")
 	_expect(_board.motion.dice.top_value(0) == 4 and _board.motion.dice.top_value(1) == 4, "animation off: dice sit on their faces")
+
+
+## A roll of the number on some tile pulses that tile and its chip; the robber's tile and a 7 stay still.
+func _check_dice_pulse_the_producing_tiles() -> void:
+	var board := _board.player.shown_view.board
+	var pulses := _board.motion.pulses
+	var sum := 0
+	for index in board.tiles.size():
+		if board.tiles[index].number != null and index != board.robber:
+			sum = int(board.tiles[index].number)
+			break
+	_expect(sum > 0, "the fixture has a numbered tile")
+	_board.player.event_started.emit(_dice_event(1, 6))
+	_expect(pulses.running_tweens() == 0, "a 7 pulses nothing")
+	_board.motion.finish_all()
+	_board.player.event_started.emit(_dice_event(sum / 2, sum - sum / 2))
+	_expect(pulses.running_tweens() >= 2, "a roll of %d pulses the chip and tile" % sum)
+	_board.motion.finish_all()
+	for index in board.tiles.size():
+		var tile := _board.scene.tile_node(index)
+		_expect(is_zero_approx(tile.position.y), "finish_all puts tile %d back" % index)
+		var chip := tile.get_node_or_null("Chip") as Node3D
+		_expect(chip == null or chip.scale.is_equal_approx(Vector3.ONE), "finish_all resets chip %d" % index)
+	_expect_idle("after the pulses")
+
+
+func _check_robber_tile_is_dimmed() -> void:
+	var board := _board.player.shown_view.board
+	for index in board.tiles.size():
+		var dimmed: bool = _board.scene.tile_node(index).material_override == ClayMaterials.dimmed_terrain()
+		_expect(dimmed == (index == board.robber), "tile %d dimmed=%s with the robber on %d" % [index, dimmed, board.robber])
+
+
+func _check_dev_cards_monopoly_and_awards_fly() -> void:
+	var player := _board.player
+	var counts: Array[int] = [0, 0, 0, 0, 0]
+	var events := _events(player.shown_view, counts)
+	var played := events.filter(func(event: SiEvent) -> bool: return event is SiEventDevelopmentCardPlayed)[0] as SiEvent
+	player.event_started.emit(played)
+	_expect(_board.motion.cards.flights_in_air() == 1, "a played development card is one flight")
+	_board.motion.finish_all()
+	var monopoly := events.filter(func(event: SiEvent) -> bool: return event is SiEventMonopolyTaken)[0] as SiEvent
+	player.event_started.emit(monopoly)
+	_expect(_board.motion.cards.flights_in_air() == 3, "a monopoly of 3 cards is 3 flights, got %d" % _board.motion.cards.flights_in_air())
+	_board.motion.finish_all()
+	var road := events.filter(func(event: SiEvent) -> bool: return event is SiEventLongestRoadChanged)[0] as SiEvent
+	player.event_started.emit(road)
+	_expect(_board.motion.awards.badges_in_air() == 1, "a new holder of the longest road makes the badge fly")
+	_board.motion.finish_all()
+	_expect_idle("after dev cards and awards")
+
+
+func _check_win_celebration() -> void:
+	var winner := SiEventGameWon.new()
+	winner.seat = (_board.player.seat + 1) % _board.player.shown_view.players.size()
+	winner.points = 10
+	_board.player.event_started.emit(winner)
+	await create_timer(0.7).timeout
+	_expect(_board.motion.celebration.confetti_in_air() > 0, "confetti flies after the win")
+	_expect(is_equal_approx(_board.scene.stand_height(winner.seat), BoardScene.WIN_RAISE), "the stand of the winner has risen")
+	_board.motion.finish_all()
+	_expect(_board.motion.celebration.confetti_in_air() == 0, "finish_all clears the confetti")
+	_expect_idle("after the win")

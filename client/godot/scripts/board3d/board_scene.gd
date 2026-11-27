@@ -7,6 +7,8 @@ extends Node3D
 ## How far the stand of the seat on the move is raised, and how far a pending seat pulses up.
 const STAND_RAISE := 0.14
 const STAND_PULSE_RAISE := 0.07
+## How far the stand of the winner stands out.
+const WIN_RAISE := 0.5
 
 var _island := Node3D.new()
 var _pieces := Node3D.new()
@@ -17,6 +19,8 @@ var _stands_signature := ""
 ## Key (`c<corner>`, `e<edge>`, `robber`) to `{node, signature}`.
 var _shown: Dictionary = {}
 var _built_corners := -1
+var _tiles: Array[Node3D] = []
+var _dimmed_tile := -1
 
 
 func _ready() -> void:
@@ -38,11 +42,15 @@ func build(board: SiBoard, geometry: BoardGeometry) -> void:
 		child.get_parent().remove_child(child)
 		child.queue_free()
 	_shown.clear()
+	_tiles.clear()
+	_dimmed_tile = -1
 	_island.add_child(BoardArt.table())
 	_island.add_child(BoardArt.water(WaterArt.cells(geometry.tile_centers)))
 	for index in board.tiles.size():
 		var tile := board.tiles[index]
-		_island.add_child(BoardArt.tile(tile.coordinates, geometry.tile_centers[index], tile.resource, tile.number))
+		var node := BoardArt.tile(tile.coordinates, geometry.tile_centers[index], tile.resource, tile.number)
+		_tiles.append(node)
+		_island.add_child(node)
 	for port in geometry.ports:
 		var corners: Array[Vector2] = []
 		for corner: int in port["corners"]:
@@ -55,14 +63,17 @@ func build(board: SiBoard, geometry: BoardGeometry) -> void:
 func sync(board: SiBoard, geometry: BoardGeometry) -> void:
 	_sync_buildings(board, geometry)
 	_sync_roads(board, geometry)
+	_dim_tile(board.robber)
 	var center := geometry.tile_centers[board.robber]
 	_show("robber", "tile %d" % board.robber, func() -> Node3D: return BoardArt.robber(center))
 
 
-## One stand per seat around the island; the seat on the move is raised and every pending seat lit.
+## One stand per seat around the island; the seat on the move is raised and every pending seat lit, the winner of a
+## finished game stands out.
 func sync_stands(view: SiPlayerView, geometry: BoardGeometry) -> void:
 	var pending := HudText.pending_seats(view)
-	var signature := "%d %d %s" % [view.players.size(), view.current, pending]
+	var winner := (view.phase as SiPhaseFinished).winner if view.phase is SiPhaseFinished else -1
+	var signature := "%d %d %s %d" % [view.players.size(), view.current, pending, winner]
 	if signature == _stands_signature:
 		return
 	_stands_signature = signature
@@ -74,7 +85,9 @@ func sync_stands(view: SiPlayerView, geometry: BoardGeometry) -> void:
 		var placement := BoardArt.stand_placement(seat, geometry.bounds)
 		var lit := pending.has(seat) or seat == view.current
 		var node := BoardArt.stand(seat, placement["position"], placement["yaw"], lit)
-		if seat == view.current:
+		if seat == winner:
+			node.position.y = WIN_RAISE
+		elif seat == view.current:
 			node.position.y = STAND_RAISE
 		elif lit:
 			_pending_stands.append(node)
@@ -90,6 +103,16 @@ func set_pulse(pulse: float) -> void:
 ## Whether some stand moves with the pulse, so the board has to keep processing.
 func has_pulsing_stands() -> bool:
 	return not _pending_stands.is_empty()
+
+
+## The stand node of `seat` (the motion layer raises the winner's), null when there is none.
+func stand_node(seat: int) -> Node3D:
+	return _stands.get_child(seat) as Node3D if seat < _stands.get_child_count() else null
+
+
+## The tile node of tile `index` (it carries `Props` and, for numbered tiles, `Chip` children), null when unknown.
+func tile_node(index: int) -> Node3D:
+	return _tiles[index] if index >= 0 and index < _tiles.size() else null
 
 
 ## Height of the stand of `seat`, for tests.
@@ -121,6 +144,24 @@ func piece_count() -> int:
 ## Number of nodes under the island (tiles, ports, sea), for tests.
 func island_count() -> int:
 	return _island.get_child_count()
+
+
+## Only the tile the robber stands on is dimmed; the chip and the props are dimmed with the slab.
+func _dim_tile(index: int) -> void:
+	if index == _dimmed_tile:
+		return
+	_set_dim(_dimmed_tile, false)
+	_set_dim(index, true)
+	_dimmed_tile = index
+
+
+func _set_dim(index: int, dimmed: bool) -> void:
+	var tile := tile_node(index)
+	if tile == null:
+		return
+	var material: Material = ClayMaterials.dimmed_terrain() if dimmed else ClayMaterials.terrain()
+	tile.material_override = material
+	(tile.get_node("Props") as MeshInstance3D).material_override = material
 
 
 func _sync_buildings(board: SiBoard, geometry: BoardGeometry) -> void:

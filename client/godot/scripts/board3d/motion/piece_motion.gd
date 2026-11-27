@@ -15,6 +15,8 @@ const HOP_LIFT := 0.4
 const HOP_APEX := 0.3
 const LIFT_SECONDS := 0.12
 const ARC_SECONDS := 0.3
+const FLASH_SCALE := 1.08
+const FLASH_ALPHA := 0.7
 const PUFFS := 6
 const PUFF_SECONDS := 0.3
 const PUFF_RADIUS := 0.05
@@ -90,6 +92,10 @@ func city(event: SiEventCityBuilt) -> void:
 	var tween := _tween()
 	tween.tween_property(tower, "position", rest, CITY_SECONDS).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.parallel().tween_property(old, "scale", Vector3(1.15, 0.01, 1.15), CITY_SECONDS * 0.5)
+	var flash := _flash_material(event.seat)
+	var glow := _ghost(PieceArt.city(), flash, rest)
+	glow.scale = Vector3.ONE * FLASH_SCALE
+	tween.parallel().tween_property(flash, "albedo_color:a", 0.0, CITY_SECONDS).set_trans(Tween.TRANS_QUAD)
 
 
 func robber(event: SiEventRobberMoved) -> void:
@@ -102,6 +108,15 @@ func robber(event: SiEventRobberMoved) -> void:
 	tween.tween_method(_hop.bind(node, from + Vector3(0.0, HOP_LIFT, 0.0), to), 0.0, 1.0, ARC_SECONDS)
 	tween.tween_property(node, "scale", Vector3(1.0, 0.9, 1.0), SQUASH_SECONDS).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	tween.tween_property(node, "scale", Vector3.ONE, SQUASH_SECONDS)
+
+
+## A seat-coloured, light and see-through coat that fades out over the rising city.
+func _flash_material(seat: int) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(ClayPalette.seat(seat).lightened(0.5), FLASH_ALPHA)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return material
 
 
 func _hop(progress: float, node: Node3D, from: Vector3, to: Vector3) -> void:

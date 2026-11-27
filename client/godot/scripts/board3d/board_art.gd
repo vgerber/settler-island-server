@@ -39,9 +39,13 @@ static func tile(coordinates: SiCubeCoordinates, center: Vector2, resource: Vari
 	var terrain: String = HexSlabArt.DESERT if resource == null else str(resource)
 	var node := _mesh(HexSlabArt.slab(terrain), ClayMaterials.terrain(), _world(center, 0.0))
 	var top := Vector3(0.0, HexSlabArt.HEIGHT, 0.0)
-	node.add_child(_mesh(TerrainPropsArt.props(terrain, coordinates.q, coordinates.r), ClayMaterials.terrain(), top))
+	var props := _mesh(TerrainPropsArt.props(terrain, coordinates.q, coordinates.r), ClayMaterials.terrain(), top)
+	props.name = "Props"
+	node.add_child(props)
 	if number != null:
-		node.add_child(_mesh(ChipArt.chip(int(number)), ClayMaterials.stock(), top))
+		var chip := _mesh(ChipArt.chip(int(number)), ClayMaterials.stock(), top)
+		chip.name = "Chip"
+		node.add_child(chip)
 	return node
 
 

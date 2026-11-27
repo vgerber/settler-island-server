@@ -15,6 +15,9 @@ const APEX_FACTOR := 0.25
 const FLIP_TURNS := 2.0
 const FLIP_SHARE := 0.4
 const CARD_LIFT := 0.06
+## A played development card is shown above the table front for this long, between rising and dropping.
+const SHOW_SECONDS := 0.3
+const SHOW_OFFSET := Vector3(0.0, 1.3, 1.6)
 
 var rig: CameraRig = null
 ## The board these cards fly over; its `hand_slot` locates the HUD hand cards.
@@ -86,6 +89,10 @@ func on_event(event: SiEvent) -> void:
 	elif event is SiEventYearOfPlentyTaken:
 		var plenty := event as SiEventYearOfPlentyTaken
 		_send(plenty.resources, _bank_end, _seat_end.bind(plenty.seat), 0.0)
+	elif event is SiEventDevelopmentCardPlayed:
+		_played(event as SiEventDevelopmentCardPlayed)
+	elif event is SiEventMonopolyTaken:
+		_monopoly(event as SiEventMonopolyTaken)
 	elif event is SiEventDevelopmentCardBought:
 		var bought := event as SiEventDevelopmentCardBought
 		_fly(-1, _bank_end(-1), _seat_end(-1, bought.seat), 0.0)
@@ -116,6 +123,38 @@ func _owns_corner(board: SiBoard, tile: SiTile, seat: int) -> bool:
 		if building != null and building.seat == seat:
 			return true
 	return false
+
+
+## The card rises from the stand of the player to above the table front, shows its face, then drops on the deck.
+func _played(event: SiEventDevelopmentCardPlayed) -> void:
+	var token := _free_token()
+	token.show_dev(event.card)
+	token.in_use = true
+	token.visible = true
+	var from := layout.seat_point(event.seat)
+	var show := layout.center() + SHOW_OFFSET
+	var flight := {"token": token, "flat": null}
+	var tween := _tween()
+	flight["tween"] = tween
+	_flights.append(flight)
+	tween.tween_method(_move.bind(token, from, show), 0.0, 1.0, FLIGHT_SECONDS)
+	tween.tween_interval(SHOW_SECONDS)
+	tween.tween_method(_move.bind(token, show, layout.deck_point()), 0.0, 1.0, FLIGHT_SECONDS)
+	tween.tween_callback(_land.bind(flight))
+
+
+## `amount` face-up cards of the resource from the other stands to the taker; the commit fixes the true counts.
+func _monopoly(event: SiEventMonopolyTaken) -> void:
+	var face := SiResource.VALUES.find(event.resource)
+	var victims: Array[int] = []
+	for seat in player.shown_view.players.size():
+		if seat != event.seat:
+			victims.append(seat)
+	if victims.is_empty():
+		return
+	for card in mini(event.amount, MAX_PER_EVENT):
+		var victim := victims[card % victims.size()]
+		_fly(face, _seat_end(face, victim), _seat_end(face, event.seat), card * STAGGER_SECONDS)
 
 
 func _stolen(event: SiEventResourceStolen) -> void:

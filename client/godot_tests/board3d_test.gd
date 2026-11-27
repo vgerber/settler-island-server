@@ -127,13 +127,18 @@ func _island_share(board: Board3D, slot: Vector2) -> float:
 func _tray_failure() -> String:
 	for slot in SLOT_SIZES:
 		var board := _bound_board(_fixtures["middle"], slot)[0] as Board3D
-		var layout := TableLayout.new(board.scene, board.geometry, board.player.seat, board.player.shown_view.players.size())
+		var layout := TableLayout.new(board.scene, board.geometry)
 		var center := Vector2(layout.tray_center().x, layout.tray_center().z)
 		var footprint := Rect2(center - Vector2(TableArt.TRAY_HALF_WIDTH, TableArt.TRAY_HALF_DEPTH), Vector2(TableArt.TRAY_HALF_WIDTH, TableArt.TRAY_HALF_DEPTH) * 2.0)
 		for index in 2:
 			var rest := layout.dice_rest(index)
 			if not footprint.grow(-TableArt.TRAY_RIM_WIDTH).has_point(Vector2(rest.x, rest.z)):
 				return "die %d rests at %s outside the tray %s" % [index, rest, footprint]
+		for seat in board.player.shown_view.players.size():
+			var stand: Vector3 = BoardArt.stand_placement(seat, board.geometry.bounds)["position"]
+			var point := layout.seat_point(seat)
+			if Vector2(point.x, point.z).distance_to(Vector2(stand.x, stand.z)) > 0.001:
+				return "flights to seat %d aim at %s, its stand is at %s" % [seat, point, stand]
 		var failure := _tray_overlap_failure(board, footprint)
 		if not failure.is_empty():
 			return "slot %s: %s" % [slot, failure]

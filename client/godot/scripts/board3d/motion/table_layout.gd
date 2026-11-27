@@ -16,17 +16,13 @@ const TRAY_WISH := Vector2(-0.5, -1.0)
 const HEX_HALF := Vector2(0.9, 1.05)
 
 var geometry: BoardGeometry
-var own_seat := 0
-var seat_count := 1
 var _scene: BoardScene
 var _tray := Vector3.INF
 
 
-func _init(scene: BoardScene, board_geometry: BoardGeometry, local_seat: int, seats: int) -> void:
+func _init(scene: BoardScene, board_geometry: BoardGeometry) -> void:
 	_scene = scene
 	geometry = board_geometry
-	own_seat = local_seat
-	seat_count = maxi(seats, 1)
 
 
 func corner(index: int) -> Vector3:
@@ -45,12 +41,10 @@ func center() -> Vector3:
 	return _scene.rest_point(geometry.bounds.get_center())
 
 
-## Where the stand of `seat` is: on the ring around the island, the local seat at the near edge.
+## Where the stand of `seat` is, as the scene builds it.
 func seat_point(seat: int) -> Vector3:
-	var angle := TAU * float(posmod(seat - own_seat, seat_count)) / seat_count
-	var half := geometry.bounds.size / 2.0
-	var offset := Vector2(sin(angle) * (half.x + EDGE_MARGIN), cos(angle) * (half.y + EDGE_MARGIN))
-	return _scene.rest_point(geometry.bounds.get_center() + offset)
+	var position: Vector3 = BoardArt.stand_placement(seat, geometry.bounds)["position"]
+	return _scene.rest_point(Vector2(position.x, position.z))
 
 
 ## The dice tray centre: on the water hexes at the free spot nearest to the near right corner of the island, so

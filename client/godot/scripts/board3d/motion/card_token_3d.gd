@@ -6,6 +6,14 @@ extends Node3D
 const SIZE := Vector2(0.5, 0.7)
 const BACK_COLOR := Color("#3B3340")
 
+const DEV_COLORS := {
+	"Knight": Color("#8E3B3B"),
+	"RoadBuilding": Color("#8A6A3E"),
+	"YearOfPlenty": Color("#5E8F4A"),
+	"Monopoly": Color("#6B4E8F"),
+	"VictoryPoint": Color("#D9B34A"),
+}
+
 static var _plane: PlaneMesh = null
 static var _materials: Dictionary = {}
 
@@ -27,6 +35,11 @@ func _init() -> void:
 
 func show_face(face: int) -> void:
 	_top.material_override = _material(Palette.resource_color(SiResource.VALUES[face]) if face >= 0 else BACK_COLOR)
+
+
+## The face of a played development card, a colour per kind.
+func show_dev(card: String) -> void:
+	_top.material_override = _material(DEV_COLORS.get(card, BACK_COLOR))
 
 
 func release() -> void:
