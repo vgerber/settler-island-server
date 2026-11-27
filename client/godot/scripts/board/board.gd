@@ -1,5 +1,5 @@
 class_name Board
-extends Control
+extends BoardView
 ## The island: tiles, buildings and click targets from the legal actions (step 2 of
 ## doc/plans/godot-client.md). Draws what its `EventPlayer` shows, never `Net`. Fits and centres the island
 ## in its own rect and re-fits when the rect changes.
@@ -10,15 +10,12 @@ const PICK_RADIUS := 0.32
 ## Pick radius around a tile centre, in hex units (inside the hexagon's inner circle).
 const TILE_PICK_RADIUS := 0.8
 
-var player: EventPlayer = null
 ## Pixels per hex unit and the pixel position of the unit origin, set by `_fit`.
 var hex_size := 1.0
 var origin := Vector2.ZERO
 
 ## Positions in hex units; built from the first view of the game.
 var geometry: BoardGeometry = null
-## The click targets shown: the legal board actions of the kinds in `_filter`.
-var _targets: Array[BoardTarget] = []
 var _hovered: BoardTarget = null
 ## The action variants whose targets are shown; the HUD narrows it in build mode.
 var _filter: Array[Script] = BoardTarget.all_scripts
@@ -38,14 +35,12 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## Shows only the targets of these action variants, e.g. `[SiActionBuildRoad]` in build mode.
 func set_target_filter(kinds: Array[Script]) -> void:
 	_filter = kinds
 	if geometry != null:
 		_refresh()
 
 
-## The targets currently shown.
 func targets() -> Array[BoardTarget]:
 	return _targets
 
@@ -54,6 +49,10 @@ func bind(event_player: EventPlayer) -> void:
 	player = event_player
 	player.committed.connect(_refresh)
 	_refresh()
+
+
+func screen_point(target: BoardTarget) -> Vector2:
+	return get_global_transform_with_canvas() * to_pixels(target.point)
 
 
 ## Pixel position (in this control) of a corner.

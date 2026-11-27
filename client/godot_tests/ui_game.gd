@@ -244,7 +244,7 @@ func _candidates(screen: Control, hud: Hud) -> Array[Dictionary]:
 		candidates.append({"button": button})
 	if dialog != null:
 		return candidates
-	var board := screen.get_node("%Board") as Board
+	var board := screen.get_node("%Board") as BoardView
 	for target in board.targets():
 		candidates.append({"target": target, "board": board})
 	return candidates
@@ -390,9 +390,9 @@ func _note_use(button: Button) -> void:
 	_used[kind] = true
 
 
-func _click_target(board: Board, target: BoardTarget) -> void:
+func _click_target(board: BoardView, target: BoardTarget) -> void:
 	var state := board.player
-	var point := board.get_global_transform_with_canvas() * board.to_pixels(target.point)
+	var point := board.screen_point(target)
 	_used["board " + str(target.action.to_dict()["type"])] = true
 	_click_at(point)
 	if not state.shown_legal_actions.is_empty():

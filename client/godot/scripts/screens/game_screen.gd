@@ -1,17 +1,24 @@
 class_name GameScreen
 extends Control
-## Owns the `GameState` of the running game and its `EventPlayer`, and hands the player to `Board` and `Hud`.
+## Owns the `GameState` of the running game and its `EventPlayer`, and hands the player to its `BoardView` and `Hud`.
 ## The board fills the HUD's free middle area, so the HUD decides the layout and the board follows it.
 
-@onready var _board: Board = %Board
 @onready var _hud: Hud = %Hud
 
 var state: GameState = null
 var player := EventPlayer.new()
 var _settings_popup: HudSettingsPopup = null
+var _board: BoardView = null
 
 
 func _ready() -> void:
+	_board = _new_board()
+	_board.name = "Board"
+	_board.unique_name_in_owner = true
+	_board.clip_contents = true
+	add_child(_board)
+	move_child(_board, 0)
+	_board.owner = self
 	player.name = "EventPlayer"
 	add_child(player)
 	player.sfx = Sfx
@@ -43,6 +50,12 @@ func begin(started: SiServerMessageGameStarted) -> void:
 func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 	if state != null:
 		_hud.show_names(SeatNames.from_lobby(message.lobby, state.seat))
+
+
+## The board view named by `Settings.board_view`; unknown names give the 2D board.
+func _new_board() -> BoardView:
+	# "3d" gets its own case when that board exists; until then every name draws the 2D board.
+	return Board.new()
 
 
 ## Places the board over the HUD's board slot, whatever mode the HUD is in.
