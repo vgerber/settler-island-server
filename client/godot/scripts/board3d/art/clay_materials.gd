@@ -63,6 +63,7 @@ static func water() -> ShaderMaterial:
 		material.shader = load(WATER_SHADER)
 		material.set_shader_parameter("deep_color", ClayPalette.mute(Palette.SEA))
 		material.set_shader_parameter("crest_color", ClayPalette.mute(Palette.WAVE))
+		material.set_shader_parameter("shoal_color", ClayPalette.mute(ClayPalette.SHOAL_LIGHT))
 		_cache["water"] = material
 	return _cache["water"]
 

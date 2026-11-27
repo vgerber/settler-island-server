@@ -23,10 +23,17 @@ static func table() -> Node3D:
 static func water(cells: Array[Vector2]) -> MultiMeshInstance3D:
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
+	# Colours are on too (all white): without them Compatibility feeds the custom data in place of the vertex colour.
+	multi.use_colors = true
+	multi.use_custom_data = true
 	multi.mesh = WaterArt.hex()
 	multi.instance_count = cells.size()
+	var coast := WaterArt.coast(cells)
 	for index in cells.size():
 		multi.set_instance_transform(index, Transform3D(Basis.IDENTITY, _world(cells[index], 0.0)))
+		# Custom data: land-edge bitmask and shoal level, read by water.gdshader.
+		multi.set_instance_color(index, Color.WHITE)
+		multi.set_instance_custom_data(index, Color(coast[index].x, coast[index].y, 0.0, 0.0))
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "Water"
 	instance.multimesh = multi
