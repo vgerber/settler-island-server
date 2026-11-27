@@ -131,10 +131,13 @@ once step 1 has landed; 2e needs all of them.
 | 3c Persistence (done) | docker-compose Postgres, migrations, action log + snapshots, replay on start, reconnect | Opus | Kill the server mid-game, restart, all 4 clients reconnect and finish the same game |
 | 4 Ops (done) | env config, tracing, `/metrics`, CI workflow | Sonnet | CI runs the gate on every push |
 | 5 Playable client (done 2026-11-27) | Godot client milestones 1 and 2: lobby, mouse-only play, designed HUD (doc/design/), EventPlayer feedback, toasts, turn cue, settings, CC0 sounds, ambience and music | Sonnet | Mouse-only full game vs 3 bots without script errors; HUD fits 1600x900 and 1280x720; verifier pass |
-| 6 3D table (next) | Board3D, 3D cards, dice, piece placement animations, per `doc/plans/godot-3d.md` | Opus plan, Sonnet parts | Design group and plan first |
+| 6 3D table (done 2026-11-27) | Low-poly clay Board3D with hex-tile sea, camera and picking, dice tray, piece and card animations, switchable High renderer; 3D is the default view, 2D stays selectable | Sonnet | Mouse-only full game on 2D and 3D, verifier pass, 3D about 1400 fps and 2D about 216 fps at 1600x900 |
 | later | Dockerfile and NAS deployment, once the Godot client can play | Sonnet | Out of scope for now |
 
-Client leftovers after step 5: nobody has listened to the sounds yet (hook-to-file mapping is a first pass, Kenney Casino/Impact/RPG
+Client leftovers after steps 5 and 6: card faces are plain quads; no stand shake after a steal and no road glow after
+an award (ignored test `board3d_motion_cuts_show_their_symptom`); the own stand is cropped at the default 3D view; the
+log shrinks to its title while a trade card is open at 1600x900; High was checked with a copied pack, not an export.
+From step 5: nobody has listened to the sounds yet (hook-to-file mapping is a first pass, Kenney Casino/Impact/RPG
 packs were blocked for scripted download, see `client/godot/audio/SOURCES.md`); the "Your turn" banner briefly covers the top-bar hint;
 `tools/game_screenshots.gd` sometimes prints a `_drop_mouse_over` error when it frees a screen (not in the gate).
 

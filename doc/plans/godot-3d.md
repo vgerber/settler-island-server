@@ -86,3 +86,6 @@ machine, no script errors. Then `Settings.board_view` defaults to `"3d"`.
   stand raise with confetti.
 - Cuts, each shown by the ignored test `board3d_motion_cuts_show_their_symptom`: seat stand shake on a steal, road
   glow on an award. Card faces are flat coloured quads; a dev card starts at the stand, not at the HUD dev row.
+
+- W3 done 2026-11-27: verifier passed; trade card moved to the side column, banner hides the top-bar prompt, 2D board
+  redraws only its target layer (55 -> 216 fps), 3D is the default view. Leftovers are listed in doc/state-analysis.md.
