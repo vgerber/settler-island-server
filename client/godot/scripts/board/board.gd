@@ -14,11 +14,7 @@ const TILE_PICK_RADIUS := 0.8
 var hex_size := 1.0
 var origin := Vector2.ZERO
 
-## Positions in hex units; built from the first view of the game.
-var geometry: BoardGeometry = null
 var _hovered: BoardTarget = null
-## The action variants whose targets are shown; the HUD narrows it in build mode.
-var _filter: Array[Script] = BoardTarget.all_scripts
 ## Seconds since the targets appeared, for their glow.
 var _pulse_time := 0.0
 
@@ -88,21 +84,6 @@ func _fit() -> void:
 	hex_size = maxf(1.0, minf(available.x / bounds.size.x, available.y / bounds.size.y))
 	origin = size / 2.0 - bounds.get_center() * hex_size
 	queue_redraw()
-
-
-func _collect_targets() -> void:
-	_targets.clear()
-	for script: Script in _filter:
-		for action in player.legal_of(script):
-			_targets.append(_target_of(action))
-
-
-func _target_of(action: SiAction) -> BoardTarget:
-	if action is SiActionMoveRobber:
-		return BoardTarget.new(action, BoardTarget.Kind.TILE, geometry.tile_centers[(action as SiActionMoveRobber).tile])
-	if action is SiActionPlaceRoad or action is SiActionBuildRoad:
-		return BoardTarget.new(action, BoardTarget.Kind.EDGE, geometry.edge_midpoints[action.get("edge")])
-	return BoardTarget.new(action, BoardTarget.Kind.CORNER, geometry.corner_points[action.get("corner")])
 
 
 func _target_at(pixel: Vector2) -> BoardTarget:
