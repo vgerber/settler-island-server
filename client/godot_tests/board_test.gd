@@ -4,23 +4,13 @@ extends SceneTree
 ## legal target sends exactly that action (a settlement corner in setup, a robber tile mid-game).
 ## Usage: godot --headless --path <copy of client/godot> -s board_test.gd -- <fixtures.json>
 
-## Records sent actions instead of writing to a socket.
-class RecordingClient:
-	extends SiClient
-	var sent: Array[SiAction] = []
-
-	func send_act(action: SiAction) -> int:
-		sent.append(action)
-		return sent.size()
-
-
 const TOLERANCE_PIXELS := 0.5
 
 var _fixtures: Dictionary = {}
 var _started := false
 ## Everything `_bound_board` made, freed before quitting so nothing leaks.
 var _boards: Array[Board] = []
-var _clients: Array[RecordingClient] = []
+var _clients: Array[SiRecordingClient] = []
 
 
 func _init() -> void:
@@ -63,7 +53,7 @@ func _release() -> void:
 func _check_setup() -> String:
 	var setup := _bound_board("setup")
 	var board: Board = setup[0]
-	var client: RecordingClient = setup[1]
+	var client: SiRecordingClient = setup[1]
 	var failure := _corner_failure(board) + _port_failure(board)
 	if not failure.is_empty():
 		return "setup: " + failure
@@ -84,7 +74,7 @@ func _check_setup() -> String:
 func _check_middle() -> String:
 	var middle := _bound_board("middle")
 	var board: Board = middle[0]
-	var client: RecordingClient = middle[1]
+	var client: SiRecordingClient = middle[1]
 	var failure := _corner_failure(board)
 	if not failure.is_empty():
 		return "middle: " + failure
@@ -104,7 +94,7 @@ func _bound_board(key: String) -> Array:
 	var started := SiServerMessage.from_dict(_fixtures[key]) as SiServerMessageGameStarted
 	for previous in _boards:
 		previous.visible = false
-	var client := RecordingClient.new()
+	var client := SiRecordingClient.new()
 	var state := GameState.new(client, started)
 	var board := Board.new()
 	_boards.append(board)
