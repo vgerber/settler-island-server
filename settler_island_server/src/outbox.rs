@@ -34,4 +34,10 @@ impl Outbox {
             }
         }
     }
+
+    /// Queues the last message, then asks the connection to close once it is written.
+    pub(crate) fn send_and_close(&self, message: ServerMessage) {
+        self.send(message);
+        self.kick.notify_one();
+    }
 }

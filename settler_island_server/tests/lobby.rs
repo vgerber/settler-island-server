@@ -530,3 +530,24 @@ async fn welcome_names_the_running_game_a_returning_player_holds_a_seat_in() {
         None
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_second_login_with_the_same_token_closes_the_first_socket_after_a_notice() {
+    let address = start(test_config()).await;
+    let session = guest_session(address, "Alice").await;
+    let (mut first, _) = Client::authenticated(address, &session.token).await;
+    let lobby = first.create_lobby("Table", 3, None).await;
+
+    let (mut second, _) = Client::authenticated(address, &session.token).await;
+    second.try_join(lobby, None).await.expect("takeover join");
+
+    let notice = first.receive().await;
+    assert!(matches!(
+        notice,
+        ServerMessage::Error {
+            code: ErrorCode::TakenOver,
+            ..
+        }
+    ));
+    assert!(first.closed_by_server().await);
+}

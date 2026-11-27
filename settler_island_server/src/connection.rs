@@ -52,6 +52,9 @@ struct Connection<I> {
 }
 
 /// Runs one client until it disconnects, idles out or falls behind.
+/// How long a closing connection may take to write its queued messages.
+const WRITER_FLUSH_TIMEOUT: Duration = Duration::from_secs(1);
+
 pub(crate) async fn run<I: IdentityStore>(
     socket: WebSocket,
     registry: RegistryHandle,
@@ -65,7 +68,7 @@ pub(crate) async fn run<I: IdentityStore>(
     let (sink, stream) = socket.split();
     let (sender, receiver) = mpsc::channel(OUTBOX_CAPACITY);
     let kick = Arc::new(Notify::new());
-    let writer = tokio::spawn(write_loop(sink, receiver));
+    let mut writer = tokio::spawn(write_loop(sink, receiver));
     let mut connection = Connection {
         outbox: Outbox::new(sender, kick.clone()),
         registry,
@@ -87,9 +90,17 @@ pub(crate) async fn run<I: IdentityStore>(
             .leave(user.id.clone(), connection.outbox.clone())
             .await;
     }
-    writer.abort();
+    // Dropping the senders ends the writer once it has flushed what is queued, e.g. a takeover notice.
+    let authenticated = connection.user.is_some();
+    drop(connection);
+    if tokio::time::timeout(WRITER_FLUSH_TIMEOUT, &mut writer)
+        .await
+        .is_err()
+    {
+        writer.abort();
+    }
     metrics.connections.dec();
-    if connection.user.is_some() {
+    if authenticated {
         metrics.authenticated_connections.dec();
     }
 }

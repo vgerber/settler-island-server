@@ -442,7 +442,12 @@ impl<S: GameStore> Lobby<S> {
             .find(|member| member.user.id == user.id)
         {
             // The same user on a new connection: the newest connection takes over.
-            member.outbox = outbox;
+            let displaced = std::mem::replace(&mut member.outbox, outbox);
+            displaced.send_and_close(ServerMessage::Error {
+                request_id: None,
+                code: ErrorCode::TakenOver,
+                message: ErrorCode::TakenOver.description(),
+            });
             self.abandon_at = None;
             self.note_membership(LobbyNotice::Joined {
                 lobby: self.id,

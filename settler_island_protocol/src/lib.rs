@@ -263,6 +263,8 @@ pub enum ErrorCode {
     RateLimited,
     NotWelcomed,
     AlreadyWelcomed,
+    /// Sent to a connection just before the server closes it because the same user joined on a newer one.
+    TakenOver,
     InvalidToken,
     AccountsDisabled,
     AccountAlreadyLinked,
@@ -314,6 +316,7 @@ impl ErrorCode {
             ErrorCode::RateLimited => "too many messages, slow down",
             ErrorCode::NotWelcomed => "send Authenticate first",
             ErrorCode::AlreadyWelcomed => "Authenticate was already sent",
+            ErrorCode::TakenOver => "this account joined on another connection",
             ErrorCode::InvalidToken => "the token is invalid or expired",
             ErrorCode::AccountsDisabled => "this server does not accept accounts",
             ErrorCode::AccountAlreadyLinked => "the account is already linked to another user",
