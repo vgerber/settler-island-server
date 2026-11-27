@@ -130,7 +130,13 @@ once step 1 has landed; 2e needs all of them.
 | 3b Identity (done) | guest session tokens, Keycloak token check, guest upgrade, local realm in `keycloak/realm-local.json` | Sonnet | Tests: expired/forged token rejected; guest and Keycloak user in one game |
 | 3c Persistence (done) | docker-compose Postgres, migrations, action log + snapshots, replay on start, reconnect | Opus | Kill the server mid-game, restart, all 4 clients reconnect and finish the same game |
 | 4 Ops (done) | env config, tracing, `/metrics`, CI workflow | Sonnet | CI runs the gate on every push |
+| 5 Playable client (done 2026-11-27) | Godot client milestones 1 and 2: lobby, mouse-only play, designed HUD (doc/design/), EventPlayer feedback, toasts, turn cue, settings, CC0 sounds, ambience and music | Sonnet | Mouse-only full game vs 3 bots without script errors; HUD fits 1600x900 and 1280x720; verifier pass |
+| 6 3D table (next) | Board3D, 3D cards, dice, piece placement animations, per `doc/plans/godot-3d.md` | Opus plan, Sonnet parts | Design group and plan first |
 | later | Dockerfile and NAS deployment, once the Godot client can play | Sonnet | Out of scope for now |
+
+Client leftovers after step 5: nobody has listened to the sounds yet (hook-to-file mapping is a first pass, Kenney Casino/Impact/RPG
+packs were blocked for scripted download, see `client/godot/audio/SOURCES.md`); the "Your turn" banner briefly covers the top-bar hint;
+`tools/game_screenshots.gd` sometimes prints a `_drop_mouse_over` error when it frees a screen (not in the gate).
 
 ## Decisions (2026-11-22)
 - **Client:** Godot now, maybe a web export later. JSON over WebSocket stays, and this repo owns the protocol.

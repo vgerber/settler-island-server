@@ -2,7 +2,7 @@
 
 Source: `doc/reviews/summary.md` section 3 (task ids 1a-3f), details per finding in `doc/reviews/rust.md`,
 `godot.md`, `stack.md`. Wave 0 is done (tools/ and doc/ are tracked). Godot-side items marked "folded into" go into
-`doc/plans/godot-ui-design.md` steps, not separate agents.
+the client UI steps (landed), not separate agents.
 
 ## Rules for every task
 - Only the files the task lists; anything else needed is reported, not edited.
@@ -50,5 +50,5 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Security waves 0-3 are merged (doc/reviews/security.md section 5); Rust 1.92 is pinned in rust-toolchain.toml,
   CI is back on and green, cargo-deny runs in the gate and CI.
 - Open: wave 4 needs user decisions (turn clock, opaque user ids, retention of finished games); wave D is the NAS
-  deployment; then the HUD layout step (doc/plans/godot-ui-design.md) with the folded-in review items.
+  deployment; then the HUD layout step (landed) with the folded-in review items.
 - Wave 4 done 2026-11-27: away policy per lobby (4a), opaque public ids (4b); games are kept forever (4c, no work).
