@@ -12,7 +12,7 @@ const ROAD_SHADOW_RADIUS := 0.26
 const HOUSE_SHADOW_RADIUS := 0.2
 const SHADOW_STRENGTH := 0.4
 ## Seat stands sit this far outside the island bounds.
-const STAND_GAP := 0.7
+const STAND_GAP := 0.5
 
 
 static func table() -> Node3D:

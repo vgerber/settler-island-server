@@ -13,8 +13,6 @@ const REBOUND_HEIGHT := 0.12
 const REBOUND_SLIDE := 0.03
 const WOBBLE_RADIANS := 0.035
 const EXTRA_TURNS := 2.5
-const DIE_SPACING := 0.5
-const TRAY_THICKNESS := 0.04
 const SHADOW_RADIUS := 0.2
 
 var _tray := MeshInstance3D.new()
@@ -28,13 +26,8 @@ var _last: Array[Dictionary] = []
 func _init() -> void:
 	name = "DiceTray"
 	visible = false
-	var plate := BoxMesh.new()
-	plate.size = Vector3(TableLayout.TRAY_SIZE.x, TRAY_THICKNESS, TableLayout.TRAY_SIZE.y)
-	_tray.mesh = plate
-	var felt := StandardMaterial3D.new()
-	felt.albedo_color = Palette.SEA.darkened(0.55)
-	felt.roughness = 1.0
-	_tray.material_override = felt
+	_tray.mesh = TableArt.dice_tray()
+	_tray.material_override = ClayMaterials.terrain()
 	add_child(_tray)
 	for index in 2:
 		var die := Node3D.new()
@@ -53,7 +46,7 @@ func _init() -> void:
 ## Places the tray for a layout; a new game hides the dice.
 func place(new_layout: TableLayout, new_game: bool) -> void:
 	layout = new_layout
-	_tray.position = layout.tray_center() - Vector3(0.0, TRAY_THICKNESS / 2.0, 0.0)
+	_tray.position = layout.tray_center()
 	if new_game:
 		_last.clear()
 		visible = false
@@ -97,7 +90,7 @@ func _plan(index: int, value: int, seat: int) -> Dictionary:
 	var salt := float(_rolls * 2 + index)
 	var yaw := fposmod(sin(salt * 12.9898) * 43758.5453, 1.0) * TAU
 	var axis := Vector3(sin(salt * 3.1), 0.6, cos(salt * 1.7)).normalized()
-	var land := layout.tray_center() + Vector3((index - 0.5) * DIE_SPACING, DieArt.HALF, 0.0)
+	var land := layout.dice_rest(index)
 	var start := layout.seat_point(seat) + Vector3((index - 0.5) * 0.2, DieArt.HALF, 0.0)
 	return {"start": start, "land": land, "axis": axis, "final": DieArt.orientation(value, yaw)}
 

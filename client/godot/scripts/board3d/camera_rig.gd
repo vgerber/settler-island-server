@@ -14,8 +14,12 @@ const MAX_ZOOM := 1.5
 const MAX_PAN := 2.5
 const MARGIN := 16.0
 const FIT_STEPS := 14
-## The seats whose stands the default view keeps in sight (a game has at most four).
-const SEAT_STANDS := [0, 1, 2, 3]
+const CENTER_PASSES := 3
+## Share of the limiting slot dimension the island (corners and port badges) fills at the default camera. The seat
+## stands and the sea are not fitted: they may reach past the slot edge.
+const FILL := 0.9
+## Half size of the box around a port flag that the fit keeps in view (the pier tip is just beyond the marker).
+const PORT_FIT_RADIUS := 0.2
 const MAX_FIT_DISTANCE := 200.0
 const ORBIT_DEGREES_PER_PIXEL := 0.3
 const RESET_SECONDS := 0.25
@@ -29,6 +33,8 @@ var pan := Vector2.ZERO
 ## Control-local pixels of the board, the rect the island has to fit.
 var viewport_size := Vector2(1260.0, 676.0)
 
+## The island centre; the pivot `_center` is moved from it until the projected island is centred in the slot.
+var _island_center := Vector3.ZERO
 var _center := Vector3.ZERO
 var _cloud := PackedVector3Array()
 var _fit_distance := 20.0
@@ -45,8 +51,8 @@ func _ready() -> void:
 	_apply()
 
 
-## Frames the island of `geometry`: the points that must stay in view are its corners at table and piece height, the seat stands
-## and the port badges.
+## Frames the island of `geometry`: the points that must stay in view are its corners at table and piece height and
+## the port badges.
 func frame(geometry: BoardGeometry) -> void:
 	_cloud.clear()
 	for point in geometry.corner_points:
@@ -54,16 +60,9 @@ func frame(geometry: BoardGeometry) -> void:
 	for port in geometry.ports:
 		var marker: Vector2 = port["marker"]
 		for corner in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-			_add_column(marker + corner * BoardGeometry.PORT_RADIUS)
-	for seat in SEAT_STANDS:
-		var placement := BoardArt.stand_placement(seat, geometry.bounds)
-		var position: Vector3 = placement["position"]
-		var turn := Basis(Vector3.UP, placement["yaw"])
-		for corner: Vector3 in [Vector3(1, 0, 1), Vector3(-1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, -1)]:
-			var offset: Vector3 = turn * (corner * Vector3(TableArt.STAND_HALF_WIDTH, 0.0, TableArt.STAND_HALF_DEPTH))
-			_add_column(Vector2(position.x + offset.x, position.z + offset.z))
+			_add_column(marker + corner * PORT_FIT_RADIUS)
 	var center := geometry.bounds.get_center()
-	_center = Vector3(center.x, 0.0, center.y)
+	_island_center = Vector3(center.x, 0.0, center.y)
 	_refit()
 
 
@@ -165,6 +164,15 @@ func _add_column(point: Vector2) -> void:
 func _refit() -> void:
 	if _cloud.is_empty():
 		return
+	_center = _island_center
+	for pass_index in CENTER_PASSES:
+		_fit_distance = _smallest_fitting_distance()
+		_center += _centering_shift()
+	_fit_distance = _smallest_fitting_distance()
+	_apply()
+
+
+func _smallest_fitting_distance() -> float:
 	var near := 1.0
 	var far := MAX_FIT_DISTANCE
 	for step in FIT_STEPS:
@@ -173,12 +181,34 @@ func _refit() -> void:
 			far = middle
 		else:
 			near = middle
-	_fit_distance = far
-	_apply()
+	return far
+
+
+## Perspective squeezes the far side, so the island is not centred around its own centre; this is the table shift
+## that moves the middle of its projected box to the middle of the slot.
+func _centering_shift() -> Vector3:
+	var view := _camera_transform(_fit_distance, 0.0, DEFAULT_PITCH, Vector2.ZERO)
+	var saved := _current
+	_current = view
+	var box := Rect2(project(_cloud[0]), Vector2.ZERO)
+	for point in _cloud:
+		box = box.expand(project(point))
+	var wanted := _ground_point(view, viewport_size / 2.0)
+	var actual := _ground_point(view, box.get_center())
+	_current = saved
+	return actual - wanted
+
+
+## Where the ray of a pixel meets the table plane, for a camera at `view`.
+func _ground_point(view: Transform3D, pixel: Vector2) -> Vector3:
+	var offset := (pixel - viewport_size / 2.0) / _pixels_per_unit(1.0)
+	var direction := view.basis * Vector3(offset.x, -offset.y, -1.0)
+	return view.origin + direction * (-view.origin.y / direction.y)
 
 
 func _fits(view: Transform3D) -> bool:
-	var inner := Rect2(Vector2.ONE * MARGIN, viewport_size - Vector2.ONE * MARGIN * 2.0)
+	var margin := maxf(MARGIN, minf(viewport_size.x, viewport_size.y) * (1.0 - FILL) / 2.0)
+	var inner := Rect2(Vector2.ONE * margin, viewport_size - Vector2.ONE * margin * 2.0)
 	var saved := _current
 	_current = view
 	var inside := _cloud.size() > 0

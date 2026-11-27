@@ -9,6 +9,8 @@ extends SceneTree
 
 ## The board slot at 1600x900 and 1280x720.
 const SLOT_SIZES: Array[Vector2] = [Vector2(1260.0, 676.0), Vector2(1008.0, 541.0)]
+## The island has to fill at least this share of the limiting slot dimension at the default camera.
+const MIN_ISLAND_SHARE := 0.75
 const PITCHES: Array[float] = [30.0, 55.0, 80.0]
 
 var _fixtures: Dictionary = {}
@@ -30,7 +32,7 @@ func _process(_delta: float) -> bool:
 	if _fixtures.is_empty():
 		return _finish("missing fixtures")
 	var failure := _pick_failure()
-	for check: Callable in [_framing_failure, _filter_failure, _sync_failure, _stands_failure, _drag_failure]:
+	for check: Callable in [_framing_failure, _tray_failure, _filter_failure, _sync_failure, _stands_failure, _drag_failure]:
 		if failure.is_empty():
 			failure = check.call()
 	return _finish(failure)
@@ -103,9 +105,65 @@ func _framing_failure() -> String:
 				var pixel := rig.project(Vector3(corner.x, height, corner.y))
 				if not window.has_point(pixel):
 					return "corner %s at height %s is at %s outside slot %s" % [corner, height, pixel, slot]
+		var share := _island_share(board, slot)
+		if share < MIN_ISLAND_SHARE:
+			return "the island fills %.2f of the limiting dimension of slot %s, wanted %.2f" % [share, slot, MIN_ISLAND_SHARE]
 		var failure := _projection_failure(board)
 		if not failure.is_empty():
 			return failure
+	return ""
+
+
+## The share of the slot width or height (the larger) that the projected island corners span.
+func _island_share(board: Board3D, slot: Vector2) -> float:
+	var box := Rect2(board.camera_rig.project(Vector3(board.geometry.corner_points[0].x, 0.0, board.geometry.corner_points[0].y)), Vector2.ZERO)
+	for corner in board.geometry.corner_points:
+		for height in [0.0, BoardArt.PIECE_HEIGHT]:
+			box = box.expand(board.camera_rig.project(Vector3(corner.x, height, corner.y)))
+	return maxf(box.size.x / slot.x, box.size.y / slot.y)
+
+
+## The dice tray lies in view on free water: no pier, flag, land tile or stand under it, and the dice rest inside it.
+func _tray_failure() -> String:
+	for slot in SLOT_SIZES:
+		var board := _bound_board(_fixtures["middle"], slot)[0] as Board3D
+		var layout := TableLayout.new(board.scene, board.geometry, board.player.seat, board.player.shown_view.players.size())
+		var center := Vector2(layout.tray_center().x, layout.tray_center().z)
+		var footprint := Rect2(center - Vector2(TableArt.TRAY_HALF_WIDTH, TableArt.TRAY_HALF_DEPTH), Vector2(TableArt.TRAY_HALF_WIDTH, TableArt.TRAY_HALF_DEPTH) * 2.0)
+		for index in 2:
+			var rest := layout.dice_rest(index)
+			if not footprint.grow(-TableArt.TRAY_RIM_WIDTH).has_point(Vector2(rest.x, rest.z)):
+				return "die %d rests at %s outside the tray %s" % [index, rest, footprint]
+		var failure := _tray_overlap_failure(board, footprint)
+		if not failure.is_empty():
+			return "slot %s: %s" % [slot, failure]
+		for corner in [footprint.position, footprint.end, Vector2(footprint.position.x, footprint.end.y), Vector2(footprint.end.x, footprint.position.y)]:
+			var pixel := board.camera_rig.project(Vector3(corner.x, WaterArt.HEIGHT, corner.y))
+			if not Rect2(Vector2.ZERO, slot).has_point(pixel):
+				return "tray corner %s projects to %s outside slot %s" % [corner, pixel, slot]
+	return ""
+
+
+func _tray_overlap_failure(board: Board3D, footprint: Rect2) -> String:
+	var geometry := board.geometry
+	for port in geometry.ports:
+		var corners: Array = port["corners"]
+		var edge := (geometry.corner_points[corners[0]] + geometry.corner_points[corners[1]]) / 2.0
+		var tip: Vector2 = edge + ((port["marker"] as Vector2) - edge).normalized() * PortArt.PIER_LENGTH
+		for step in 5:
+			if footprint.has_point(edge.lerp(tip, step / 4.0)):
+				return "the tray covers a pier at %s" % edge
+	for center in geometry.tile_centers:
+		var tile := Rect2(center - Vector2(BoardGeometry.SQUARE_ROOT_OF_THREE / 2.0, 1.0), Vector2(BoardGeometry.SQUARE_ROOT_OF_THREE, 2.0))
+		if footprint.intersects(tile.grow(-0.05)):
+			return "the tray touches the land tile at %s" % center
+	for seat in 4:
+		var placement := BoardArt.stand_placement(seat, geometry.bounds)
+		var stand: Vector3 = placement["position"]
+		var half := Vector2(TableArt.STAND_HALF_WIDTH, TableArt.STAND_HALF_DEPTH)
+		half = half if is_zero_approx(placement["yaw"]) else Vector2(half.y, half.x)
+		if footprint.intersects(Rect2(Vector2(stand.x, stand.z) - half, half * 2.0)):
+			return "the tray touches the stand of seat %d" % seat
 	return ""
 
 

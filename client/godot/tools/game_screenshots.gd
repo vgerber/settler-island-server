@@ -9,6 +9,8 @@ extends SceneTree
 ## Usage: godot --path client/godot --resolution 1600x900 --position 200,200 -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix] [board view 2d|3d] [fps]
 
 const SETTLE_FRAMES := 12
+## A throw takes 700 ms; the picture waits for the dice to rest.
+const THROW_FRAMES := 80
 const FPS_WARMUP_FRAMES := 120
 const FPS_SECONDS := 5.0
 const OWN_SEAT_NAMES := ["Mira", "Rolf", "Kai", "Lin"]
@@ -278,6 +280,7 @@ func _emit_dice(first: int, second: int) -> void:
 	var state := _screen.get("state") as GameState
 	var event := SiEvent.from_dict({"type": "DiceRolled", "seat": 0, "first": first, "second": second})
 	state.changed.emit([event] as Array[SiEvent])
+	_frames_left = THROW_FRAMES
 
 
 func _press_key(keycode: Key) -> void:
