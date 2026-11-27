@@ -900,6 +900,25 @@ fn board3d_motion_lands_dice_on_the_server_faces_and_leaves_nothing_in_flight() 
     );
 }
 
+/// The motion cut from milestone 3 (stand shakes on a steal, road glow on an award): fails until it is built.
+#[test]
+#[ignore = "3D motion cuts not built: victim stand shake, longest road glow"]
+fn board3d_motion_cuts_show_their_symptom() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-motion-cuts-fixtures.json");
+    fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "motion_cuts_test.gd",
+        fixtures_path.to_str().unwrap(),
+        "CUTS_OK",
+    );
+}
+
 /// `GameStarted` for a seat that must discard and has more than one way to do it, from a bot game.
 fn discard_fixture() -> Value {
     for seed in 1..50 {

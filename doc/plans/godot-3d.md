@@ -76,6 +76,13 @@ machine, no script errors. Then `Settings.board_view` defaults to `"3d"`.
 - W0, 3A, 3B, 3D landed. Motion deviations: the dice hold stays 350 ms (620 ms broke the collapse budget test), so
   production flights may start while the dice land; only ghosts finish at commit, flights finish on collapse,
   resync and focus-out; the tray sits in the near right corner; more than 12 cards per event are dropped.
-- Motion not built yet (needs a follow-up part, each listed cut gets an ignored test): chip and tile pulses after
-  the dice, dim of the robber's tile, city flash, dev-play and monopoly flights, award badge flights, game-won
-  motion, seat stand shakes; card faces are flat coloured quads.
+- Framing and tray fix: the default camera fits the island with its piers (not the stands or the sea), centred in the
+  slot, so it fills about 90% of the limiting dimension (test: at least 75%). The own seat's stand at the near edge
+  and parts of the others may fall outside the slot at the default view. The dice tray is a low-poly wooden tray
+  on the free water spot nearest to the near right corner (searched against piers, flags, tiles and stands; test:
+  dice rest inside it, it overlaps none of them and lies in view). Flights now aim at the stands the scene builds.
+- Motion added: chip and tile pulses after the dice, the robber's tile dimmed to 60% (state, set on commit), city
+  flash, dev card play flight (rise, show 300 ms, drop on the deck), monopoly flights, award badge flights, winner
+  stand raise with confetti.
+- Cuts, each shown by the ignored test `board3d_motion_cuts_show_their_symptom`: seat stand shake on a steal, road
+  glow on an award. Card faces are flat coloured quads; a dev card starts at the stand, not at the HUD dev row.
