@@ -346,3 +346,58 @@ func add_pyramid(transform: Transform3D, half_x: float, half_z: float, height: f
 		var middle := (from + to) * 0.5
 		outward.append(Vector3(middle.x * height / maxf(half_x, 1e-4) if absf(middle.x) > 1e-5 else 0.0, maxf(half_x, half_z), middle.z * height / maxf(half_z, 1e-4) if absf(middle.z) > 1e-5 else 0.0))
 	_add_faces(transform, faces, outward, color, ao_floor)
+
+
+## A cube-like box whose edges and corners are chamfered by `bevel` (dice): 6 faces, 12 edge strips, 8 corners.
+func add_bevelled_box(transform: Transform3D, half_extents: Vector3, bevel: float, color: Color, ao_floor := 0.7) -> void:
+	var inner := half_extents - Vector3.ONE * bevel
+	var faces: Array[PackedVector3Array] = []
+	var outward := PackedVector3Array()
+	for axis in 3:
+		var first := (axis + 1) % 3
+		var second := (axis + 2) % 3
+		for sign_value in [-1.0, 1.0]:
+			faces.append(_bevel_quad(axis, sign_value * half_extents[axis], first, inner[first], second, inner[second]))
+			var normal := Vector3.ZERO
+			normal[axis] = sign_value
+			outward.append(normal)
+		for sign_first in [-1.0, 1.0]:
+			for sign_second in [-1.0, 1.0]:
+				var strip := PackedVector3Array()
+				for side in [-1.0, 1.0]:
+					var near := Vector3.ZERO
+					near[axis] = side * inner[axis]
+					near[first] = sign_first * half_extents[first]
+					near[second] = sign_second * inner[second]
+					var far := near
+					far[first] = sign_first * inner[first]
+					far[second] = sign_second * half_extents[second]
+					strip.append_array([near, far] if side < 0.0 else [far, near])
+				faces.append(strip)
+				var diagonal := Vector3.ZERO
+				diagonal[first] = sign_first
+				diagonal[second] = sign_second
+				outward.append(diagonal.normalized())
+	for sign_x in [-1.0, 1.0]:
+		for sign_y in [-1.0, 1.0]:
+			for sign_z in [-1.0, 1.0]:
+				var signs := Vector3(sign_x, sign_y, sign_z)
+				var corner := PackedVector3Array()
+				for axis in 3:
+					var point := signs * inner
+					point[axis] = signs[axis] * half_extents[axis]
+					corner.append(point)
+				faces.append(corner)
+				outward.append(signs.normalized())
+	_add_faces(transform, faces, outward, color, ao_floor)
+
+
+static func _bevel_quad(axis: int, height: float, first: int, first_half: float, second: int, second_half: float) -> PackedVector3Array:
+	var points := PackedVector3Array()
+	for corner in [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]:
+		var point := Vector3.ZERO
+		point[axis] = height
+		point[first] = corner[0] * first_half
+		point[second] = corner[1] * second_half
+		points.append(point)
+	return points

@@ -42,11 +42,14 @@ static func dot_count(number: int) -> int:
 	return 6 - absi(7 - number)
 
 
-## The ring under the face: a chamfered wall.
+## The ring under the face: a chamfered outer wall and a flat top that dips toward the face.
 static func _rim_profile() -> PackedVector2Array:
-	return PackedVector2Array([Vector2(RIM_RADIUS, 0.0), Vector2(RIM_RADIUS, RIM_HEIGHT * 0.6), Vector2(RIM_RADIUS - 0.015, RIM_HEIGHT)])
+	return PackedVector2Array([
+		Vector2(RIM_RADIUS, 0.0), Vector2(RIM_RADIUS, RIM_HEIGHT * 0.5), Vector2(RIM_RADIUS - 0.018, RIM_HEIGHT),
+		Vector2(RADIUS - 0.01, RIM_HEIGHT), Vector2(RADIUS - 0.02, RIM_HEIGHT * 0.8),
+	])
 
 
-## A puck: one chamfer from the wall to the flat top.
+## The face: a puck set into the ring with a bevelled edge and a flat top.
 static func _face_profile() -> PackedVector2Array:
-	return PackedVector2Array([Vector2(RADIUS, 0.0), Vector2(RADIUS, HEIGHT * 0.45), Vector2(RADIUS - 0.03, HEIGHT), Vector2(0.0, HEIGHT)])
+	return PackedVector2Array([Vector2(RADIUS - 0.015, 0.0), Vector2(RADIUS - 0.015, HEIGHT * 0.5), Vector2(RADIUS - 0.04, HEIGHT), Vector2(0.0, HEIGHT)])

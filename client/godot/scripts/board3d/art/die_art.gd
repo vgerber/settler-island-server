@@ -1,11 +1,12 @@
 class_name DieArt
 extends RefCounted
-## One die: an ivory clay cube and pips on all six faces. Origin at the centre, so the die
+## One die: an ivory clay cube with chamfered edges and pips on all six faces. Origin at the centre, so the die
 ## rests at y = `HALF` over the surface. Opposite faces add up to 7. The motion agent lands a die on value `v` by
 ## using `orientation(v, yaw)`: it maps the local normal `FACE_NORMALS[v]` onto world +y (up) for any yaw, so
 ## the top face shows `v`. Both tables are the single source; the headless test checks them against the pips.
 
 const HALF := 0.14
+const BEVEL := 0.022
 const PIP_RADIUS := 0.02
 const PIP_SPACING := 0.062
 const PIP_LIFT := 0.002
@@ -58,7 +59,7 @@ static func die() -> ArrayMesh:
 static func builder() -> ClayBuilder:
 	var body := ClayPalette.mute(Palette.CARD_STOCK)
 	var result := ClayBuilder.new()
-	result.add_box(Transform3D.IDENTITY, Vector3.ONE * HALF, body, 0.72)
+	result.add_bevelled_box(Transform3D.IDENTITY, Vector3.ONE * HALF, BEVEL, body, 0.72)
 	for value: int in FACE_NORMALS:
 		_add_pips(result, value)
 	return result
