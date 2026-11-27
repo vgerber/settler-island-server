@@ -148,6 +148,9 @@ func _inputs() -> void:
 
 func _labels() -> void:
 	theme.set_color("font_color", "Label", Palette.INK)
+	theme.set_color("default_color", "RichTextLabel", Palette.INK)
+	theme.set_font("normal_font", "RichTextLabel", regular)
+	theme.set_font_size("normal_font_size", "RichTextLabel", 18)
 	theme.set_constant("line_spacing", "Label", 2)
 
 
@@ -202,6 +205,61 @@ func _variations() -> void:
 	_label_variation("SmallLabel", regular, 16, Palette.INK)
 	_label_variation("MutedLabel", regular, 20, Palette.INK_MUTED)
 	_label_variation("CreamLabel", regular, 20, Palette.CREAM)
+	_label_variation("CreamCountLabel", bold, 20, Palette.CREAM)
+	_label_variation("DangerLabel", bold, 20, Palette.DANGER)
+	_label_variation("CreamMutedLabel", regular, 20, Palette.CREAM_MUTED)
+	_label_variation("DangerLabelDark", bold, 28, Palette.DANGER_ON_DARK)
+	_label_variation("CardLabel", bold, 18, Palette.INK)
+	_label_variation("CardLabelLight", bold, 18, Palette.CREAM)
+	_label_variation("CardCount", bold, 28, Palette.INK)
+	_label_variation("CardCountLight", bold, 28, Palette.CREAM)
+	_hud_panels()
+	_resource_cards()
+	_build_button()
+
+
+## Panels of the game screen: dark bars on the table, dice, trade card and dialogs.
+func _hud_panels() -> void:
+	for bar in [["TopBarPanel", [12, 4, 12, 4]], ["BottomBarPanel", [12, 8, 12, 8]]]:
+		_variation(bar[0], "PanelContainer")
+		theme.set_stylebox("panel", bar[0], _style_box(Palette.TABLE_PANEL, Palette.TABLE_PANEL_BORDER, 1, 0, bar[1]))
+	_variation("DieFace", "PanelContainer")
+	theme.set_stylebox("panel", "DieFace", _style_box(Palette.CARD_STOCK, Palette.INK, 2, 10, [4, 4, 4, 4], 4, Vector2(0, 2), 0.3))
+	_variation("TradeCard", "PanelContainer")
+	var trade := _style_box(Palette.PARCHMENT, Palette.FOCUS_ON_DARK, 3, 10, [16, 12, 16, 12], 12, Vector2(0, 4), 0.4)
+	theme.set_stylebox("panel", "TradeCard", trade)
+	_variation("DialogPanel", "PanelContainer")
+	theme.set_stylebox("panel", "DialogPanel", _style_box(Palette.PARCHMENT, Palette.BORDER, 2, 12, [20, 18, 20, 18], 16, Vector2(0, 8), 0.45))
+	_variation("PlayerPanelCompact", "PanelContainer")
+	var compact := _style_box(Palette.PARCHMENT, Palette.BORDER, 2, 10, [12, 6, 12, 6], 8, Vector2(0, 4), 0.35)
+	compact.border_width_left = 6
+	theme.set_stylebox("panel", "PlayerPanelCompact", compact)
+	_variation("PlayerPanelCompactCurrent", "PanelContainer")
+	var compact_current := compact.duplicate() as StyleBoxFlat
+	compact_current.border_color = Palette.FOCUS_ON_DARK
+	compact_current.set_border_width_all(2)
+	compact_current.border_width_left = 6
+	theme.set_stylebox("panel", "PlayerPanelCompactCurrent", compact_current)
+
+
+## One card style per resource: the terrain colour with the card border.
+func _resource_cards() -> void:
+	for resource: String in Palette.RESOURCE_COLORS:
+		var name := "ResourceCard" + resource
+		_variation(name, "PanelContainer")
+		theme.set_stylebox("panel", name, _style_box(Palette.RESOURCE_COLORS[resource], Palette.BORDER, 2, 8, [4, 4, 4, 4], 3, Vector2(0, 2), 0.3))
+
+
+## A toggle button that reads as armed when pressed (build mode).
+func _build_button() -> void:
+	_variation("BuildButton", "Button")
+	_button_states("BuildButton", Palette.BUTTON, Palette.BUTTON_HOVER, Palette.ACCENT, Palette.BORDER, Palette.BUTTON_HOVER_BORDER)
+	theme.set_stylebox("disabled", "BuildButton", _style_box(Palette.DISABLED_FILL, Palette.DISABLED_BORDER, 1, 8, [16, 8, 16, 8]))
+	for color_name in ["font_color", "font_hover_color", "font_focus_color"]:
+		theme.set_color(color_name, "BuildButton", Palette.INK)
+	for color_name in ["font_pressed_color", "font_hover_pressed_color"]:
+		theme.set_color(color_name, "BuildButton", Color.WHITE)
+	theme.set_color("font_disabled_color", "BuildButton", Palette.DISABLED_TEXT)
 
 
 func _variation(name: String, base: String) -> void:

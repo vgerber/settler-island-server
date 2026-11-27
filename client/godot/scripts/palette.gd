@@ -41,6 +41,8 @@ const CREAM_MUTED := Color("#BFAE95")
 const BORDER := Color("#8A6A44")
 const ACCENT := Color("#1E6B63")
 const DANGER := Color("#A3332A")
+## Danger text on the dark bars, where DANGER is too dim.
+const DANGER_ON_DARK := Color("#F08A78")
 const FOCUS_ON_DARK := Color("#E8A93A")
 const FOCUS_ON_LIGHT := Color("#8C5A0E")
 const HOT_NUMBER := Color("#B5281F")
