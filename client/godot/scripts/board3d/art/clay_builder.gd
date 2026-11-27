@@ -304,3 +304,45 @@ static func _scaled(color: Color, factor: float) -> Color:
 
 static func _transform_normal(transform: Transform3D, normal: Vector3) -> Vector3:
 	return (transform.basis.inverse().transposed() * normal).normalized()
+
+
+## An upright prism: `outline` is a convex polygon of (x, z) points around the origin, extruded from y = 0 to
+## `height`. Used for chamfered road beds and boat hulls.
+func add_prism(transform: Transform3D, outline: PackedVector2Array, height: float, color: Color, ao_floor := 0.7) -> void:
+	var centre := Vector2.ZERO
+	for corner in outline:
+		centre += corner / outline.size()
+	var faces: Array[PackedVector3Array] = []
+	var outward := PackedVector3Array()
+	var top := PackedVector3Array()
+	var bottom := PackedVector3Array()
+	for index in outline.size():
+		var from := outline[index]
+		var to := outline[(index + 1) % outline.size()]
+		top.append(Vector3(from.x, height, from.y))
+		bottom.append(Vector3(from.x, 0.0, from.y))
+		faces.append(PackedVector3Array([Vector3(from.x, 0.0, from.y), Vector3(to.x, 0.0, to.y), Vector3(to.x, height, to.y), Vector3(from.x, height, from.y)]))
+		var normal := Vector2(to.y - from.y, from.x - to.x).normalized()
+		if normal.dot((from + to) * 0.5 - centre) < 0.0:
+			normal = -normal
+		outward.append(Vector3(normal.x, 0.0, normal.y))
+	faces.append(top)
+	outward.append(Vector3.UP)
+	faces.append(bottom)
+	outward.append(Vector3.DOWN)
+	_add_faces(transform, faces, outward, color, ao_floor)
+
+
+## A four-sided pyramid on y = 0 with its apex at `height` (spires, hip roofs).
+func add_pyramid(transform: Transform3D, half_x: float, half_z: float, height: float, color: Color, ao_floor := 0.8) -> void:
+	var apex := Vector3(0.0, height, 0.0)
+	var corners := [Vector3(-half_x, 0.0, -half_z), Vector3(half_x, 0.0, -half_z), Vector3(half_x, 0.0, half_z), Vector3(-half_x, 0.0, half_z)]
+	var faces: Array[PackedVector3Array] = [PackedVector3Array(corners)]
+	var outward := PackedVector3Array([Vector3.DOWN])
+	for index in 4:
+		var from: Vector3 = corners[index]
+		var to: Vector3 = corners[(index + 1) % 4]
+		faces.append(PackedVector3Array([from, to, apex]))
+		var middle := (from + to) * 0.5
+		outward.append(Vector3(middle.x * height / maxf(half_x, 1e-4) if absf(middle.x) > 1e-5 else 0.0, maxf(half_x, half_z), middle.z * height / maxf(half_z, 1e-4) if absf(middle.z) > 1e-5 else 0.0))
+	_add_faces(transform, faces, outward, color, ao_floor)
