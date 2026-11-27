@@ -25,7 +25,10 @@ func show_lobby(lobby: SiLobbyDetails) -> void:
 	var is_owner := Net.user != null and info.owner.id == Net.user.id
 	var open_seats := lobby.seats.filter(func(occupant: SiSeatOccupant) -> bool: return occupant is SiSeatOccupantOpen)
 	_title_label.text = info.name
-	_info_label.text = "%d points to win%s" % [info.points_to_win, "  -  password protected" if info.has_password else ""]
+	_info_label.text = "%d points to win  -  %s%s" % [
+		info.points_to_win, AwayPolicyText.summary(info.away_policy),
+		"  -  password protected" if info.has_password else "",
+	]
 	if _seat_rows.get_child_count() == 0:
 		_bot_difficulty_option.select(SiDifficulty.VALUES.find(info.bot_difficulty))
 	for row in _seat_rows.get_children():

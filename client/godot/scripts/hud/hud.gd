@@ -88,6 +88,12 @@ func bind(game_state: GameState, seat_names: SeatNames = null) -> void:
 	_refresh()
 
 
+## Takes the seats of a newer `LobbyState`, as players leave and rejoin during the game.
+func show_names(seat_names: SeatNames) -> void:
+	names = seat_names
+	_queue_refresh()
+
+
 func _input(event: InputEvent) -> void:
 	if state == null or not is_visible_in_tree():
 		return
@@ -265,6 +271,9 @@ func _refresh() -> void:
 	_keep_armed_kind_valid()
 	var view := state.view
 	var prompt := HudText.prompt(state, names, _armed)
+	var away := names.away_note()
+	if not away.is_empty() and not state.is_finished():
+		prompt = away if prompt.is_empty() else "%s  |  %s" % [prompt, away]
 	var results_available := state.is_finished() and not _game_over.visible
 	_top_bar.show_state(state, names, prompt, results_available)
 	_players.show_players(view, names)
