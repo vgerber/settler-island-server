@@ -283,6 +283,8 @@ func _resource_cards() -> void:
 ## line in a button barely wider than the name.
 func _dev_card_button() -> void:
 	_variation("DevCardButton", "Button")
+	# 17 px keeps the longest single word ("Monopoly") whole in a 100 px button.
+	theme.set_font_size("font_size", "DevCardButton", 17)
 	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
 		var plate := theme.get_stylebox(state, "Button").duplicate() as StyleBoxFlat
 		plate.content_margin_left = 6

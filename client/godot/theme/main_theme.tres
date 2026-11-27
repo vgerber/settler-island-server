@@ -1336,6 +1336,7 @@ DangerLabelDark/colors/font_color = Color(0.9411765, 0.5411765, 0.47058824, 1)
 DangerLabelDark/font_sizes/font_size = 28
 DangerLabelDark/fonts/font = ExtResource("1_dut6s")
 DevCardButton/base_type = &"Button"
+DevCardButton/font_sizes/font_size = 17
 DevCardButton/styles/disabled = SubResource("StyleBoxFlat_twywa")
 DevCardButton/styles/hover = SubResource("StyleBoxFlat_h6rxs")
 DevCardButton/styles/hover_pressed = SubResource("StyleBoxFlat_kbb3a")
