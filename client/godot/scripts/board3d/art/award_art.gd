@@ -14,7 +14,7 @@ static func road() -> ArrayMesh:
 		var plank := ClayPalette.WOOD_BROWN
 		var top := THICKNESS
 		for row in 3:
-			var shade := [1.0, 0.85, 0.95][row]
+			var shade: float = [1.0, 0.85, 0.95][row]
 			var offset := Vector3(0.0, top + 0.014, (row - 1) * 0.062)
 			result.add_box(Transform3D(Basis.IDENTITY, offset), Vector3(0.15, 0.014, 0.027), ClayPalette.shade(plank, shade * 1.3), 0.8)
 		for side in [-1.0, 1.0]:
