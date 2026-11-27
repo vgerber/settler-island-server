@@ -58,7 +58,7 @@ func _apply_settings() -> void:
 
 
 func _open_settings() -> void:
-	_settings_popup.popup_centered()
+	_settings_popup.open_below(_hud.settings_anchor())
 
 
 ## A refused action shows at once, never queued behind the events being played.

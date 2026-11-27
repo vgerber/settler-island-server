@@ -11,6 +11,8 @@ var _banner := HudUi.label("", &"CreamCountLabel")
 var _prompt := HudUi.label("", &"CreamLabel")
 var _bank_counts: Array[Label] = []
 var _deck_count := HudUi.label("0", &"CreamCountLabel")
+## The settings button; the settings popup opens under it.
+var gear := HudGearButton.new()
 var _results_button := HudUi.button("Results", results_requested.emit, &"GhostButton")
 
 
@@ -28,7 +30,6 @@ func _init() -> void:
 	row.add_child(_bank_row())
 	_results_button.hide()
 	row.add_child(_results_button)
-	var gear := HudGearButton.new()
 	gear.pressed.connect(settings_requested.emit)
 	row.add_child(gear)
 	add_child(row)

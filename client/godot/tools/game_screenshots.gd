@@ -1,5 +1,5 @@
 extends SceneTree
-## Renders the game screen in the five states the HUD design is judged on and saves one PNG each:
+## Renders the game screen in the states the HUD design is judged on and saves one PNG each:
 ## setup placement, own Main turn with build mode armed, a 7 with discard, a player trade offer, game over.
 ## The states derive from the two board fixtures of settler_island_client_generator/tests/godot.rs
 ## (target/tmp/godot-board-fixtures.json); the view is edited, not simulated, so only the look is real.
@@ -29,7 +29,7 @@ func _init() -> void:
 	_fixtures = JSON.parse_string(FileAccess.get_file_as_string(arguments[0]))
 	_output_directory = arguments[1]
 	_suffix = arguments[2] if arguments.size() > 2 else ""
-	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over, _feedback_turn, _feedback_waiting]
+	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over, _feedback_turn, _feedback_waiting, _settings]
 
 
 func _process(_delta: float) -> bool:
@@ -141,6 +141,20 @@ func _feedback_waiting() -> void:
 	message["legal_actions"] = []
 	_show("feedback-waiting", message)
 	(_screen.get_node("%Hud") as Hud).toasts.push("While you were away:\nRolf rolled 3 + 5 = 8", &"info")
+
+
+## The settings popup under the gear button, over an own turn.
+func _settings() -> void:
+	var message := _middle_message()
+	var view: Dictionary = message["view"]
+	view["phase"] = {"type": "Main"}
+	view["current"] = message["seat"]
+	message["legal_actions"] = _build_actions(view, message["seat"])
+	_show("settings", message)
+	# The gear button has its place only after the first layout pass.
+	await process_frame
+	await process_frame
+	_screen.call("_open_settings")
 
 
 func _game_over() -> void:

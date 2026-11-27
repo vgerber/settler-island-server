@@ -29,6 +29,7 @@ func _init() -> void:
 	_panels()
 	_buttons()
 	_inputs()
+	_sliders()
 	_labels()
 	_variations()
 	var error := ResourceSaver.save(theme, THEME_PATH)
@@ -146,6 +147,33 @@ func _inputs() -> void:
 	theme.set_color("font_selected_color", "LineEdit", Palette.INK)
 
 
+## Horizontal sliders (volumes): a dark track, an accent fill up to the value and a round knob 28 units wide.
+func _sliders() -> void:
+	theme.set_stylebox("slider", "HSlider", _style_box(Palette.INK_MUTED, Palette.INK, 1, 5, [0, 4, 0, 4]))
+	theme.set_stylebox("grabber_area", "HSlider", _style_box(Palette.ACCENT, Palette.ACCENT, 0, 5, [0, 4, 0, 4]))
+	theme.set_stylebox("grabber_area_highlight", "HSlider", _style_box(Palette.ACCENT_HOVER, Palette.ACCENT_HOVER, 0, 5, [0, 4, 0, 4]))
+	theme.set_icon("grabber", "HSlider", _knob(Palette.ACCENT))
+	theme.set_icon("grabber_highlight", "HSlider", _knob(Palette.ACCENT_HOVER))
+	theme.set_icon("grabber_disabled", "HSlider", _knob(Palette.DISABLED_TEXT))
+	theme.set_constant("center_grabber", "HSlider", 0)
+	theme.set_constant("grabber_offset", "HSlider", 0)
+
+
+## A round knob with a cream ring, drawn as a radial gradient so the theme needs no image file.
+func _knob(fill: Color) -> GradientTexture2D:
+	var gradient := Gradient.new()
+	gradient.colors = PackedColorArray([fill, fill, Palette.CREAM, Palette.CREAM, Palette.CLEAR])
+	gradient.offsets = PackedFloat32Array([0.0, 0.6, 0.64, 0.92, 0.96])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	texture.width = 28
+	texture.height = 28
+	return texture
+
+
 func _labels() -> void:
 	theme.set_color("font_color", "Label", Palette.INK)
 	theme.set_color("default_color", "RichTextLabel", Palette.INK)
@@ -214,6 +242,7 @@ func _variations() -> void:
 	_label_variation("CardCount", bold, 28, Palette.INK)
 	_label_variation("CardCountLight", bold, 28, Palette.CREAM)
 	_hud_panels()
+	_dev_card_button()
 	_resource_cards()
 	_build_button()
 
@@ -248,6 +277,17 @@ func _resource_cards() -> void:
 		var name := "ResourceCard" + resource
 		_variation(name, "PanelContainer")
 		theme.set_stylebox("panel", name, _style_box(Palette.RESOURCE_COLORS[resource], Palette.BORDER, 2, 8, [4, 4, 4, 4], 3, Vector2(0, 2), 0.3))
+
+
+## The development card buttons of the bottom bar: a Button with narrow side margins, so a card name fits on a
+## line in a button barely wider than the name.
+func _dev_card_button() -> void:
+	_variation("DevCardButton", "Button")
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var plate := theme.get_stylebox(state, "Button").duplicate() as StyleBoxFlat
+		plate.content_margin_left = 6
+		plate.content_margin_right = 6
+		theme.set_stylebox(state, "DevCardButton", plate)
 
 
 ## A toggle button that reads as armed when pressed (build mode).
