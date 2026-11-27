@@ -7,8 +7,8 @@ extends RefCounted
 
 const SQUARE_ROOT_OF_THREE := 1.7320508
 ## How far a port marker sits outside its coast edge, from the edge midpoint.
-const PORT_DISTANCE := 0.62
-const PORT_RADIUS := 0.3
+const PORT_DISTANCE := 0.72
+const PORT_RADIUS := 0.4
 
 var tile_centers: Array[Vector2] = []
 var corner_points: Array[Vector2] = []

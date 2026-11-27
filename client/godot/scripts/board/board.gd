@@ -4,8 +4,6 @@ extends Control
 ## doc/plans/godot-client.md). Reads only its `GameState`, never `Net`. Fits and centres the island
 ## in its own rect and re-fits when the rect changes.
 
-enum TargetKind { CORNER, EDGE, TILE }
-
 const MARGIN := 16.0
 ## Pick radius around a corner or edge target, in hex units.
 const PICK_RADIUS := 0.32
@@ -19,14 +17,37 @@ var origin := Vector2.ZERO
 
 ## Positions in hex units; built from the first view of the game.
 var geometry: BoardGeometry = null
-## The current click targets: `{action: SiAction, kind: TargetKind, point: Vector2}` in hex units.
-var _targets: Array[Dictionary] = []
-var _hovered: Dictionary = {}
+## The click targets shown: the legal board actions of the kinds in `_filter`.
+var _targets: Array[BoardTarget] = []
+var _hovered: BoardTarget = null
+## The action variants whose targets are shown; the HUD narrows it in build mode.
+var _filter: Array[Script] = BoardTarget.all_scripts
+## Seconds since the targets appeared, for their glow.
+var _pulse_time := 0.0
 
 
 func _ready() -> void:
 	resized.connect(_fit)
-	mouse_exited.connect(func() -> void: _set_hovered({}))
+	mouse_exited.connect(func() -> void: _set_hovered(null))
+	set_process(false)
+
+
+## Redraws the target glow while any target is shown.
+func _process(delta: float) -> void:
+	_pulse_time += delta
+	queue_redraw()
+
+
+## Shows only the targets of these action variants, e.g. `[SiActionBuildRoad]` in build mode.
+func set_target_filter(kinds: Array[Script]) -> void:
+	_filter = kinds
+	if geometry != null:
+		_refresh()
+
+
+## The targets currently shown.
+func targets() -> Array[BoardTarget]:
+	return _targets
 
 
 func bind(game_state: GameState) -> void:
@@ -55,7 +76,8 @@ func _refresh() -> void:
 		geometry = BoardGeometry.new(state.view.board)
 		_fit()
 	_collect_targets()
-	_set_hovered(_target_at(get_local_mouse_position()) if is_visible_in_tree() else {})
+	_set_hovered(_target_at(get_local_mouse_position()) if is_visible_in_tree() else null)
+	set_process(not _targets.is_empty())
 	queue_redraw()
 
 
@@ -71,37 +93,36 @@ func _fit() -> void:
 
 func _collect_targets() -> void:
 	_targets.clear()
-	for script: Script in [SiActionPlaceSettlement, SiActionBuildSettlement, SiActionBuildCity]:
+	for script: Script in _filter:
 		for action in state.legal_of(script):
-			_add_target(action, TargetKind.CORNER, geometry.corner_points[action.get("corner")])
-	for script: Script in [SiActionPlaceRoad, SiActionBuildRoad]:
-		for action in state.legal_of(script):
-			_add_target(action, TargetKind.EDGE, geometry.edge_midpoints[action.get("edge")])
-	for action in state.legal_of(SiActionMoveRobber):
-		_add_target(action, TargetKind.TILE, geometry.tile_centers[(action as SiActionMoveRobber).tile])
+			_targets.append(_target_of(action))
 
 
-func _add_target(action: SiAction, kind: TargetKind, point: Vector2) -> void:
-	_targets.append({"action": action, "kind": kind, "point": point})
+func _target_of(action: SiAction) -> BoardTarget:
+	if action is SiActionMoveRobber:
+		return BoardTarget.new(action, BoardTarget.Kind.TILE, geometry.tile_centers[(action as SiActionMoveRobber).tile])
+	if action is SiActionPlaceRoad or action is SiActionBuildRoad:
+		return BoardTarget.new(action, BoardTarget.Kind.EDGE, geometry.edge_midpoints[action.get("edge")])
+	return BoardTarget.new(action, BoardTarget.Kind.CORNER, geometry.corner_points[action.get("corner")])
 
 
-func _target_at(pixel: Vector2) -> Dictionary:
-	var best: Dictionary = {}
+func _target_at(pixel: Vector2) -> BoardTarget:
+	var best: BoardTarget = null
 	var best_distance := INF
 	for target in _targets:
-		var radius := TILE_PICK_RADIUS if target["kind"] == TargetKind.TILE else PICK_RADIUS
-		var distance := pixel.distance_to(to_pixels(target["point"])) / hex_size
+		var radius := TILE_PICK_RADIUS if target.kind == BoardTarget.Kind.TILE else PICK_RADIUS
+		var distance := pixel.distance_to(to_pixels(target.point)) / hex_size
 		if distance <= radius and distance < best_distance:
 			best = target
 			best_distance = distance
 	return best
 
 
-func _set_hovered(target: Dictionary) -> void:
+func _set_hovered(target: BoardTarget) -> void:
 	if target == _hovered:
 		return
 	_hovered = target
-	mouse_default_cursor_shape = Control.CURSOR_ARROW if target.is_empty() else Control.CURSOR_POINTING_HAND
+	mouse_default_cursor_shape = Control.CURSOR_ARROW if target == null else Control.CURSOR_POINTING_HAND
 	queue_redraw()
 
 
@@ -115,10 +136,10 @@ func _gui_input(event: InputEvent) -> void:
 	if button == null or not button.pressed or button.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var target := _target_at(button.position)
-	if target.is_empty():
+	if target == null:
 		return
 	accept_event()
-	state.act(target["action"])
+	state.act(target.action)
 
 
 func _draw() -> void:
@@ -126,9 +147,15 @@ func _draw() -> void:
 		return
 	var painter := BoardPainter.new(self, state.view.board, geometry)
 	painter.draw_sea()
-	painter.draw_ports()
 	painter.draw_tiles()
+	# Piers reach under the tiles' edge, so ports go on top of them.
+	painter.draw_ports()
 	painter.draw_roads()
 	painter.draw_buildings()
 	painter.draw_robber()
-	painter.draw_targets(_targets, _hovered, state.seat)
+	painter.draw_targets(_targets, _hovered, state.seat, _pulse())
+
+
+## Brightness of the target glow, 0.55 to 1.
+func _pulse() -> float:
+	return 0.775 + 0.225 * sin(_pulse_time * TAU * 0.8)

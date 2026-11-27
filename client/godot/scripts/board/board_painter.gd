@@ -9,6 +9,8 @@ const WAVE_SPACING := 0.9
 const WAVE_CLEARANCE := 1.25
 const BOARD_FONT := preload("res://theme/fonts/Bitter-Bold.res")
 ## Upper and lower motif bands of a tile, clear of the chip and the corner pieces.
+## The smallest port label in real pixels (doc/design/visual-style.md).
+const PORT_TEXT_FLOOR := 16.0
 const MOTIF_BANDS: Array[Vector2] = [Vector2(0.0, -0.55), Vector2(0.0, 0.55)]
 
 var _board_control: Board
@@ -96,7 +98,7 @@ func _hood(center: Vector2) -> PackedVector2Array:
 
 ## Highlights every target; the hovered one previews the piece in the own seat colour. `pulse` is the
 ## alpha factor (0.6 to 1.0) of the lantern highlight; `Board` owns the clock.
-func draw_targets(targets: Array[Dictionary], hovered: Dictionary, seat: int, pulse: float = 1.0) -> void:
+func draw_targets(targets: Array[BoardTarget], hovered: BoardTarget, seat: int, pulse: float = 1.0) -> void:
 	for target in targets:
 		_draw_target(target, target == hovered, seat, pulse)
 
@@ -154,15 +156,15 @@ func _draw_motif(tile: SiTile, center: Vector2) -> void:
 	for band_index in MOTIF_BANDS.size():
 		var band := center + MOTIF_BANDS[band_index]
 		match resource:
-			"Wood":
+			SiResource.WOOD:
 				_draw_conifers(band)
-			"Sheep":
+			SiResource.SHEEP:
 				_draw_pasture(band, band_index == 0)
-			"Wheat":
+			SiResource.WHEAT:
 				_draw_sheaves(band)
-			"Clay":
+			SiResource.CLAY:
 				_draw_bricks(band)
-			"Ore":
+			SiResource.ORE:
 				_draw_peaks(band)
 			_:
 				_draw_dunes(band, band_index == 0)
@@ -172,7 +174,7 @@ func _draw_motif(tile: SiTile, center: Vector2) -> void:
 
 
 func _draw_conifers(band: Vector2) -> void:
-	var dark := Palette.resource_pattern_color("Wood")
+	var dark := Palette.resource_pattern_color(SiResource.WOOD)
 	for offset: float in [-0.22, 0.0, 0.22]:
 		var base := band + Vector2(offset, 0.0)
 		_fill(PackedVector2Array([base + Vector2(-0.015, 0.1), base + Vector2(0.015, 0.1),
@@ -189,7 +191,7 @@ func _draw_pasture(band: Vector2, upper: bool) -> void:
 		for offset: float in [-0.22, 0.0, 0.22]:
 			var root := band + Vector2(offset, 0.08)
 			for tip: Vector2 in [Vector2(-0.06, -0.12), Vector2(0.0, -0.16), Vector2(0.06, -0.12)]:
-				_line(root, root + tip, 0.025, Palette.resource_pattern_color("Sheep"))
+				_line(root, root + tip, 0.025, Palette.resource_pattern_color(SiResource.SHEEP))
 		return
 	for offset: float in [-0.15, 0.15]:
 		var body := band + Vector2(offset, 0.0)
@@ -199,7 +201,7 @@ func _draw_pasture(band: Vector2, upper: bool) -> void:
 
 
 func _draw_sheaves(band: Vector2) -> void:
-	var straw := Palette.resource_pattern_color("Wheat")
+	var straw := Palette.resource_pattern_color(SiResource.WHEAT)
 	for offset: float in [-0.22, 0.0, 0.22]:
 		var stalk := band + Vector2(offset, 0.0)
 		_line(stalk + Vector2(0.0, 0.14), stalk + Vector2(0.0, -0.13), 0.025, straw)
@@ -209,7 +211,7 @@ func _draw_sheaves(band: Vector2) -> void:
 
 
 func _draw_bricks(band: Vector2) -> void:
-	var brick := Palette.resource_pattern_color("Clay")
+	var brick := Palette.resource_pattern_color(SiResource.CLAY)
 	for offset: float in [-0.18, 0.0, 0.18]:
 		_fill(_brick(band + Vector2(offset - 0.09, -0.045)), brick)
 		_fill(_brick(band + Vector2(offset, 0.045)), brick)
@@ -228,7 +230,7 @@ func _brick(center: Vector2) -> PackedVector2Array:
 
 
 func _draw_peaks(band: Vector2) -> void:
-	var rock := Palette.resource_pattern_color("Ore")
+	var rock := Palette.resource_pattern_color(SiResource.ORE)
 	for offset: float in [-0.15, 0.15]:
 		var base := band + Vector2(offset, 0.13)
 		var apex := base + Vector2(0.0, -0.28)
@@ -276,11 +278,11 @@ func _draw_port(port: Dictionary) -> void:
 	var specific := port["port"] as SiPortSpecific
 	if specific == null:
 		_ring(marker, BoardGeometry.PORT_RADIUS - 0.015, Palette.INK, 0.03)
-		_text(marker, "3:1", 0.2, Palette.INK)
+		_text(marker, "3:1", 0.3, Palette.INK, PORT_TEXT_FLOOR)
 		return
-	_ring(marker, BoardGeometry.PORT_RADIUS - 0.03, Palette.resource_color(specific.value), 0.06)
-	_text(marker + Vector2(0.0, -0.09), "2:1", 0.16, Palette.INK)
-	ResourceArt.draw_icon(_board_control, specific.value, _to_pixels(marker + Vector2(0.0, 0.09)), _pixels(0.2))
+	_ring(marker, BoardGeometry.PORT_RADIUS - 0.03, Palette.resource_color(specific.value), 0.07)
+	_text(marker + Vector2(0.0, -0.13), "2:1", 0.27, Palette.INK, PORT_TEXT_FLOOR)
+	ResourceArt.draw_icon(_board_control, specific.value, _to_pixels(marker + Vector2(0.0, 0.17)), _pixels(0.27))
 
 
 ## Two planks on cross ties from a coast corner out to the port badge.
@@ -353,15 +355,14 @@ func _draw_city(center: Vector2, seat: int, alpha: float) -> void:
 	_outline(city, _faded(Palette.seat_outline(seat), alpha))
 
 
-func _draw_target(target: Dictionary, hovered: bool, seat: int, pulse: float) -> void:
-	var point: Vector2 = target["point"]
-	match target["kind"]:
-		Board.TargetKind.CORNER:
-			_draw_corner_target(target["action"], point, hovered, seat, pulse)
-		Board.TargetKind.EDGE:
-			_draw_edge_target(target["action"], hovered, seat, pulse)
-		Board.TargetKind.TILE:
-			_draw_tile_target(point, hovered, pulse)
+func _draw_target(target: BoardTarget, hovered: bool, seat: int, pulse: float) -> void:
+	match target.kind:
+		BoardTarget.Kind.CORNER:
+			_draw_corner_target(target.action, target.point, hovered, seat, pulse)
+		BoardTarget.Kind.EDGE:
+			_draw_edge_target(target.action, hovered, seat, pulse)
+		BoardTarget.Kind.TILE:
+			_draw_tile_target(target.point, hovered, pulse)
 
 
 func _draw_corner_target(action: SiAction, point: Vector2, hovered: bool, seat: int, pulse: float) -> void:
@@ -474,9 +475,11 @@ func _faded(color: Color, alpha: float) -> Color:
 	return Color(color, color.a * alpha)
 
 
-## Draws `text` centred on `center`, with a height of `height` hex units.
-func _text(center: Vector2, text: String, height: float, color: Color) -> void:
-	var font_size := maxi(8, int(_pixels(height)))
+## Draws `text` centred on `center`, with a height of `height` hex units, but never under `floor_pixels`
+## real screen pixels (0 for none): small windows shrink the board, not what players must read.
+func _text(center: Vector2, text: String, height: float, color: Color, floor_pixels: float = 0.0) -> void:
+	var scale := _board_control.get_viewport().get_final_transform().get_scale().x
+	var font_size := maxi(8, int(maxf(_pixels(height), floor_pixels / scale)))
 	var width := BOARD_FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	var baseline := _to_pixels(center) + Vector2(-width / 2.0,
 			(BOARD_FONT.get_ascent(font_size) - BOARD_FONT.get_descent(font_size)) / 2.0)
