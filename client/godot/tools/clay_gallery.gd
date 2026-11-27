@@ -53,6 +53,8 @@ func _initialize() -> void:
 		_shot("house_close", Vector3(-1.65, 0.15, 4.25), 1.8, deg_to_rad(45.0)),
 		_shot("dice_close", Vector3(-7.65, 0.1, 3.25), 1.6, deg_to_rad(55.0)),
 		_shot("chips_close", Vector3(1.8, 0.1, 0.0), 3.4, deg_to_rad(52.0)),
+		_shot("robber_close", Vector3(0.0, 0.2, 0.0), 1.1, deg_to_rad(52.0)),
+		_shot("pier_close", Vector3(3.05, 0.1, 0.0), 2.0, deg_to_rad(52.0)),
 	]
 
 
@@ -217,7 +219,7 @@ func _add_ports() -> void:
 func _add_port(q: int, r: int, degrees: float, ratio: int, resource: String) -> void:
 	var angle := deg_to_rad(degrees)
 	var edge := _tile_position(q, r) + Vector3(cos(angle), 0.0, sin(angle)) * (HexSlabArt.APOTHEM)
-	_add_mesh(PortArt.pier(), ClayMaterials.terrain(), edge, atan2(-sin(angle), cos(angle)))
+	_add_mesh(PortArt.pier(resource), ClayMaterials.terrain(), edge, atan2(-sin(angle), cos(angle)))
 	var tip := edge + Vector3(cos(angle), 0.0, sin(angle)) * (PortArt.PIER_LENGTH - 0.08)
 	_add_mesh(PortArt.flag(ratio, resource), ClayMaterials.terrain(), tip + Vector3(0.0, PortArt.DECK_HEIGHT, 0.0))
 

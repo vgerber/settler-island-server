@@ -55,11 +55,12 @@ static func port(marker: Vector2, coast_corners: Array[Vector2], port_kind: SiPo
 	var outward := (marker - edge).normalized()
 	var node := Node3D.new()
 	node.position = _world(edge, 0.0)
-	var pier := _mesh(PortArt.pier(), ClayMaterials.terrain(), Vector3.ZERO)
+	var specific := port_kind as SiPortSpecific
+	var resource := "" if specific == null else str(specific.value)
+	var pier := _mesh(PortArt.pier(resource), ClayMaterials.terrain(), Vector3.ZERO)
 	pier.rotation.y = atan2(-outward.y, outward.x)
 	node.add_child(pier)
-	var specific := port_kind as SiPortSpecific
-	var flag := PortArt.flag(3 if specific == null else 2, "" if specific == null else str(specific.value))
+	var flag := PortArt.flag(3 if specific == null else 2, resource)
 	var tip := outward * (PortArt.PIER_LENGTH - 0.08)
 	# The flag is never rotated, so its text reads for the camera.
 	node.add_child(_mesh(flag, ClayMaterials.terrain(), Vector3(tip.x, PortArt.DECK_HEIGHT, tip.y)))
