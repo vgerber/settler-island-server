@@ -43,7 +43,7 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Security 2B is on branch worktree-agent-a9e15d8dcebfc7e98 (1461622): merge after 1B, then switch lib.rs
   client_address to rate_limit::forwarded_client(peer, x-forwarded-for, trusted proxies or &[] when
   trust_forwarded_for is off); the gate fails on dead code until then.
-- 2D follow-up: test that a request after the JWKS failure back-off expires fetches again (make the back-off a constructor parameter so a test can use a short window).
+- 2D follow-up: done 2026-11-27 (back-off is `KeycloakConfig.jwks_failure_backoff`, expiry tested).
 - Security L10 restore tail: restore loads the full action log because RunningGame keeps the whole GameRecord for GetRecord; a tail-only restore needs the lobby to load the record prefix lazily from the store (0.31 s for 100 games today, low priority).
 
 ## Status 2026-11-27
@@ -52,3 +52,7 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Open: wave 4 needs user decisions (turn clock, opaque user ids, retention of finished games); wave D is the NAS
   deployment; then the HUD layout step (landed) with the folded-in review items.
 - Wave 4 done 2026-11-27: away policy per lobby (4a), opaque public ids (4b); games are kept forever (4c, no work).
+
+- Follow-ups 2026-11-27: generator seen-set dedup and `DuplicateFile` test done; 2i, 2c and the `request_id` guard were
+  already done. Open: stored games carry no format version (the store keeps only actions); a version column is needed
+  before the action format changes again. Restore tail stays low priority.
