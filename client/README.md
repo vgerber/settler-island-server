@@ -10,6 +10,9 @@ never edit them by hand. The rest of `godot/` is the hand-written game project (
 - `godot/tools/screenshot.gd`: walks the screens against a running server and saves a PNG of each.
 - `godot/tools/board_screenshot.gd`: renders the game screen for the board fixtures that the Godot board test
   writes to `target/tmp/godot-board-fixtures.json` and saves a PNG of each.
+- `godot/tools/game_screenshots.gd`: renders the game screen in five states (setup placement, own Main turn with build
+  mode armed, a 7 with discard, a trade offer, game over) from the same fixtures; run it at `--resolution 1600x900` and
+  `1280x720` with `--position 200,200`.
 - `godot_tests/`: headless test scripts used by `settler_island_client_generator/tests/godot.rs`.
 
 ## Game project
