@@ -150,7 +150,8 @@ case "$mode" in
     fi
     export SETTLER_TEST_DATABASE_URL="${SETTLER_TEST_DATABASE_URL:-postgres://settler:settler@127.0.0.1:6436/settler_island}"
     database_status=0
-    "$0" --force full || database_status=$?
+    # fd 9 holds the lock; children must not inherit it, or a daemon they start (sccache) keeps the lock for minutes.
+    "$0" --force full 9>&- || database_status=$?
     if [ "$started_database" -eq 1 ]; then docker compose stop db >/dev/null 2>&1; fi
     exit "$database_status"
     ;;
