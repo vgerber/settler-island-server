@@ -32,21 +32,18 @@ grow_vertical = 2
 mouse_filter = 2
 
 [node name="Toast" type="PanelContainer" parent="."]
-theme_type_variation = &"Toast"
+theme_type_variation = &"ErrorToast"
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
-anchors_preset = 7
+anchors_preset = 5
 anchor_left = 0.5
-anchor_top = 1.0
 anchor_right = 0.5
-anchor_bottom = 1.0
 offset_left = -300.0
-offset_top = -90.0
+offset_top = 60.0
 offset_right = 300.0
-offset_bottom = -30.0
+offset_bottom = 120.0
 grow_horizontal = 2
-grow_vertical = 0
 mouse_filter = 2
 
 [node name="ToastLabel" type="Label" parent="Toast"]

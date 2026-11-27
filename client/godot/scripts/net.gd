@@ -12,6 +12,8 @@ var client: SiClient = SiClient.new()
 var user: SiUser = null
 var server_http: String = ""
 var user_name: String = ""
+## The latest `LobbyState`; the game view has seats only, so the game screen takes player names from it.
+var lobby: SiLobbyDetails = null
 
 var _session: SiSessionClient = SiSessionClient.new()
 var _token: String = ""
@@ -33,6 +35,8 @@ func _ready() -> void:
 	client.connected.connect(_on_connected)
 	client.disconnected.connect(_on_disconnected)
 	client.welcome_received.connect(_on_welcome)
+	client.lobby_state_received.connect(func(message: SiServerMessageLobbyState) -> void: lobby = message.lobby)
+	client.lobby_left_received.connect(func(_message: SiServerMessageLobbyLeft) -> void: lobby = null)
 	client.error_received.connect(_on_error)
 
 
