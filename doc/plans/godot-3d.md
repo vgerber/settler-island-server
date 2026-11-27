@@ -7,6 +7,7 @@ windowed run; the 2D board stays as fallback and for tests).
 ## User decisions 2026-11-27
 - Look: soft clay miniature (Direction C), original shapes only. All assets are low poly: flat-shaded facets, few
   triangles (spheres and cylinders about 6-8 segments, one chamfer on hex edges), clay colours and matte material.
+  The sea is a grid of low-poly water hex tiles on the land lattice (piers on the coastal ring), not a smooth sheet.
 - Renderer: switchable. The game is built for Compatibility with faked depth (vertex ambient occlusion baked into
   the procedural meshes, soft blob shadows under pieces, matte clay shader with rim light); a desktop quality setting
   `High` runs Forward+ and adds SSAO, glow and soft shadows on top. Web always uses Compatibility.
