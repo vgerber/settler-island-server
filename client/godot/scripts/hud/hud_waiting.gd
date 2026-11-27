@@ -12,8 +12,12 @@ var _timer: Timer = null
 
 func _init() -> void:
 	theme_type_variation = &"CreamMutedLabel"
-	clip_text = true
-	custom_minimum_size = Vector2(0.0, 22.0)
+	# Two wrapped lines at most, then an ellipsis; the height is fixed so the dice never move between states.
+	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	max_lines_visible = 2
+	text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	custom_minimum_size = Vector2(0.0, 54.0)
+	vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 
@@ -21,7 +25,7 @@ func _init() -> void:
 func show_waiting(view: SiPlayerView, names: SeatNames, animated: bool) -> void:
 	_base = line(view, names)
 	var own_move := _base.begins_with("Your move")
-	theme_type_variation = &"SubheadingLabelDark" if own_move else &"CreamMutedLabel"
+	theme_type_variation = &"CreamCountLabel" if own_move else &"CreamMutedLabel"
 	if _timer == null and animated:
 		_start_dots()
 	_dots = 0

@@ -75,7 +75,7 @@ func _init() -> void:
 	_game_over.visibility_changed.connect(_queue_refresh)
 	_game_over.leave_requested.connect(leave_requested.emit)
 	board_slot.add_child(_game_over)
-	board_slot.add_child(_turn_banner)
+	add_child(_turn_banner)
 	board_slot.add_child(toasts)
 	_connect_actions()
 
@@ -83,6 +83,11 @@ func _init() -> void:
 func _ready() -> void:
 	get_window().size_changed.connect(_apply_compact)
 	_apply_compact()
+
+
+## The gear button's rect in this control's coordinates, where the settings popup opens.
+func settings_anchor() -> Rect2:
+	return _top_bar.gear.get_global_rect()
 
 
 ## Starts showing `game_state`. `seat_names` falls back to "Seat N" when no lobby is known.

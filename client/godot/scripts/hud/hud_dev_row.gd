@@ -14,9 +14,9 @@ static var play_actions := {
 	SiDevelopmentCard.MONOPOLY: SiActionPlayMonopoly,
 }
 
-## Most kinds shown side by side; five would push the bottom bar wider than the 1600 unit screen.
-const MAX_KINDS_SHOWN := 4
-const BUTTON_SIZE := Vector2(76.0, 100.0)
+## Most kinds shown side by side; four would push the bottom bar wider than the 1600 unit screen.
+const MAX_KINDS_SHOWN := 3
+const BUTTON_SIZE := Vector2(100.0, 100.0)
 
 var _buttons: Dictionary[String, Button] = {}
 var _cards_box := HudUi.hbox(6)
@@ -32,7 +32,7 @@ var _kinds := 0
 func _init() -> void:
 	add_theme_constant_override("separation", 6)
 	for card in SiDevelopmentCard.VALUES:
-		var button := HudUi.button("", _request.bind(card))
+		var button := HudUi.button("", _request.bind(card), &"DevCardButton")
 		button.custom_minimum_size = BUTTON_SIZE
 		# Wrapping keeps a long name ("Victory point") from widening the button and with it the bottom bar.
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

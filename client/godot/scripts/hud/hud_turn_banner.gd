@@ -1,23 +1,24 @@
 class_name HudTurnBanner
 extends PanelContainer
-## "Your turn": slides in from the top edge of the board, holds and leaves again. Ignores the mouse.
+## "Your turn": slides down over the top bar (never into the board, whose ports sit just below it), holds and
+## leaves again. Ignores the mouse.
 
 const SLIDE_SECONDS := 0.2
 const HOLD_SECONDS := 0.9
-const REST_TOP := 12.0
+const REST_TOP := 2.0
 
-var _label := HudUi.label("", &"HeadingLabel")
+var _label := HudUi.label("", &"SubheadingLabelDark")
 
 
 func _init() -> void:
-	theme_type_variation = &"SeatPanel"
+	theme_type_variation = &"Toast"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_label)
 	hide()
 
 
-## Shows `text` over the top centre of the parent; `animated` false only shows it for the hold time.
+## Shows `text` over the top centre of the parent (the HUD); `animated` false only shows it for the hold time.
 func announce(text: String, animated: bool) -> void:
 	_label.text = text
 	reset_size()
