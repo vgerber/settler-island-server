@@ -907,7 +907,8 @@ fn board3d_motion_cuts_show_their_symptom() {
     let Some(godot) = godot_binary() else {
         return;
     };
-    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-motion-cuts-fixtures.json");
+    let fixtures_path =
+        Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-motion-cuts-fixtures.json");
     fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
 
     run_script(
