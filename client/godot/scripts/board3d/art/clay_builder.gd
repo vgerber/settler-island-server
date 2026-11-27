@@ -401,3 +401,18 @@ static func _bevel_quad(axis: int, height: float, first: int, first_half: float,
 		point[second] = corner[1] * second_half
 		points.append(point)
 	return points
+
+## Loose triangles, `points` three per triangle, each with its own entry in `colors`. Faces are turned to face
+## upward (terrain tops, where the facets carry the shade variation).
+func add_facets(points: PackedVector3Array, colors: PackedColorArray) -> void:
+	for triangle in colors.size():
+		var corners: Array[Vector3] = [points[triangle * 3], points[triangle * 3 + 1], points[triangle * 3 + 2]]
+		var normal := (corners[1] - corners[0]).cross(corners[2] - corners[0]).normalized()
+		if normal.y < 0.0:
+			normal = -normal
+		var offset := _vertices.size()
+		for corner in corners:
+			_vertices.append(corner)
+			_normals.append(normal)
+			_colors.append(colors[triangle])
+		_add_triangle(offset, offset + 1, offset + 2)
