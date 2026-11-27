@@ -15,9 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # rustup installs the version and components from rust-toolchain.toml on the first cargo call.
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -46,7 +44,6 @@ jobs:
       SETTLER_TEST_DATABASE_URL: postgres://settler:settler@127.0.0.1:5432/settler_island
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p settler_island_server
       # The committed .sqlx data must match the queries and migrations; sqlx-cli matches sqlx in Cargo.lock.
