@@ -1,10 +1,16 @@
 extends SceneTree
 ## Walks the main scene through its screens against a running server and saves one PNG per screen:
 ## connect, lobby browser, lobby room, game. Needs a window (not --headless); quits by itself.
-## Usage: godot --path client/godot --position 200,200 -s tools/screenshot.gd -- http://127.0.0.1:<port> <output directory>
+## With a third argument "live" it then plays the human seat (first legal action, preferring progress over ending
+## the turn) until the log has several lines and dice were rolled, and saves live-<width>x<height>.png.
+## Usage: godot --path client/godot --position 200,200 -s tools/screenshot.gd -- http://127.0.0.1:<port> <output directory> [live]
 
 const SETTLE_FRAMES := 20
 const TIMEOUT_MILLISECONDS := 30000
+const LIVE_TIMEOUT_MILLISECONDS := 120000
+const LIVE_MIN_UPDATES := 25
+## First match wins; ending the turn is the last resort so the game moves on.
+const LIVE_PREFERENCE := ["SiActionRollDice", "SiActionPlaceSettlement", "SiActionPlaceRoad", "SiActionMoveRobber", "SiActionDiscard", "SiActionEndTurn"]
 
 var _server_http := ""
 var _output_directory := ""
@@ -17,6 +23,8 @@ var _wait_frames := -1
 var _after_capture: Callable
 var _capture_name := ""
 var _exit_code := 0
+var _live := false
+var _live_updates := 0
 
 
 func _init() -> void:
@@ -28,7 +36,8 @@ func _init() -> void:
 		return
 	_server_http = arguments[0]
 	_output_directory = arguments[1]
-	_deadline = Time.get_ticks_msec() + TIMEOUT_MILLISECONDS
+	_live = arguments.size() > 2 and arguments[2] == "live"
+	_deadline = Time.get_ticks_msec() + (LIVE_TIMEOUT_MILLISECONDS if _live else TIMEOUT_MILLISECONDS)
 
 
 func _process(_delta: float) -> bool:
@@ -91,8 +100,57 @@ func _add_last_bot() -> void:
 		if not message.lobby.info.started:
 			_client.send_start_game()
 	)
-	_client.game_started_received.connect(func(_message: SiServerMessageGameStarted) -> void: _capture_after_settling("game", _quit))
+	_client.game_started_received.connect(func(_message: SiServerMessageGameStarted) -> void: _capture_after_settling("game", _play_live if _live else _quit))
 	_client.send_add_bot(SiDifficulty.HEURISTIC)
+
+
+func _play_live() -> void:
+	_client.game_update_received.connect(func(_message: SiServerMessageGameUpdate) -> void: _live_updates += 1)
+	_client.game_update_received.connect(_live_step)
+	_live_step(null)
+
+
+## Acts when it is the human's turn; deferred one frame so the game screen has taken the update first.
+func _live_step(_message: Variant) -> void:
+	await process_frame
+	var screen: Node = _main.get("_screen")
+	var state: GameState = screen.get("state")
+	if state == null:
+		return
+	if _live_ready(screen):
+		_live_ready_capture()
+		return
+	if state.legal_actions.is_empty():
+		return
+	for script_name in LIVE_PREFERENCE:
+		for action in state.legal_actions:
+			if (action.get_script() as Script).get_global_name() == script_name:
+				state.act(action)
+				return
+	state.act(state.legal_actions[0])
+
+
+func _live_ready(screen: Node) -> bool:
+	var hud: Node = screen.get("_hud")
+	var log_label: RichTextLabel = hud.get("_log")
+	return _live_updates >= LIVE_MIN_UPDATES and log_label.get_paragraph_count() >= 6 and not (hud.get("_last_dice") as Array).is_empty()
+
+
+func _live_ready_capture() -> void:
+	if _capture_name.begins_with("live"):
+		return
+	# Under canvas_items stretching the viewport reports the design size, not the window's pixels.
+	var size := DisplayServer.window_get_size()
+	_open_log_if_collapsed()
+	_capture_after_settling("live-%dx%d" % [size.x, size.y], _quit)
+
+
+## The compact layout keeps the log behind a "Log" button; open it so the capture shows the log text.
+func _open_log_if_collapsed() -> void:
+	var hud: Node = _main.get("_screen").get("_hud")
+	var buttons := hud.find_children("*", "Button", true, false).filter(func(node: Node) -> bool: return (node as Button).text.begins_with("Log"))
+	if not buttons.is_empty() and (buttons[0] as Button).is_visible_in_tree():
+		(buttons[0] as Button).pressed.emit()
 
 
 func _quit() -> void:
