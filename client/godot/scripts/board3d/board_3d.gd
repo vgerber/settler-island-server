@@ -54,6 +54,7 @@ func _process(delta: float) -> void:
 	_pulse_time += delta
 	var pulse := 0.775 + 0.225 * sin(_pulse_time * TAU * 0.8) if player.animated() else STILL_PULSE
 	markers.set_pulse(pulse)
+	scene.set_pulse(pulse)
 
 
 func bind(event_player: EventPlayer) -> void:
@@ -88,10 +89,11 @@ func _sync() -> void:
 	scene.build(board, geometry)
 	scene.sync(board, geometry)
 	motion.commit(geometry)
+	scene.sync_stands(player.shown_view, geometry)
 	_collect_targets()
 	markers.show_targets(_targets, board, geometry)
 	_update_hover()
-	set_process(not _targets.is_empty())
+	set_process(not _targets.is_empty() or scene.has_pulsing_stands())
 
 
 func _on_resized() -> void:

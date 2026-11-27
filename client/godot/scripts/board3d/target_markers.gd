@@ -85,14 +85,14 @@ func _edge_direction(target: BoardTarget) -> Vector2:
 func _ghost_for(target: BoardTarget, seat: int) -> Node3D:
 	match target.kind:
 		BoardTarget.Kind.TILE:
-			return PlaceholderArt.robber(target.point)
+			return BoardArt.robber(target.point, false)
 		BoardTarget.Kind.EDGE:
 			var direction := _edge_direction(target)
-			return PlaceholderArt.road(seat, target.point - direction / 2.0, target.point + direction / 2.0)
+			return BoardArt.road(seat, target.point - direction / 2.0, target.point + direction / 2.0, false)
 		_:
 			if target.action is SiActionBuildCity:
-				return PlaceholderArt.city(seat, target.point)
-			return PlaceholderArt.settlement(seat, target.point)
+				return BoardArt.city(seat, target.point, false)
+			return BoardArt.settlement(seat, target.point, false)
 
 
 func _make_translucent(node: Node) -> void:

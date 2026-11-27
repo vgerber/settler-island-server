@@ -3,10 +3,14 @@ extends SceneTree
 ## setup placement, own Main turn with build mode armed, a 7 with discard, a player trade offer, game over.
 ## The states derive from the two board fixtures of settler_island_client_generator/tests/godot.rs
 ## (target/tmp/godot-board-fixtures.json); the view is edited, not simulated, so only the look is real.
+## With a fifth argument `fps` it renders only the build state and prints the average frame rate over
+## `FPS_SECONDS` after a warm-up of `FPS_WARMUP_FRAMES`, instead of saving pictures.
 ## Needs a window. Quits by itself.
-## Usage: godot --path client/godot --resolution 1600x900 --position 200,200 -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix] [board view 2d|3d]
+## Usage: godot --path client/godot --resolution 1600x900 --position 200,200 -s tools/game_screenshots.gd -- <fixtures.json> <output directory> [suffix] [board view 2d|3d] [fps]
 
 const SETTLE_FRAMES := 12
+const FPS_WARMUP_FRAMES := 120
+const FPS_SECONDS := 5.0
 const OWN_SEAT_NAMES := ["Mira", "Rolf", "Kai", "Lin"]
 
 var _fixtures: Dictionary = {}
@@ -19,6 +23,10 @@ var _screen: Control = null
 var _name := ""
 var _frames_left := -1
 var _exit_code := 0
+var _fps_frames := -1
+var _fps_time := 0.0
+var _fps_sum := 0.0
+var _fps_count := 0
 
 
 func _init() -> void:
@@ -31,10 +39,15 @@ func _init() -> void:
 	_output_directory = arguments[1]
 	_suffix = arguments[2] if arguments.size() > 2 else ""
 	_board_view = arguments[3] if arguments.size() > 3 else "2d"
+	if arguments.size() > 4 and arguments[4] == "fps":
+		_steps = [_fps]
+		return
 	_steps = [_setup, _build, _dev_cards, _log_popup, _discard, _trade, _game_over, _feedback_turn, _feedback_waiting, _settings]
 
 
-func _process(_delta: float) -> bool:
+func _process(delta: float) -> bool:
+	if _fps_frames >= 0:
+		return _measure_fps(delta)
 	if _frames_left > 0:
 		_frames_left -= 1
 		return false
@@ -45,6 +58,28 @@ func _process(_delta: float) -> bool:
 		return true
 	_steps.pop_front().call()
 	return false
+
+
+## Vsync is off so the number shows the headroom, not the monitor rate.
+func _fps() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	_build()
+	_fps_frames = 0
+
+
+func _measure_fps(delta: float) -> bool:
+	_fps_frames += 1
+	if _fps_frames <= FPS_WARMUP_FRAMES:
+		return false
+	_fps_time += delta
+	_fps_sum += Engine.get_frames_per_second()
+	_fps_count += 1
+	if _fps_time < FPS_SECONDS:
+		return false
+	var average := float(_fps_count) / _fps_time
+	print("FPS %s %s board=%s frames=%d average=%.1f engine_average=%.1f" % [RenderingServer.get_current_rendering_method(), root.get_visible_rect().size, _board_view, _fps_count, average, _fps_sum / _fps_count])
+	quit(0)
+	return true
 
 
 func _setup() -> void:

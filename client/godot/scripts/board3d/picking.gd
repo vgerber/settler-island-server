@@ -43,4 +43,4 @@ func radius_pixels(target: BoardTarget) -> float:
 
 
 static func surface_point(point: Vector2) -> Vector3:
-	return Vector3(point.x, PlaceholderArt.SURFACE_HEIGHT, point.y)
+	return Vector3(point.x, BoardArt.SURFACE_HEIGHT, point.y)

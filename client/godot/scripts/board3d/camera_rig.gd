@@ -14,6 +14,8 @@ const MAX_ZOOM := 1.5
 const MAX_PAN := 2.5
 const MARGIN := 16.0
 const FIT_STEPS := 14
+## The seats whose stands the default view keeps in sight (a game has at most four).
+const SEAT_STANDS := [0, 1, 2, 3]
 const MAX_FIT_DISTANCE := 200.0
 const ORBIT_DEGREES_PER_PIXEL := 0.3
 const RESET_SECONDS := 0.25
@@ -43,7 +45,7 @@ func _ready() -> void:
 	_apply()
 
 
-## Frames the island of `geometry`: the points that must stay in view are its corners at table and piece height
+## Frames the island of `geometry`: the points that must stay in view are its corners at table and piece height, the seat stands
 ## and the port badges.
 func frame(geometry: BoardGeometry) -> void:
 	_cloud.clear()
@@ -53,6 +55,13 @@ func frame(geometry: BoardGeometry) -> void:
 		var marker: Vector2 = port["marker"]
 		for corner in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
 			_add_column(marker + corner * BoardGeometry.PORT_RADIUS)
+	for seat in SEAT_STANDS:
+		var placement := BoardArt.stand_placement(seat, geometry.bounds)
+		var position: Vector3 = placement["position"]
+		var turn := Basis(Vector3.UP, placement["yaw"])
+		for corner: Vector3 in [Vector3(1, 0, 1), Vector3(-1, 0, 1), Vector3(1, 0, -1), Vector3(-1, 0, -1)]:
+			var offset: Vector3 = turn * (corner * Vector3(TableArt.STAND_HALF_WIDTH, 0.0, TableArt.STAND_HALF_DEPTH))
+			_add_column(Vector2(position.x + offset.x, position.z + offset.z))
 	var center := geometry.bounds.get_center()
 	_center = Vector3(center.x, 0.0, center.y)
 	_refit()
@@ -150,7 +159,7 @@ func _set_view(new_yaw: float, new_pitch: float, new_zoom: float, new_pan: Vecto
 
 func _add_column(point: Vector2) -> void:
 	_cloud.append(Vector3(point.x, 0.0, point.y))
-	_cloud.append(Vector3(point.x, PlaceholderArt.PIECE_HEIGHT, point.y))
+	_cloud.append(Vector3(point.x, BoardArt.PIECE_HEIGHT, point.y))
 
 
 func _refit() -> void:

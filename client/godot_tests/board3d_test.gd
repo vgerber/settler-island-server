@@ -30,7 +30,7 @@ func _process(_delta: float) -> bool:
 	if _fixtures.is_empty():
 		return _finish("missing fixtures")
 	var failure := _pick_failure()
-	for check: Callable in [_framing_failure, _filter_failure, _sync_failure, _drag_failure]:
+	for check: Callable in [_framing_failure, _filter_failure, _sync_failure, _stands_failure, _drag_failure]:
 		if failure.is_empty():
 			failure = check.call()
 	return _finish(failure)
@@ -99,7 +99,7 @@ func _framing_failure() -> String:
 			return "the island does not fit the slot %s" % slot
 		var window := Rect2(Vector2.ZERO, slot)
 		for corner in board.geometry.corner_points:
-			for height in [0.0, PlaceholderArt.PIECE_HEIGHT]:
+			for height in [0.0, BoardArt.PIECE_HEIGHT]:
 				var pixel := rig.project(Vector3(corner.x, height, corner.y))
 				if not window.has_point(pixel):
 					return "corner %s at height %s is at %s outside slot %s" % [corner, height, pixel, slot]
@@ -146,6 +146,17 @@ func _sync_failure() -> String:
 	board.player.committed.emit()
 	if board.scene.piece_count() != expected or _count_nodes(board) != nodes:
 		return "committing the same view again changed %d nodes to %d" % [nodes, _count_nodes(board)]
+	return ""
+
+
+## The stand of the seat on the move is raised above the others, and every seat has one.
+func _stands_failure() -> String:
+	var board := _bound_board(_fixtures["middle"], SLOT_SIZES[0])[0] as Board3D
+	var view := board.player.shown_view
+	for seat in view.players.size():
+		var raised := is_equal_approx(board.scene.stand_height(seat), BoardScene.STAND_RAISE)
+		if raised != (seat == view.current):
+			return "stand of seat %d raised=%s with seat %d on the move" % [seat, raised, view.current]
 	return ""
 
 

@@ -45,11 +45,11 @@ func seat_point(seat: int) -> Vector3:
 	return _scene.rest_point(geometry.bounds.get_center() + offset)
 
 
-## The dice tray centre: the near right corner of the table, where the hex island leaves the sea free and the
+## The dice tray centre, on the top of the water hexes in the near right corner of the table, where the hex island leaves the sea free and the
 ## camera still sees it (the island fills the slot, so the very edge below it would be cut off).
 func tray_center() -> Vector3:
 	var corner := geometry.bounds.end - Vector2(TRAY_INSET.x, TRAY_INSET.y)
-	return _scene.rest_point(corner)
+	return Vector3(corner.x, WaterArt.HEIGHT, corner.y)
 
 
 ## The bank deck, at the far left corner of the table.
