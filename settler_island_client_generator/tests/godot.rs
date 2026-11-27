@@ -1044,6 +1044,15 @@ fn settings_keep_table_and_graphics_and_write_the_renderer_override() {
 }
 
 #[test]
+fn clay_kit_builds_every_piece_and_dice_faces_show_their_value() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+
+    run_script(&godot, Project::Game, "clay_kit_test.gd", "", "CLAY_KIT_OK");
+}
+
+#[test]
 fn net_goes_online_after_a_failed_start() {
     let Some(godot) = godot_binary() else {
         return;
