@@ -1,6 +1,6 @@
 //! Reads the JSON Schema that schemars emits into a small type model the GDScript renderer walks.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde_json::{Map, Value};
 
@@ -394,7 +394,8 @@ fn read_fields(
         .filter(|name| !required.contains(name))
         .collect();
     optional.sort();
-    names.dedup();
+    let mut seen = HashSet::new();
+    names.retain(|name| seen.insert(*name));
     names.extend(optional);
     names
         .into_iter()
@@ -559,6 +560,23 @@ mod tests {
                 target: TypeRef::Array(Box::new(TypeRef::Integer))
             })
         );
+    }
+
+    #[test]
+    fn a_field_listed_twice_as_required_is_read_once_at_its_first_place() {
+        let model = model(json!({
+            "Offer": {
+                "type": "object",
+                "properties": {"seat": {"type": "integer"}, "to": {"type": "integer"}},
+                "required": ["seat", "to", "seat"],
+            },
+        }));
+        let Some(Definition::Struct { fields }) = model.get("Offer") else {
+            panic!("expected a struct");
+        };
+        let names: Vec<&str> = fields.iter().map(|field| field.name.as_str()).collect();
+
+        assert_eq!(names, vec!["seat", "to"]);
     }
 
     #[test]

@@ -1061,4 +1061,23 @@ mod tests {
             Err(RenderError::MissingRequestId("Ping".to_string()))
         );
     }
+
+    #[test]
+    fn two_definitions_mapping_to_one_file_are_an_error() {
+        let message = |tag: &str| json!({"type": "object", "properties": {"type": {"type": "string", "const": tag}, "request_id": {"type": "integer"}}, "required": ["type", "request_id"]});
+        let model = Model::from_schema(&json!({"$defs": {
+            "Client": {"type": "object", "properties": {"seat": {"type": "integer"}}, "required": ["seat"]},
+            "ClientMessage": {"oneOf": [message("Ping"), message("PingTwo")]},
+            "ServerMessage": {"oneOf": [
+                {"type": "object", "properties": {"type": {"type": "string", "const": "Pong"}, "value": {"type": "integer"}}, "required": ["type", "value"]},
+                {"type": "object", "properties": {"type": {"type": "string", "const": "PongTwo"}}, "required": ["type"]},
+            ]},
+        }}))
+        .unwrap();
+
+        assert_eq!(
+            render(&model),
+            Err(RenderError::DuplicateFile("SiClient.gd".to_string()))
+        );
+    }
 }
