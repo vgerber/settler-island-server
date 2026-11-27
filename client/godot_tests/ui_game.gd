@@ -6,7 +6,8 @@ extends SceneTree
 ## It never calls `GameState.act` or `Net`; it only reads them to know when it is stuck.
 ## Fails on a dead end (legal actions for the own seat but nothing to click), a click that does not
 ## reach its control, a button off screen, or a game that does not finish in time.
-## Usage: godot --headless --path <copy of client/godot> -s ui_game.gd -- http://127.0.0.1:<port>
+## Usage: godot --headless --path <copy of client/godot> -s ui_game.gd -- http://127.0.0.1:<port> [2d|3d]
+## The optional second argument picks the board view (default 2d); the game must play through either.
 
 const TIMEOUT_MILLISECONDS := 100000
 ## Below the server's 20 messages per second, as a quick player would click.
@@ -20,6 +21,7 @@ const SEED := 1
 enum Stage { CONNECT, BROWSER, ROOM, GAME, LEAVING, DONE }
 
 var _server_http := ""
+var _board_view := "2d"
 var _deadline := 0
 var _next_step := 0
 var _main: Control = null
@@ -39,6 +41,8 @@ var _recent: PackedStringArray = []
 func _init() -> void:
 	_random.seed = SEED
 	_server_http = SiTestSupport.argument(0)
+	if not SiTestSupport.argument(1).is_empty():
+		_board_view = SiTestSupport.argument(1)
 	if _server_http.is_empty():
 		_finish(1, "UI_GAME_FAILED missing server url")
 		return
@@ -59,6 +63,7 @@ func _process(_delta: float) -> bool:
 		root.get_node("Net").get("client").error_received.connect(_on_server_error)
 		# Every beat commits at once, so the mouse-only player never clicks into a state that is still playing.
 		root.get_node("Settings").set("animation_speed", 0)
+		root.get_node("Settings").set("board_view", _board_view)
 		return false
 	if Time.get_ticks_msec() < _next_step:
 		return false
@@ -245,6 +250,9 @@ func _candidates(screen: Control, hud: Hud) -> Array[Dictionary]:
 	if dialog != null:
 		return candidates
 	var board := screen.get_node("%Board") as BoardView
+	if (_board_view == "3d") != (board is Board3D):
+		_finish(1, "UI_GAME_FAILED the board view %s drew %s" % [_board_view, board])
+		return []
 	for target in board.targets():
 		candidates.append({"target": target, "board": board})
 	return candidates

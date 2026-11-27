@@ -201,9 +201,16 @@ fn run_godot(godot: &Path, root: &Path, home: &Path, arguments: &[&str]) -> Stri
 /// Runs one test script of `project` in a Godot home of its own and checks that the output has
 /// `marker`.
 fn run_script(godot: &Path, project: Project, script: &str, argument: &str, marker: &str) {
+    run_script_with(godot, project, script, &[argument], marker);
+}
+
+/// `run_script` with several arguments; the home is named after all of them, so one script can run twice.
+fn run_script_with(godot: &Path, project: Project, script: &str, arguments: &[&str], marker: &str) {
     let root = project_root(godot, project);
-    let home = root.join("homes").join(script);
-    let output = run_godot(godot, root, &home, &["-s", script, "--", argument]);
+    let home = root.join("homes").join(script).join(arguments[1..].join("-"));
+    let mut command = vec!["-s", script, "--"];
+    command.extend(arguments);
+    let output = run_godot(godot, root, &home, &command);
     assert!(output.contains(marker), "{output}");
 }
 
@@ -747,6 +754,23 @@ fn main_scene_plays_a_full_game_with_mouse_clicks_only() {
     run_script(&godot, Project::Game, "ui_game.gd", &server, "UI_GAME_OK");
 }
 
+#[test]
+fn main_scene_plays_a_full_game_on_the_3d_board_with_mouse_clicks_only() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = start_server(&runtime, Some(4));
+
+    run_script_with(
+        &godot,
+        Project::Game,
+        "ui_game.gd",
+        &[&server, "3d"],
+        "UI_GAME_OK",
+    );
+}
+
 /// `GameStarted` for `seat` at the current state of `game`.
 fn game_started(game: &Game, seat: u8) -> Value {
     to_json(&ServerMessage::GameStarted {
@@ -826,6 +850,23 @@ fn board_places_shared_corners_once_and_sends_the_clicked_action() {
         "board_test.gd",
         fixtures_path.to_str().unwrap(),
         "BOARD_OK",
+    );
+}
+
+#[test]
+fn board3d_picks_every_target_type_frames_the_island_and_syncs_once() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+    let fixtures_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("godot-board3d-fixtures.json");
+    fs::write(&fixtures_path, board_fixtures().to_string()).unwrap();
+
+    run_script(
+        &godot,
+        Project::Game,
+        "board3d_test.gd",
+        fixtures_path.to_str().unwrap(),
+        "BOARD3D_OK",
     );
 }
 

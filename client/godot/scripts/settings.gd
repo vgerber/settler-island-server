@@ -12,8 +12,6 @@ const SPEED_NAMES := ["Off", "Fast", "Normal", "Relaxed"]
 const SPEED_FACTORS := [0.0, 2.0, 1.0, 0.75]
 ## Table views the client can draw; `board_view` holds one of these keys.
 const BOARD_VIEWS := ["2d", "3d"]
-## Board views that exist; the others are listed but not selectable yet.
-const AVAILABLE_BOARD_VIEWS := ["2d"]
 const GRAPHICS_NAMES := ["Standard", "High"]
 ## Godot reads this file from the executable's directory at start-up; it can switch the renderer.
 const OVERRIDE_FILE := "override.cfg"

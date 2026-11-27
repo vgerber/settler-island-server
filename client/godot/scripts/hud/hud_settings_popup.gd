@@ -52,9 +52,6 @@ func _table_row() -> HBoxContainer:
 	var choice := OptionButton.new()
 	for name: String in Settings.BOARD_VIEWS:
 		choice.add_item(name.to_upper())
-		if not Settings.AVAILABLE_BOARD_VIEWS.has(name):
-			choice.set_item_disabled(choice.item_count - 1, true)
-			choice.set_item_tooltip(choice.item_count - 1, "3D table: coming soon")
 	choice.select(Settings.BOARD_VIEWS.find(Settings.board_view))
 	choice.custom_minimum_size = Vector2(130.0, 40.0)
 	choice.item_selected.connect(func(index: int) -> void: Settings.update("board_view", Settings.BOARD_VIEWS[index]))

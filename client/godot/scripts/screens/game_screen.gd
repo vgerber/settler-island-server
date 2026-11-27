@@ -54,7 +54,8 @@ func _on_lobby_state(message: SiServerMessageLobbyState) -> void:
 
 ## The board view named by `Settings.board_view`; unknown names give the 2D board.
 func _new_board() -> BoardView:
-	# "3d" gets its own case when that board exists; until then every name draws the 2D board.
+	if Settings.board_view == "3d":
+		return Board3D.new()
 	return Board.new()
 
 
