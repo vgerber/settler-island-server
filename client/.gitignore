@@ -1,3 +1,5 @@
 # Godot writes these next to scripts and projects it opens.
 *.uid
 .godot/
+# Import settings are defaults; audio loops are set in code.
+*.import
