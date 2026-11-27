@@ -55,6 +55,7 @@ func _initialize() -> void:
 		_shot("chips_close", Vector3(1.8, 0.1, 0.0), 3.4, deg_to_rad(52.0)),
 		_shot("robber_close", Vector3(0.0, 0.2, 0.0), 1.1, deg_to_rad(52.0)),
 		_shot("pier_close", Vector3(3.05, 0.1, 0.0), 2.0, deg_to_rad(52.0)),
+		_shot("road_close", Vector3(-1.3, 0.15, 0.75), 1.4, deg_to_rad(52.0)),
 	]
 
 
@@ -182,8 +183,9 @@ func _add_pieces_on_island() -> void:
 		var r: int = tile[1]
 		_add_piece(PieceArt.settlement(), index % 4, _corner(q, r, 4))
 		_add_piece(PieceArt.city(), (index + 1) % 4, _corner(q, r, 2), deg_to_rad(15.0))
-		var road_centre := (_corner(q, r, 0) + _corner(q, r, 1)) * 0.5
-		_add_piece(PieceArt.road(), (index + 2) % 4, road_centre, deg_to_rad(-60.0))
+		var start := _corner(q, r, 0)
+		var end := _corner(q, r, 1)
+		_add_piece(PieceArt.road(), (index + 2) % 4, (start + end) * 0.5, atan2(-(end.z - start.z), end.x - start.x))
 	var robber := _add_mesh(RobberArt.robber(), ClayMaterials.robber(), _tile_position(0, 0) + Vector3(0.0, HexSlabArt.HEIGHT, 0.0))
 	robber.add_child(BlobShadow.create(0.22, 0.45))
 
