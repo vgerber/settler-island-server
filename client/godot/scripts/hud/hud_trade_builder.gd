@@ -1,7 +1,7 @@
 class_name HudTradeBuilder
-extends HudDialog
-## Builds a player trade offer. Offers are not among the legal actions (their choices are open), so
-## the dialog keeps to what the server accepts: something given from the own hand, something asked
+extends VBoxContainer
+## The Players tab of the trade dialog: builds a player trade offer. Offers are not among the legal actions (their choices are open), so
+## the pane keeps to what the server accepts: something given from the own hand, something asked
 ## for, no resource on both sides, addressed to everyone or one other seat.
 
 signal offered(action: SiActionOfferTrade)
@@ -17,33 +17,31 @@ var _recipients: Array[int] = []
 var _recipient_option := OptionButton.new()
 var _give_labels: Array[Label] = []
 var _receive_labels: Array[Label] = []
-var _buttons_by_side := {"give": [], "receive": []}
+var _buttons_by_side: Dictionary[String, Array] = {"give": [], "receive": []}
 var _send_button: Button = null
 
 
 func _init() -> void:
-	super()
-	set_title("Offer a trade")
+	add_theme_constant_override("separation", 10)
 	var grid := GridContainer.new()
 	grid.columns = 7
 	grid.add_theme_constant_override("h_separation", 8)
 	for heading in ["", "You give", "", "", "You get", "", ""]:
-		grid.add_child(HudUi.label(heading, 14, HudUi.MUTED_COLOR))
+		grid.add_child(HudUi.label(heading, &"SmallLabel"))
 	for index in SiResource.VALUES.size():
 		_add_row(grid, index)
-	body.add_child(grid)
+	add_child(grid)
 	var recipient_row := HudUi.hbox(10)
-	recipient_row.add_child(HudUi.label("To", 16, HudUi.MUTED_COLOR))
+	recipient_row.add_child(HudUi.label("To", &"SmallLabel"))
 	_recipient_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	recipient_row.add_child(_recipient_option)
-	body.add_child(recipient_row)
+	add_child(recipient_row)
 	_send_button = HudUi.button("Offer", _send)
-	buttons.add_child(HudUi.button("Cancel", hide))
-	buttons.add_child(_send_button)
+	_send_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	add_child(_send_button)
 
 
-func open(hand: Array[int], seats: int, own_seat: int, script: Script) -> void:
-	depends_on = script
+func open(hand: Array[int], seats: int, names: SeatNames) -> void:
 	_hand = hand.duplicate()
 	_give = [0, 0, 0, 0, 0]
 	_receive = [0, 0, 0, 0, 0]
@@ -51,11 +49,10 @@ func open(hand: Array[int], seats: int, own_seat: int, script: Script) -> void:
 	_recipient_option.clear()
 	_recipient_option.add_item("Everyone")
 	for seat in seats:
-		if seat != own_seat:
+		if seat != names.own_seat:
 			_recipients.append(seat)
-			_recipient_option.add_item(HudText.seat_name(seat, own_seat))
+			_recipient_option.add_item(names.name_of(seat))
 	_update()
-	show()
 
 
 func change(side: String, index: int, delta: int) -> void:
@@ -72,11 +69,13 @@ func _limit(side: String, index: int) -> int:
 
 func _add_row(grid: GridContainer, index: int) -> void:
 	var resource := SiResource.VALUES[index]
-	var name_label := HudUi.label(resource, 16, HudText.resource_color(resource))
-	name_label.custom_minimum_size = Vector2(70, 0)
-	grid.add_child(name_label)
+	var name_row := HudUi.hbox(6)
+	name_row.add_child(HudResourceIcon.new(resource, 24.0))
+	name_row.add_child(HudUi.label(resource, &"SmallLabel"))
+	name_row.custom_minimum_size = Vector2(100, 0)
+	grid.add_child(name_row)
 	for side in ["give", "receive"]:
-		var count_label := HudUi.label("0", 18)
+		var count_label := HudUi.label("0", &"CountLabel")
 		count_label.custom_minimum_size = Vector2(36, 0)
 		count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var less := HudUi.small_button("-", change.bind(side, index, -1))
@@ -108,5 +107,4 @@ func _send() -> void:
 	action.receive = _receive.duplicate()
 	var selected := _recipient_option.selected
 	action.to = null if selected <= 0 else _recipients[selected - 1]
-	hide()
 	offered.emit(action)

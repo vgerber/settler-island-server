@@ -243,7 +243,7 @@ func _candidates(screen: Control, hud: Hud) -> Array[Dictionary]:
 	if dialog != null:
 		return candidates
 	var board := screen.get_node("%Board") as Board
-	for target: Dictionary in board.get("_targets"):
+	for target in board.targets():
 		candidates.append({"target": target, "board": board})
 	return candidates
 
@@ -311,14 +311,21 @@ func _weight(candidate: Dictionary, state: GameState) -> float:
 	match button.text:
 		"End turn":
 			return 1.0
-		"Offer trade...":
-			return 0.0 if _offered_on_turn == state.view.turn_number else 1.0
-		"Show result", "Back to lobbies":
+		"Results", "Back to lobbies":
 			return 0.0
 	# Development cards are rare; buying and playing them often reaches their pickers in a short game.
-	if button.text.begins_with("Play") or button.text in ["Buy development card", "Year of plenty...", "Monopoly..."]:
+	if button.text == "Card" or _is_in(button, HudDevRow):
 		return 8.0
 	return 3.0
+
+
+func _is_in(node: Node, script: Script) -> bool:
+	var parent := node.get_parent()
+	while parent != null:
+		if parent.get_script() == script:
+			return true
+		parent = parent.get_parent()
+	return false
 
 
 ## The dialog's confirm button as soon as it is enabled; cancel and "-" rarely, so every dialog completes.
@@ -328,12 +335,19 @@ func _dialog_weight(button: Button) -> float:
 	if button is OptionButton:
 		return 0.0
 	if button.get_parent() is GridContainer and button.get_index() % 7 == 6:
-		return 0.5
+		return 0.1
 	match button.text:
-		"Discard", "Confirm", "Offer":
+		"Discard", "Confirm", "Trade":
 			return 1000.0
+		"Offer":
+			return 0.0 if _offered_on_turn == _turn() else 1000.0
 		"Cancel":
 			return 0.1
+		"Close":
+			return 0.6
+		# The tabs only switch between panes; the panes' own buttons are what makes progress.
+		"Bank", "Players":
+			return 0.3
 		"-":
 			return 0.3
 	return 3.0
@@ -348,30 +362,36 @@ func _click_candidate(candidate: Dictionary) -> void:
 	_click_button(button)
 
 
+func _turn() -> int:
+	return (_screen().get("state") as GameState).view.turn_number
+
+
 func _note_use(button: Button) -> void:
 	var dialog := button.get_parent()
 	while dialog != null and not dialog is HudDialog and not dialog is HudTradePanel:
 		dialog = dialog.get_parent()
 	var kind := button.text
-	if dialog is HudDiscardDialog:
+	if _is_in(button, HudDevRow):
+		kind = "dev card"
+	elif dialog is HudDiscardDialog:
 		kind = "discard dialog"
 	elif dialog is HudActionList:
 		kind = "steal picker"
-	elif dialog is HudTradeBuilder:
-		kind = "trade builder"
+	elif dialog is HudTradeDialog:
+		kind = "trade dialog " + button.text
 	elif dialog is HudResourcePicker:
 		kind = "resource picker"
 	elif dialog is HudTradePanel:
 		kind = "trade answer " + button.text.get_slice(" ", 0)
-	if button.text == "Offer trade...":
-		_offered_on_turn = (_screen().get("state") as GameState).view.turn_number
+	if button.text == "Offer" and dialog is HudTradeDialog:
+		_offered_on_turn = _turn()
 	_used[kind] = true
 
 
-func _click_target(board: Board, target: Dictionary) -> void:
+func _click_target(board: Board, target: BoardTarget) -> void:
 	var state := board.state
-	var point := board.get_global_transform_with_canvas() * board.to_pixels(target["point"])
-	_used["board " + str((target["action"] as SiAction).to_dict()["type"])] = true
+	var point := board.get_global_transform_with_canvas() * board.to_pixels(target.point)
+	_used["board " + str(target.action.to_dict()["type"])] = true
 	_click_at(point)
 	if not state.legal_actions.is_empty():
 		_finish(1, "UI_GAME_FAILED clicking the highlighted target at %s sent nothing %s" % [point, _describe_state()])

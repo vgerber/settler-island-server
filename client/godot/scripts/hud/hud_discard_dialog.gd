@@ -12,7 +12,7 @@ var _required := 0
 var _count_labels: Array[Label] = []
 var _add_buttons: Array[Button] = []
 var _remove_buttons: Array[Button] = []
-var _progress_label: Label = HudUi.label("", 16, HudUi.MUTED_COLOR)
+var _progress_label := HudUi.label("", &"MutedLabel")
 var _confirm_button: Button = HudUi.button("Discard", confirm)
 
 
@@ -35,7 +35,7 @@ func offer(legal: Array[SiAction], hand: Array[int]) -> void:
 	_legal = legal
 	_hand = hand.duplicate()
 	_required = HudText.total((legal[0] as SiActionDiscard).resources)
-	set_title("Rolled a 7: discard %d cards" % _required)
+	set_title("Discard %d of %d" % [_required, HudText.total(_hand)])
 	_update()
 	show()
 
@@ -76,7 +76,8 @@ func _held(index: int) -> int:
 func _resource_row(index: int) -> HBoxContainer:
 	var row := HudUi.hbox(10)
 	var resource := SiResource.VALUES[index]
-	var name_label := HudUi.label(resource, 18, HudText.resource_color(resource))
+	row.add_child(HudResourceIcon.new(resource, 28.0))
+	var name_label := HudUi.label(resource, &"CountLabel")
 	name_label.custom_minimum_size = Vector2(80, 0)
 	row.add_child(name_label)
 	var count_label := HudUi.label("")
@@ -94,7 +95,7 @@ func _resource_row(index: int) -> HBoxContainer:
 
 func _update() -> void:
 	var picked := HudText.total(_chosen)
-	_progress_label.text = "Chosen %d of %d" % [picked, _required]
+	_progress_label.text = "Rolled a 7: chosen %d of %d" % [picked, _required]
 	for index in SiResource.VALUES.size():
 		_count_labels[index].text = "%d of %d in hand" % [_chosen[index], _held(index)]
 		_add_buttons[index].disabled = _chosen[index] >= _held(index) or picked >= _required

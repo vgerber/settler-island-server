@@ -5,8 +5,11 @@ extends SceneTree
 
 const OWN_SEAT := 1
 
+var _names := SeatNames.new()
+
 
 func _init() -> void:
+	_names.own_seat = OWN_SEAT
 	var fixtures: Variant = JSON.parse_string(FileAccess.get_file_as_string(SiTestSupport.argument(0)))
 	if not fixtures is Dictionary:
 		SiTestSupport.finish(self, 1, "HUD_EVENT_LOG_FAILED fixtures are not a JSON object")
@@ -27,11 +30,11 @@ func _check_lines(samples: Array) -> PackedStringArray:
 		if event == null or event.get_script() == SiEvent:
 			failures.append("%s did not decode" % variant)
 			continue
-		var line := HudText.event_line(event, OWN_SEAT)
+		var line := HudText.event_line(event, _names)
 		print("%s -> %s" % [variant, line])
 		if line.strip_edges().is_empty() or line == variant:
 			failures.append("%s has no readable line" % variant)
-		log.add_events([event] as Array[SiEvent], OWN_SEAT)
+		log.add_events([event] as Array[SiEvent], _names)
 	for variant in SiTestSupport.missing_variants("SiEvent", samples):
 		failures.append("%s has no sample" % variant)
 	log.free()

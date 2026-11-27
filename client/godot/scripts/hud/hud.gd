@@ -1,191 +1,248 @@
 class_name Hud
 extends Control
-## Hand, players, dice, bank, log and the turn buttons from the legal actions (step 3 of
-## doc/plans/godot-client.md). Takes a column on the right and a bar at the bottom; the rest is the
-## board's, so this node lets the mouse through. Reads only its `GameState`, never `Net`.
+## The game screen's overlay (doc/design/layout.md): top bar, opponents and log at the right, hand, dice and
+## actions at the bottom. The board's rect is `board_slot`, the free area in the middle; dialogs, the open trade
+## and the result live over it. Every widget is built once and updated on `GameState.changed`. Reads only its
+## `GameState`, never `Net`; legal actions decide what is enabled.
 
 signal leave_requested
+## The action variants whose board targets are shown: everything, or only the armed build kind in `Main`.
+signal target_filter_changed(kinds: Array[Script])
 
-const COLUMN_WIDTH := 380.0
-const BAR_HEIGHT := 200.0
-const COSTS := "Road: Clay + Wood    Settlement: Clay + Wood + Sheep + Wheat    City: 2 Wheat + 3 Ore    Development card: Sheep + Wheat + Ore"
+const SIDE_WIDTH := 340.0
+const BOTTOM_HEIGHT := 176.0
+## Windows lower than this many real pixels get the compact layout.
+const COMPACT_BELOW := 800
+
 
 var state: GameState = null
+var _build_keys := {KEY_1: SiActionBuildRoad, KEY_2: SiActionBuildSettlement, KEY_3: SiActionBuildCity}
+var names := SeatNames.new()
+## The free middle of the screen; the board is laid over exactly this rect.
+var board_slot := Control.new()
 
-var _turn_label: Label = HudUi.label("", 22)
-var _phase_label: Label = HudUi.label("", 16, HudUi.MUTED_COLOR)
-var _dice_row: HBoxContainer = HudUi.hbox(8)
-var _bank_row: HBoxContainer = HudUi.hbox(4)
+var _legal: HudLegal = null
+var _top_bar := HudTopBar.new()
 var _players := HudPlayers.new()
-var _trade_panel := HudTradePanel.new()
 var _log := HudEventLog.new()
+var _log_panel := HudUi.panel()
+var _log_button := HudUi.button("Log", _toggle_log)
+var _side_column := HudUi.vbox(8)
+var _own_summary: HudOwnSummary = null
 var _hand := HudHand.new()
-var _hint_label: Label = HudUi.label("", 17, Color(1, 0.9, 0.6))
-var _action_flow := HFlowContainer.new()
+var _dev_row := HudDevRow.new()
+var _dice := HudDice.new()
+var _action_bar := HudActionBar.new()
+var _trade_card := HudTradePanel.new()
 var _discard_dialog := HudDiscardDialog.new()
 var _picker := HudResourcePicker.new()
 var _steal_list := HudActionList.new()
-var _trade_builder := HudTradeBuilder.new()
+var _trade_dialog := HudTradeDialog.new()
 var _game_over := HudGameOver.new()
-## `[button: Button, is_available: Callable]` for every button of the action bar.
-var _action_buttons: Array = []
+var _bottom_row := HudUi.hbox(20)
 var _last_dice: Array[int] = []
-## The overlay opens once by itself at the end; afterwards a button brings it back.
+## The build kind (an action variant) that board clicks place, or null.
+var _armed: Script = null
+var _shift_on_click := false
+var _shown_filter: Array[Script] = []
+var _filter_sent := false
+var _unread_lines := 0
+## The overlay opens once by itself at the end; afterwards "Results" brings it back.
 var _result_shown := false
+var _compact := false
 var _refresh_queued := false
 
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_build_column())
-	add_child(_build_bar())
-	add_child(_build_dialog_area())
-	_game_over.leave_requested.connect(leave_requested.emit)
-	# Closing the overlay brings back the "Show result" button.
+	var layout := HudUi.vbox(0)
+	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layout.add_child(_top_bar)
+	layout.add_child(_build_middle())
+	layout.add_child(_build_bottom_bar())
+	add_child(layout)
+	_top_bar.results_requested.connect(_game_over.show)
+	# Closing the overlay brings back the "Results" button.
 	_game_over.visibility_changed.connect(_queue_refresh)
-	add_child(_game_over)
+	_game_over.leave_requested.connect(leave_requested.emit)
+	board_slot.add_child(_game_over)
+	_connect_actions()
 
 
-func bind(game_state: GameState) -> void:
+func _ready() -> void:
+	get_window().size_changed.connect(_apply_compact)
+	_apply_compact()
+
+
+## Starts showing `game_state`. `seat_names` falls back to "Seat N" when no lobby is known.
+func bind(game_state: GameState, seat_names: SeatNames = null) -> void:
 	state = game_state
+	names = seat_names if seat_names != null else SeatNames.new()
+	names.own_seat = state.seat
+	_legal = HudLegal.new(state)
+	_own_summary.set_seat(names.own_seat)
 	state.changed.connect(_on_changed)
-	_log.add_events(state.events, state.seat)
+	_unread_lines = 0
+	_log.add_events(state.events, names)
 	_refresh()
 
 
-func _on_changed(events: Array[SiEvent]) -> void:
-	_log.add_events(events, state.seat)
-	_remember_dice(events)
-	_queue_refresh()
-
-
-## Deferred so a button press that acts never sees its own row rebuilt under it.
-func _queue_refresh() -> void:
-	if state == null or _refresh_queued:
+func _input(event: InputEvent) -> void:
+	if state == null or not is_visible_in_tree():
 		return
-	_refresh_queued = true
-	_refresh.call_deferred()
+	var click := event as InputEventMouseButton
+	if click != null and click.pressed:
+		_shift_on_click = click.shift_pressed
+		if click.button_index == MOUSE_BUTTON_RIGHT and _armed != null:
+			_disarm()
+		return
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	if key.keycode == KEY_ESCAPE and _armed != null:
+		_disarm()
+	elif _build_keys.has(key.keycode):
+		_arm(_build_keys[key.keycode])
+	elif key.keycode == KEY_SPACE and _legal.has(SiActionRollDice):
+		_act_first(SiActionRollDice)
+	elif key.keycode in [KEY_ENTER, KEY_KP_ENTER] and _legal.has(SiActionEndTurn):
+		_act_first(SiActionEndTurn)
+	else:
+		return
+	get_viewport().set_input_as_handled()
 
 
-func _refresh() -> void:
-	_refresh_queued = false
-	var view := state.view
-	_refresh_header(view)
-	_refresh_bank(view)
-	_players.show_players(view, state.seat)
-	_trade_panel.show_trade(state)
-	_hand.show_hand(view.own)
-	_hint_label.text = _hint()
-	for entry: Array in _action_buttons:
-		(entry[0] as Button).visible = bool((entry[1] as Callable).call())
-	_refresh_dialogs()
-	if state.is_finished() and not _result_shown:
-		_result_shown = true
-		_game_over.show_result(view, state.seat)
+func _build_middle() -> HBoxContainer:
+	var middle := HudUi.hbox(0)
+	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	middle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board_slot.clip_contents = true
+	board_slot.add_child(_build_dialog_area())
+	middle.add_child(board_slot)
+	middle.add_child(_build_side_column())
+	return middle
 
 
-func _build_column() -> PanelContainer:
-	var column_panel := HudUi.panel(HudUi.PANEL_COLOR, 0, 14)
-	column_panel.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
-	column_panel.offset_left = -COLUMN_WIDTH
-	var column := HudUi.vbox(10)
-	column.add_child(_turn_label)
-	_phase_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(_phase_label)
-	column.add_child(_dice_row)
-	column.add_child(HudUi.label("Bank", 14, HudUi.MUTED_COLOR))
-	column.add_child(_bank_row)
-	column.add_child(HSeparator.new())
-	column.add_child(_players)
-	column.add_child(_trade_panel)
-	_trade_panel.chosen.connect(_act)
-	column.add_child(HSeparator.new())
+func _build_side_column() -> VBoxContainer:
+	_side_column.custom_minimum_size = Vector2(SIDE_WIDTH, 0.0)
+	_side_column.add_child(_players)
+	_side_column.add_child(_log_button)
+	_log_button.hide()
+	_log_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var column := HudUi.vbox(6)
+	var header := HudUi.hbox(8)
+	var title := HudUi.label("Log", &"SubheadingLabel")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	column.add_child(header)
 	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(_log)
-	column_panel.add_child(column)
-	return column_panel
+	_log_panel.add_child(column)
+	_side_column.add_child(_log_panel)
+	return _side_column
 
 
-func _build_bar() -> PanelContainer:
-	var bar_panel := HudUi.panel(HudUi.PANEL_COLOR, 0, 12)
-	bar_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bar_panel.offset_top = -BAR_HEIGHT
-	bar_panel.offset_right = -COLUMN_WIDTH
-	var row := HudUi.hbox(16)
-	row.add_child(_hand)
-	row.add_child(VSeparator.new())
-	var actions := HudUi.vbox(8)
-	actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	actions.add_child(_hint_label)
-	_action_flow.add_theme_constant_override("h_separation", 8)
-	_action_flow.add_theme_constant_override("v_separation", 8)
-	_action_flow.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	actions.add_child(_action_flow)
-	var costs := HudUi.label(COSTS, 12, HudUi.MUTED_COLOR)
-	costs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	actions.add_child(costs)
-	row.add_child(actions)
-	bar_panel.add_child(row)
-	_build_action_buttons()
-	return bar_panel
+func _build_bottom_bar() -> PanelContainer:
+	var bar := HudUi.panel(&"BottomBarPanel")
+	bar.custom_minimum_size = Vector2(0.0, BOTTOM_HEIGHT)
+	_own_summary = HudOwnSummary.new(0)
+	_bottom_row.add_child(_own_summary)
+	_bottom_row.add_child(_hand)
+	_bottom_row.add_child(VSeparator.new())
+	_bottom_row.add_child(_dev_row)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bottom_row.add_child(spacer)
+	_dice.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_bottom_row.add_child(_dice)
+	_action_bar.custom_minimum_size = Vector2(330.0, 0.0)
+	_bottom_row.add_child(_action_bar)
+	bar.add_child(_bottom_row)
+	return bar
 
 
-func _build_action_buttons() -> void:
-	_add_action_button("Roll dice", _has_legal.bind(SiActionRollDice), _act_first.bind(SiActionRollDice), true)
-	_add_action_button("Play knight", _has_legal.bind(SiActionPlayKnight), _act_first.bind(SiActionPlayKnight))
-	_add_action_button("Play road building", _has_legal.bind(SiActionPlayRoadBuilding), _act_first.bind(SiActionPlayRoadBuilding))
-	_add_action_button("Year of plenty...", _has_legal.bind(SiActionPlayYearOfPlenty), _open_year_of_plenty)
-	_add_action_button("Monopoly...", _has_legal.bind(SiActionPlayMonopoly), _open_monopoly)
-	_add_action_button("Buy development card", _has_legal.bind(SiActionBuyDevelopmentCard), _act_first.bind(SiActionBuyDevelopmentCard))
-	_add_action_button("Bank trade...", _has_legal.bind(SiActionBankTrade), _open_bank_trade)
-	_add_action_button("Offer trade...", _can_offer_trade, _open_trade_builder)
-	_add_action_button("End turn", _has_legal.bind(SiActionEndTurn), _act_first.bind(SiActionEndTurn), true)
-	_add_action_button("Show result", _can_show_result, _game_over.show)
-	_add_action_button("Back to lobbies", _is_finished, leave_requested.emit, true)
-
-
-func _add_action_button(text: String, is_available: Callable, on_pressed: Callable, prominent: bool = false) -> void:
-	var created := HudUi.button(text, on_pressed)
-	created.custom_minimum_size = Vector2(0, 40)
-	if prominent:
-		created.add_theme_color_override("font_color", Color(1, 0.88, 0.45))
-		created.add_theme_font_size_override("font_size", 18)
-	created.hide()
-	_action_flow.add_child(created)
-	_action_buttons.append([created, is_available])
-
-
+## The modal dialogs centred over the board, the trade card on top of it.
 func _build_dialog_area() -> Control:
 	var area := Control.new()
 	area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	area.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	area.offset_right = -COLUMN_WIDTH
-	area.offset_bottom = -BAR_HEIGHT
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for dialog: HudDialog in [_discard_dialog, _picker, _steal_list, _trade_builder]:
+	for dialog: HudDialog in [_discard_dialog, _picker, _steal_list, _trade_dialog]:
 		center.add_child(dialog)
-	_discard_dialog.chosen.connect(_act)
-	_picker.chosen.connect(_act)
-	_steal_list.chosen.connect(_act)
-	_trade_builder.offered.connect(_send_offer)
 	area.add_child(center)
+	_trade_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE, 12)
+	area.add_child(_trade_card)
 	return area
 
 
-func _refresh_header(view: SiPlayerView) -> void:
-	if state.is_finished():
-		_turn_label.text = "Game over"
-		_turn_label.add_theme_color_override("font_color", Color.WHITE)
-	elif state.is_my_turn():
-		_turn_label.text = "Turn %d: your turn" % view.turn_number
-		_turn_label.add_theme_color_override("font_color", HudText.seat_color(state.seat))
-	else:
-		_turn_label.text = "Turn %d: %s plays" % [view.turn_number, HudText.seat_name(view.current, state.seat)]
-		_turn_label.add_theme_color_override("font_color", HudText.seat_color(view.current))
-	_phase_label.text = HudText.phase_text(view.phase, state.seat)
+func _connect_actions() -> void:
+	_action_bar.act_requested.connect(_act_first)
+	_action_bar.build_requested.connect(_toggle_build)
+	_action_bar.trade_requested.connect(_open_trade)
+	_dev_row.play_requested.connect(_play_card)
+	_trade_card.chosen.connect(_act)
+	_discard_dialog.chosen.connect(_act)
+	_picker.chosen.connect(_act)
+	_steal_list.chosen.connect(_act)
+	_trade_dialog.chosen.connect(_act)
+	_trade_dialog.offered.connect(_send_offer)
+
+
+## Wide windows keep the full layout; below 800 px of height the compact one drops detail rows, folds the
+## development cards into one stack and the log into a popup.
+func _apply_compact() -> void:
+	_compact = get_window().size.y < COMPACT_BELOW
+	_players.set_compact(_compact)
+	_hand.set_compact(_compact)
+	_dev_row.set_compact(_compact)
+	_log_button.visible = _compact
+	_set_log_open(not _compact)
+	if state != null:
+		_queue_refresh()
+
+
+func _toggle_log() -> void:
+	_set_log_open(not _log_panel.visible)
+
+
+## In compact mode the log is a popup over the side column; in the full layout it is the column's last panel.
+func _set_log_open(open: bool) -> void:
+	_log_panel.visible = open
+	_log_panel.top_level = open and _compact
+	if open and _compact:
+		_log_panel.global_position = _side_column.global_position
+		_log_panel.size = _side_column.size
+	if open:
+		_unread_lines = 0
+	_update_log_button()
+
+
+func _update_log_button() -> void:
+	_log_button.text = "Log (%d new)" % _unread_lines if _unread_lines > 0 else "Log"
+
+
+func _on_changed(events: Array[SiEvent]) -> void:
+	var added := _log.add_events(events, names)
+	if _compact and not _log_panel.visible:
+		_unread_lines += added
+		_update_log_button()
+	_remember_dice(events)
+	if _armed != null and not _shift_on_click and _built_by_own_seat(events):
+		_armed = null
+	_queue_refresh()
+
+
+func _built_by_own_seat(events: Array[SiEvent]) -> bool:
+	for event in events:
+		var built := event is SiEventSettlementPlaced or event is SiEventRoadPlaced or event is SiEventCityBuilt
+		if built and int(event.get("seat")) == names.own_seat:
+			return true
+	return false
 
 
 func _remember_dice(events: Array[SiEvent]) -> void:
@@ -195,108 +252,89 @@ func _remember_dice(events: Array[SiEvent]) -> void:
 			_last_dice = [dice.first, dice.second]
 
 
-func _refresh_bank(view: SiPlayerView) -> void:
-	HudUi.clear(_bank_row)
-	for index in SiResource.VALUES.size():
-		var count: int = view.bank[index] if index < view.bank.size() else 0
-		_bank_row.add_child(HudUi.resource_tile(SiResource.VALUES[index], count, Vector2(52, 58)))
-	var cards := HudUi.label("%d\ndev" % view.development_cards_left, 15, HudUi.MUTED_COLOR)
-	cards.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cards.custom_minimum_size = Vector2(52, 0)
-	_bank_row.add_child(cards)
-	_refresh_dice()
-
-
-func _refresh_dice() -> void:
-	HudUi.clear(_dice_row)
-	_dice_row.add_child(HudUi.label("Dice", 15, HudUi.MUTED_COLOR))
-	if _last_dice.is_empty():
-		_dice_row.add_child(HudUi.label("not rolled yet", 15, HudUi.MUTED_COLOR))
+## Deferred so a button press that acts never sees its widgets change under it.
+func _queue_refresh() -> void:
+	if state == null or _refresh_queued:
 		return
-	for value in _last_dice:
-		var die := HudUi.panel(Color(0.95, 0.93, 0.88), 6, 2)
-		die.custom_minimum_size = Vector2(40, 40)
-		var pips := HudUi.label(str(value), 22, Color(0.1, 0.1, 0.1))
-		pips.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		pips.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		die.add_child(pips)
-		_dice_row.add_child(die)
-	var sum := _last_dice[0] + _last_dice[1]
-	_dice_row.add_child(HudUi.label("= %d" % sum, 24, Color(1, 0.4, 0.35) if sum == 7 else Color.WHITE))
+	_refresh_queued = true
+	_refresh.call_deferred()
+
+
+func _refresh() -> void:
+	_refresh_queued = false
+	_keep_armed_kind_valid()
+	var view := state.view
+	var prompt := HudText.prompt(state, names, _armed)
+	var results_available := state.is_finished() and not _game_over.visible
+	_top_bar.show_state(state, names, prompt, results_available)
+	_players.show_players(view, names)
+	_own_summary.show_own(view, names)
+	_hand.show_hand(view.own)
+	_dev_row.show_cards(view.own, state)
+	_dice.show_roll(_last_dice)
+	_action_bar.show_actions(_legal, _armed)
+	_trade_card.show_trade(state, names)
+	_refresh_dialogs()
+	_refresh_target_filter()
+	if state.is_finished() and not _result_shown:
+		_result_shown = true
+		_game_over.show_result(view, names)
+
+
+## Build mode ends with the Main phase; a kind that stops being legal (cards spent) disarms too.
+func _keep_armed_kind_valid() -> void:
+	if _armed == null:
+		return
+	if not state.view.phase is SiPhaseMain:
+		_armed = null
+	# An empty list is the moment between an action and its answer, not a verdict.
+	elif not state.legal_actions.is_empty() and not _legal.has(_armed):
+		_armed = null
+
+
+func _refresh_target_filter() -> void:
+	var kinds: Array[Script] = BoardTarget.all_scripts
+	if state.view.phase is SiPhaseMain:
+		kinds = []
+		if _armed != null:
+			kinds.append(_armed)
+	if not _filter_sent or kinds != _shown_filter:
+		_filter_sent = true
+		_shown_filter = kinds
+		target_filter_changed.emit(kinds)
 
 
 func _refresh_dialogs() -> void:
-	for dialog: HudDialog in [_picker, _steal_list, _trade_builder]:
-		if dialog.visible and not _has_legal(dialog.depends_on):
-			dialog.hide()
+	# Between an action and its answer nothing is legal; dialogs stay until the answer says otherwise.
+	if not state.legal_actions.is_empty():
+		for dialog: HudDialog in [_picker, _steal_list, _trade_dialog]:
+			if dialog.visible and not _legal.has(dialog.depends_on):
+				dialog.hide()
+	if _trade_dialog.visible:
+		_trade_dialog.refresh(_legal)
 	var hand: Array[int] = [] if state.view.own == null else state.view.own.hand
 	_discard_dialog.offer(state.legal_of(SiActionDiscard), hand)
 	var steals := state.legal_of(SiActionSteal)
-	if not steals.is_empty():
+	if not steals.is_empty() and not _steal_list.visible:
 		_open_steal(steals)
 
 
-func _hint() -> String:
-	if state.is_finished():
-		return "The game is over."
-	if _has_legal(SiActionPlaceSettlement):
-		return "Click a highlighted corner on the board to place your settlement."
-	if _has_legal(SiActionPlaceRoad):
-		return "Click a highlighted edge next to your new settlement to place a road."
-	if _has_legal(SiActionMoveRobber):
-		return "Click a tile on the board to move the robber there."
-	if state.view.phase is SiPhaseRoadBuilding and _has_legal(SiActionBuildRoad):
-		return "Click highlighted edges on the board for your free roads."
-	if _has_legal(SiActionDiscard):
-		return "Choose the cards to give up."
-	if _has_legal(SiActionSteal):
-		return "Choose whom to rob."
-	if _has_legal(SiActionAcceptTrade) or _has_legal(SiActionRejectTrade):
-		return "Answer the trade offer on the right."
-	if _has_legal(SiActionCancelTrade):
-		return "Waiting for answers: trade with a seat that accepts, or withdraw the offer."
-	if _has_legal(SiActionRollDice):
-		return "Roll the dice to start your turn."
-	if _has_legal(SiActionEndTurn):
-		return _main_hint()
-	return _waiting_hint()
+func _arm(script: Script) -> void:
+	if state.view.phase is SiPhaseMain and _legal.has(script):
+		_armed = script
+		_queue_refresh()
 
 
-func _main_hint() -> String:
-	var builds: PackedStringArray = []
-	if _has_legal(SiActionBuildRoad):
-		builds.append("roads")
-	if _has_legal(SiActionBuildSettlement):
-		builds.append("settlements")
-	if _has_legal(SiActionBuildCity):
-		builds.append("cities")
-	if builds.is_empty():
-		return "Nothing to build right now: trade, buy a card or end the turn."
-	return "You can build %s: click a highlighted spot on the board." % ", ".join(builds)
+func _disarm() -> void:
+	_armed = null
+	_queue_refresh()
 
 
-func _waiting_hint() -> String:
-	if state.view.phase is SiPhaseDiscard:
-		return "Waiting for the others to discard."
-	return "Waiting for %s." % HudText.seat_name(state.view.current, state.seat)
-
-
-func _has_legal(script: Script) -> bool:
-	return not state.legal_of(script).is_empty()
-
-
-func _is_finished() -> bool:
-	return state.is_finished()
-
-
-func _can_show_result() -> bool:
-	return state.is_finished() and not _game_over.visible
-
-
-## Offers are not listed among the legal actions; ending the turn is legal exactly when one may offer.
-func _can_offer_trade() -> bool:
-	var own := state.view.own
-	return _has_legal(SiActionEndTurn) and own != null and HudText.total(own.hand) > 0
+func _toggle_build(script: Script) -> void:
+	if _armed == script:
+		_disarm()
+		return
+	_arm(script)
 
 
 func _act(action: SiAction) -> void:
@@ -310,9 +348,18 @@ func _act_first(script: Script) -> void:
 
 
 func _send_offer(action: SiActionOfferTrade) -> void:
-	if not _can_offer_trade():
-		return
-	state.offer_trade(action)
+	if _legal.can_offer_trade():
+		state.offer_trade(action)
+
+
+func _play_card(card: String) -> void:
+	match card:
+		SiDevelopmentCard.YEAR_OF_PLENTY:
+			_open_year_of_plenty()
+		SiDevelopmentCard.MONOPOLY:
+			_open_monopoly()
+		_:
+			_act_first(HudDevRow.play_actions[card])
 
 
 func _open_steal(steals: Array[SiAction]) -> void:
@@ -320,12 +367,12 @@ func _open_steal(steals: Array[SiAction]) -> void:
 	for action in steals:
 		var victim := (action as SiActionSteal).victim
 		var cards := state.view.players[victim].resource_count
-		entries.append(["%s  (%d cards)" % [HudText.seat_name(victim, state.seat), cards], action])
+		entries.append(["%s  (%d cards)" % [names.name_of(victim), cards], action, victim])
 	_steal_list.open("Rob a player", entries, SiActionSteal)
 
 
-func _open_trade_builder() -> void:
-	_trade_builder.open(state.view.own.hand, state.view.players.size(), state.seat, SiActionEndTurn)
+func _open_trade() -> void:
+	_trade_dialog.open(_legal, state.view.own.hand, state.view.players.size(), names)
 
 
 func _open_monopoly() -> void:
@@ -338,11 +385,6 @@ func _open_year_of_plenty() -> void:
 	_open_picker("Year of plenty: take two resources", SiActionPlayYearOfPlenty, ["first", "second"], rows, _describe_year_of_plenty)
 
 
-func _open_bank_trade() -> void:
-	var rows: Array[String] = ["Give", "Receive"]
-	_open_picker("Trade with the bank", SiActionBankTrade, ["give", "receive"], rows, _describe_bank_trade)
-
-
 ## One picker row per action property; each row offers what the legal actions allow after the earlier picks.
 func _open_picker(title: String, script: Script, properties: Array[String], rows: Array[String], describe: Callable) -> void:
 	_picker.open(title, rows, _picker_options.bind(script, properties), _picker_action.bind(script, properties), describe, script)
@@ -352,14 +394,14 @@ func _picker_options(row: int, picks: Array[String], script: Script, properties:
 	var filter := {}
 	for earlier in row:
 		filter[properties[earlier]] = picks[earlier]
-	return _distinct(script, properties[row], filter)
+	return _legal.distinct(script, properties[row], filter)
 
 
 func _picker_action(picks: Array[String], script: Script, properties: Array[String]) -> SiAction:
 	var filter := {}
 	for index in properties.size():
 		filter[properties[index]] = picks[index]
-	return _find(script, filter)
+	return _legal.find(script, filter)
 
 
 func _describe_monopoly(action: SiAction) -> String:
@@ -369,37 +411,3 @@ func _describe_monopoly(action: SiAction) -> String:
 func _describe_year_of_plenty(action: SiAction) -> String:
 	var plenty := action as SiActionPlayYearOfPlenty
 	return "Take 1 %s and 1 %s from the bank." % [plenty.first, plenty.second]
-
-
-func _describe_bank_trade(action: SiAction) -> String:
-	var trade := action as SiActionBankTrade
-	return "Give %d %s, get 1 %s." % [_bank_rate(trade.give), trade.give, trade.receive]
-
-
-## The distinct values of `property` among the legal actions of `script` that match `filter`.
-func _distinct(script: Script, property: String, filter: Dictionary) -> Array[String]:
-	var values: Array[String] = []
-	for action in state.legal_of(script):
-		if _matches(action, filter) and not values.has(str(action.get(property))):
-			values.append(str(action.get(property)))
-	return values
-
-
-## The legal action of `script` whose properties equal `filter`, or null.
-func _find(script: Script, filter: Dictionary) -> SiAction:
-	for action in state.legal_of(script):
-		if _matches(action, filter):
-			return action
-	return null
-
-
-func _matches(action: SiAction, filter: Dictionary) -> bool:
-	for property: String in filter:
-		if str(action.get(property)) != str(filter[property]):
-			return false
-	return true
-
-
-## The server's rate for `resource` from the own view (4, or 3 and 2 with ports).
-func _bank_rate(resource: String) -> int:
-	return state.view.own.bank_rates[SiResource.VALUES.find(resource)]

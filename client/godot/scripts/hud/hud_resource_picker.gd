@@ -14,7 +14,7 @@ var _resolve: Callable
 var _describe: Callable
 var _picks: Array[String] = []
 var _rows_box: VBoxContainer = HudUi.vbox(8)
-var _summary_label: Label = HudUi.label("", 16, HudUi.MUTED_COLOR)
+var _summary_label := HudUi.label("", &"MutedLabel")
 var _send_button: Button = null
 
 
@@ -61,7 +61,7 @@ func _send() -> void:
 func _rebuild() -> void:
 	HudUi.clear(_rows_box)
 	for row in _row_titles.size():
-		_rows_box.add_child(HudUi.label(_row_titles[row], 15, HudUi.MUTED_COLOR))
+		_rows_box.add_child(HudUi.label(_row_titles[row], &"SmallLabel"))
 		_rows_box.add_child(_row_buttons(row))
 	var action: SiAction = _resolve.call(_picks)
 	_summary_label.text = "" if action == null else str(_describe.call(action))
@@ -77,6 +77,5 @@ func _row_buttons(row: int) -> HBoxContainer:
 		choice.button_pressed = _picks[row] == resource
 		choice.disabled = not allowed.has(resource)
 		choice.custom_minimum_size = Vector2(76, 40)
-		choice.add_theme_color_override("font_color", HudText.resource_color(resource).lightened(0.3))
 		line.add_child(choice)
 	return line
