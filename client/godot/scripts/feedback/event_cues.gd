@@ -20,7 +20,7 @@ const HOLD_MILLISECONDS := {
 
 
 static func hold_milliseconds(event: SiEvent) -> int:
-	return HOLD_MILLISECONDS.get(_variant(event), 0)
+	return HOLD_MILLISECONDS.get(variant(event), 0)
 
 
 ## The sound hook of an event, or an empty name when it has none.
@@ -46,7 +46,7 @@ static func _stolen_hook(stolen: SiEventResourceStolen, own_seat: int) -> String
 
 
 static func _plain_hook(event: SiEvent) -> StringName:
-	match _variant(event):
+	match variant(event):
 		&"SettlementPlaced": return &"sfx_place_settlement"
 		&"RoadPlaced": return &"sfx_place_road"
 		&"CityBuilt": return &"sfx_build_city"
@@ -75,7 +75,7 @@ static func must_show(event: SiEvent, own_seat: int) -> bool:
 		return stolen.thief == own_seat or stolen.victim == own_seat
 	if event is SiEventTradeOffered:
 		return addressed_to(event as SiEventTradeOffered, own_seat)
-	return _variant(event) in [
+	return variant(event) in [
 		&"DiceRolled", &"RobberMoved", &"TradeCompleted", &"DevelopmentCardPlayed", &"MonopolyTaken",
 		&"LongestRoadChanged", &"LargestArmyChanged", &"GameWon",
 	]
@@ -87,6 +87,6 @@ static func addressed_to(offered: SiEventTradeOffered, own_seat: int) -> bool:
 
 
 ## "DiceRolled" for a `SiEventDiceRolled`; unknown variants stay `SiEvent` and give an empty name.
-static func _variant(event: SiEvent) -> StringName:
+static func variant(event: SiEvent) -> StringName:
 	var path: String = event.get_script().resource_path.get_file().get_basename()
 	return StringName(path.trim_prefix("SiEvent"))

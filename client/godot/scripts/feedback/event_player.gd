@@ -31,6 +31,8 @@ var skip_when_unfocused := true
 ## Receives `play(hook)`; the game screen sets the `Sfx` autoload, tests leave it empty.
 var sfx: Node = null
 
+## Each entry: `finish` (Callable) and `claimed` (event names whose sound the consumer plays itself).
+var _consumers: Array[Dictionary] = []
 var _state: GameState = null
 var _queue: Array[Dictionary] = []
 var _running := false
@@ -90,6 +92,22 @@ func animated() -> bool:
 	return speed_factor > 0.0 and not _instant()
 
 
+## Pace multiplier of the current backlog, 1 to `MAX_PACE`; consumers scale tweens by `speed_factor * current_pace()`.
+func current_pace() -> float:
+	return _pace()
+
+
+## A consumer (a 3D board, a card layer) with animations of its own. `finish` ends every running animation at its
+## end state and is called when a collapse or a resync commits past them. `claimed_sounds` names the events
+## (e.g. `&"DiceRolled"`) whose sound the consumer times itself, so `EventCues` does not play it at event start.
+func register_consumer(finish: Callable, claimed_sounds: Array[StringName] = []) -> void:
+	_consumers.append({"finish": finish, "claimed": claimed_sounds})
+
+
+func unregister_consumer(finish: Callable) -> void:
+	_consumers = _consumers.filter(func(consumer: Dictionary) -> bool: return consumer["finish"] != finish)
+
+
 func play_sound(hook: StringName) -> void:
 	# Events without a cue have an empty hook.
 	if sfx != null and hook != &"" and not _instant():
@@ -114,6 +132,7 @@ func _resync() -> void:
 	_generation += 1
 	_queue.clear()
 	_current_events = []
+	_finish_consumers()
 	seat = _state.seat
 	var previous := shown_view
 	shown_view = _state.view
@@ -168,8 +187,20 @@ func _start_event(event: SiEvent) -> void:
 	event_started.emit(event)
 	if EventCues.must_show(event, seat) and _instant():
 		_remember_away(event)
-	play_sound(EventCues.hook(event, seat))
+	if not _sound_claimed(event):
+		play_sound(EventCues.hook(event, seat))
 	_announce(event)
+
+
+func _sound_claimed(event: SiEvent) -> bool:
+	var name := EventCues.variant(event)
+	return _consumers.any(func(consumer: Dictionary) -> bool: return consumer["claimed"].has(name))
+
+
+func _finish_consumers() -> void:
+	for consumer in _consumers:
+		if (consumer["finish"] as Callable).is_valid():
+			consumer["finish"].call()
 
 
 ## Events that concern the local seat get an alert toast, whatever the speed.
@@ -257,6 +288,7 @@ func _collapse(for_away: bool) -> void:
 		if EventCues.must_show(event, seat):
 			kept.append(HudText.event_line(event, names))
 	_current_events = []
+	_finish_consumers()
 	_commit(latest["view"], latest["legal"])
 	_deliver_collapsed(kept, for_away)
 

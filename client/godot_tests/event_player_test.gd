@@ -17,6 +17,15 @@ var _commits := 0
 var _toasts: Array[String] = []
 var _failures: PackedStringArray = []
 var _begun := false
+var _finished := 0
+var _sfx := SfxStub.new()
+
+
+class SfxStub extends Node:
+	var played: Array[StringName] = []
+
+	func play(hook: StringName) -> void:
+		played.append(hook)
 
 
 func _init() -> void:
@@ -42,13 +51,18 @@ func _run() -> void:
 	_player.event_started.connect(func(_event: SiEvent) -> void: _started_events += 1)
 	_player.committed.connect(func() -> void: _commits += 1)
 	_player.toast_requested.connect(func(text: String, _kind: StringName) -> void: _toasts.append(text))
+	_player.sfx = _sfx
 	_check_off()
+	_check_sound_claim()
+	_player.register_consumer(func() -> void: _finished += 1)
 	await _check_timed()
+	_expect(_finished == 0, "consumers: finish_all stays unused while beats play out")
 	await _check_collapse()
 	_check_unfocused()
 	_check_resync()
 	_player.release()
 	_client.free()
+	_sfx.free()
 	if _failures.is_empty():
 		SiTestSupport.finish(self, 0, "EVENT_PLAYER_OK")
 		return
@@ -61,6 +75,22 @@ func _check_off() -> void:
 	_expect(_player.shown_view == update.view, "off: the view commits synchronously")
 	_expect(_started_events == 3, "off: every event starts, got %d" % _started_events)
 	_expect(not _player.is_busy(), "off: nothing is left to play")
+
+
+## `DiceRolled` plays its sound at event start unless a consumer claims it; other events are never claimed.
+func _check_sound_claim() -> void:
+	_player.speed_factor = 0.0
+	_sfx.played.clear()
+	_push(1)
+	_expect(_sfx.played == [&"sfx_roll_seven"], "sound: unclaimed roll plays its hook, got %s" % [_sfx.played])
+	_sfx.played.clear()
+	var claim := func() -> void: pass
+	_player.register_consumer(claim, [&"DiceRolled"])
+	_push(1)
+	_expect(_sfx.played.is_empty(), "sound: a claimed roll is silent, got %s" % [_sfx.played])
+	_player.unregister_consumer(claim)
+	_push(1)
+	_expect(_sfx.played.size() == 1, "sound: released claim plays the hook again")
 
 
 func _check_timed() -> void:
@@ -87,6 +117,7 @@ func _check_collapse() -> void:
 	_expect(_player.shown_view == last.view, "collapse: the newest view is shown")
 	_expect(_started_events == 20, "collapse: every event still reaches the log, got %d" % _started_events)
 	_expect(not _toasts.is_empty(), "collapse: the must-show events come as a toast")
+	_expect(_finished == 1, "collapse: the consumer is finished once before the commit, got %d" % _finished)
 
 
 func _check_unfocused() -> void:
@@ -107,6 +138,7 @@ func _check_resync() -> void:
 	_client.game_started_received.emit(again)
 	_expect(_player.shown_view == again.view, "resync: the new state shows at once")
 	_expect(not _player.is_busy() or _player.shown_view == again.view, "resync: the queue is dropped")
+	_expect(_finished == 2, "resync: the consumer is finished again, got %d" % _finished)
 
 
 ## One server update with `count` dice rolls of another seat and a fresh view.
