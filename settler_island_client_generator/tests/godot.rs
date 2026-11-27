@@ -981,6 +981,15 @@ fn every_sound_hook_has_a_file_and_repeats_are_dropped() {
 }
 
 #[test]
+fn settings_keep_table_and_graphics_and_write_the_renderer_override() {
+    let Some(godot) = godot_binary() else {
+        return;
+    };
+
+    run_script(&godot, Project::Game, "settings_test.gd", "", "SETTINGS_OK");
+}
+
+#[test]
 fn net_goes_online_after_a_failed_start() {
     let Some(godot) = godot_binary() else {
         return;

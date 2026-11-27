@@ -106,3 +106,12 @@ func _on_game_update(message: SiServerMessageGameUpdate) -> void:
 	if not message.legal_actions.is_empty():
 		client.send_act(message.legal_actions[0])
 ```
+
+## Graphics quality
+
+`project.godot` sets the renderer to Compatibility (also for web). The settings popup offers `Graphics: High` on
+desktop; it writes `rendering/renderer/rendering_method="forward_plus"` into `override.cfg` in the executable's
+directory (and removes the file for `Standard`), and applies after a restart. Checked with Godot 4.7.2 and a pack
+next to the binary: `override.cfg` beside the executable switches `RenderingServer.get_current_rendering_method()`
+to `forward_plus`. Runs of the editor binary with `--path` (development) ignore the executable directory, and
+the file is skipped when that directory is not writable; start with `--rendering-method forward_plus` then.

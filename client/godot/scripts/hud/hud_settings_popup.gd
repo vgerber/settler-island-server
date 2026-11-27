@@ -1,6 +1,6 @@
 class_name HudSettingsPopup
 extends PopupPanel
-## The small settings panel behind the gear button: animation speed, skipping while unfocused, sound on or off
+## The small settings panel behind the gear button: animation speed, table view, graphics quality, skipping while unfocused, sound on or off
 ## and three volumes. Writes through the `Settings` autoload, which saves and applies them.
 
 const VOLUMES := {"sfx_volume": "Effects", "ambience_volume": "Ambience", "music_volume": "Music"}
@@ -12,6 +12,9 @@ func _init() -> void:
 	column.custom_minimum_size = Vector2(400.0, 0.0)
 	column.add_child(HudUi.label("Settings", &"SubheadingLabel"))
 	column.add_child(_speed_row())
+	column.add_child(_table_row())
+	if not OS.has_feature("web"):
+		column.add_child(_graphics_row())
 	column.add_child(_toggle_row("Skip animations when unfocused", "skip_when_unfocused"))
 	column.add_child(_toggle_row("Sound", "sound_enabled"))
 	for key: String in VOLUMES:
@@ -37,6 +40,39 @@ func _speed_row() -> HBoxContainer:
 	choice.select(Settings.animation_speed)
 	choice.custom_minimum_size = Vector2(130.0, 40.0)
 	choice.item_selected.connect(func(index: int) -> void: Settings.update("animation_speed", index))
+	row.add_child(choice)
+	return row
+
+
+func _table_row() -> HBoxContainer:
+	var row := HudUi.hbox(12)
+	var title := HudUi.label("Table")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(title)
+	var choice := OptionButton.new()
+	for name: String in Settings.BOARD_VIEWS:
+		choice.add_item(name.to_upper())
+		if not Settings.AVAILABLE_BOARD_VIEWS.has(name):
+			choice.set_item_disabled(choice.item_count - 1, true)
+			choice.set_item_tooltip(choice.item_count - 1, "3D table: coming soon")
+	choice.select(Settings.BOARD_VIEWS.find(Settings.board_view))
+	choice.custom_minimum_size = Vector2(130.0, 40.0)
+	choice.item_selected.connect(func(index: int) -> void: Settings.update("board_view", Settings.BOARD_VIEWS[index]))
+	row.add_child(choice)
+	return row
+
+
+func _graphics_row() -> HBoxContainer:
+	var row := HudUi.hbox(12)
+	var title := HudUi.label("Graphics (applies after restart)")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(title)
+	var choice := OptionButton.new()
+	for name: String in Settings.GRAPHICS_NAMES:
+		choice.add_item(name)
+	choice.select(Settings.GRAPHICS_NAMES.find(Settings.graphics_quality))
+	choice.custom_minimum_size = Vector2(130.0, 40.0)
+	choice.item_selected.connect(func(index: int) -> void: Settings.update("graphics_quality", Settings.GRAPHICS_NAMES[index]))
 	row.add_child(choice)
 	return row
 
