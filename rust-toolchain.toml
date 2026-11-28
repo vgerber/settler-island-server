@@ -1,5 +1,5 @@
 # The one place the Rust version is named: the local gate and CI use the same clippy and rustfmt.
 # Updating it is a deliberate commit that fixes whatever the new lints report.
 [toolchain]
-channel = "1.92.0"
+channel = "1.100.1"
 components = ["rustfmt", "clippy"]

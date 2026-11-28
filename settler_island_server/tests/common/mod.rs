@@ -235,10 +235,10 @@ impl Client {
         Client::try_connect(address).await.unwrap()
     }
 
-    /// The handshake result, so a test can inspect a refused upgrade.
-    pub async fn try_connect(address: SocketAddr) -> Result<Client, tungstenite::Error> {
+    /// The handshake result, so a test can inspect a refused upgrade; boxed because the error is large.
+    pub async fn try_connect(address: SocketAddr) -> Result<Client, Box<tungstenite::Error>> {
         let url = format!("ws://{address}/api/v1/ws");
-        let (socket, _) = connect_async(url).await?;
+        let (socket, _) = connect_async(url).await.map_err(Box::new)?;
         Ok(Client {
             socket,
             next_request: 0,

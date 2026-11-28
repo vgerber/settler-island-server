@@ -47,7 +47,7 @@ Each task's "Done when" from the summary; the lead gates every merge with `tools
 - Security L10 restore tail: restore loads the full action log because RunningGame keeps the whole GameRecord for GetRecord; a tail-only restore needs the lobby to load the record prefix lazily from the store (0.31 s for 100 games today, low priority).
 
 ## Status 2026-11-27
-- Security waves 0-3 are merged (doc/reviews/security.md section 5); Rust 1.92 is pinned in rust-toolchain.toml,
+- Security waves 0-3 are merged (doc/reviews/security.md section 5); Rust 1.100.1 is pinned in rust-toolchain.toml,
   CI is back on and green, cargo-deny runs in the gate and CI.
 - Open: wave 4 needs user decisions (turn clock, opaque user ids, retention of finished games); wave D is the NAS
   deployment; then the HUD layout step (landed) with the folded-in review items.

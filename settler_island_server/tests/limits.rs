@@ -12,7 +12,7 @@ async fn refused_upgrade(address: SocketAddr) -> (u16, HttpError) {
     let Err(error) = Client::try_connect(address).await else {
         panic!("the upgrade was accepted");
     };
-    let tungstenite::Error::Http(response) = error else {
+    let tungstenite::Error::Http(response) = *error else {
         panic!("expected an HTTP refusal, got {error:?}");
     };
     let body = response.body().as_deref().unwrap_or_default();
