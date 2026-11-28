@@ -22,13 +22,13 @@ const DESERT := Color("#EADDB6")
 const DESERT_PATTERN := Color("#D3C291")
 const FLEECE := Color("#F6F1E4")
 
-## Ember, Cobalt, Ivory, Charcoal.
-const SEAT_COLORS: Array[Color] = [Color("#C8372D"), Color("#2E62C9"), Color("#F4EFE3"), Color("#2F2B2C")]
-const SEAT_NAMES: Array[String] = ["Ember", "Cobalt", "Ivory", "Charcoal"]
+## Crimson, Cobalt, Rose, Plum: hues the terrain does not use, with a light (Rose) and a dark (Plum) seat for the lightness spread.
+const SEAT_COLORS: Array[Color] = [Color("#D41F3A"), Color("#2F4FE0"), Color("#FF8AC0"), Color("#4A2680")]
+const SEAT_NAMES: Array[String] = ["Crimson", "Cobalt", "Rose", "Plum"]
 const OUTLINE := Color("#231C17")
 const KEYLINE := Color("#F4EFE3")
-const IVORY_SEAT := 2
-const CHARCOAL_SEAT := 3
+const LIGHT_SEAT := 2
+const DARK_SEAT := 3
 
 const TABLE := Color("#2A1F19")
 const PARCHMENT := Color("#F2E8D2")
@@ -91,18 +91,16 @@ static func seat_color(seat: int) -> Color:
 	return SEAT_COLORS[seat % SEAT_COLORS.size()]
 
 
-## The dark line around a piece; Charcoal inverts it so its dark fill still separates.
+## The dark line around a piece; Plum inverts it so its dark fill still separates.
 static func seat_outline(seat: int) -> Color:
-	return KEYLINE if seat % SEAT_COLORS.size() == CHARCOAL_SEAT else OUTLINE
+	return KEYLINE if seat % SEAT_COLORS.size() == DARK_SEAT else OUTLINE
 
 
-## The outer halo around the outline; transparent for Ivory, whose fill is already the light line.
+## The outer halo around the outline.
 static func seat_keyline(seat: int) -> Color:
 	var wrapped := seat % SEAT_COLORS.size()
-	if wrapped == CHARCOAL_SEAT:
+	if wrapped == DARK_SEAT:
 		return OUTLINE
-	if wrapped == IVORY_SEAT:
-		return Color(KEYLINE, 0.0)
 	return KEYLINE
 
 

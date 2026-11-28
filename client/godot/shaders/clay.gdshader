@@ -2,7 +2,7 @@ shader_type spatial;
 // Matte clay for every piece of the clay kit. The vertex colour is the sRGB albedo with the ambient
 // occlusion baked in (ClayBuilder), `tint` recolours white seat pieces, a faint fingerprint ridge pattern
 // breaks up the flat colour, and a rim term keeps pieces readable against terrain: a light edge on dark
-// pieces (Ember, Cobalt, Charcoal), a dark edge on light ones (Ivory), the outline rule of visual-style.md
+// pieces (Crimson, Cobalt, Plum), a dark edge on light ones (Rose), the outline rule of visual-style.md
 // without a hull. Plain Lambert lighting, so it runs the same in Compatibility and Forward+.
 render_mode diffuse_lambert, specular_schlick_ggx;
 

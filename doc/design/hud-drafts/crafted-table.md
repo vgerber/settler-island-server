@@ -162,7 +162,7 @@ Gold is for points and awards only. One "you can act" colour, the lantern, is us
 | Accept | `#1E6B63` | `Palette.ACCENT` |
 | Dev card back and border | `#5B4378` | new `Palette.DEV` |
 | Resource card face / rim | terrain colours | `RESOURCE_COLORS` / `RESOURCE_PATTERN_COLORS` |
-| Seats | `#C8372D #2E62C9 #F4EFE3 #2F2B2C` | `SEAT_COLORS` (charcoal gets an `#F4EFE3` rim) |
+| Seats | `#D41F3A #2F4FE0 #FF8AC0 #4A2680` | `SEAT_COLORS` (plum gets an `#F4EFE3` rim) |
 
 Fonts: two faces with fixed roles. Display (`Bitter-Bold`): sign 30 px, points numerals, bell caption, game-over title.
 Sans (`AtkinsonHyperlegible-Bold` / Regular): plates 20 px, ticker 15, captions 13, buttons 22. Five sizes: 64 (title),

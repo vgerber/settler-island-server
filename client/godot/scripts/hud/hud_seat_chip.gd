@@ -1,7 +1,7 @@
 class_name HudSeatChip
 extends Control
 ## A seat's identity: its colour plus a shape (circle, square, triangle, diamond), so it never depends on
-## colour alone and stays readable on parchment, including Ivory and Charcoal.
+## colour alone and stays readable on parchment, including Rose and Plum.
 
 const SHAPES := 4
 

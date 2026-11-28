@@ -40,24 +40,25 @@ trees vs bricks, tufts vs stalks.
 
 | Seat | Name | Fill | Outline | Keyline (outer halo) |
 |---|---|---|---|---|
-| 0 | Ember | `#C8372D` | `#231C17` | `#F4EFE3` |
-| 1 | Cobalt | `#2E62C9` | `#231C17` | `#F4EFE3` |
-| 2 | Ivory | `#F4EFE3` | `#231C17` | none |
-| 3 | Charcoal | `#2F2B2C` | `#F4EFE3` | `#231C17` |
+| 0 | Crimson | `#D41F3A` | `#231C17` | `#F4EFE3` |
+| 1 | Cobalt | `#2F4FE0` | `#231C17` | `#F4EFE3` |
+| 2 | Rose | `#FF8AC0` | `#231C17` | `#F4EFE3` |
+| 3 | Plum | `#4A2680` | `#F4EFE3` | `#231C17` |
 
-Seat vs seat, minimum ΔE: normal 66 (Cobalt/Charcoal), deuteranopia 55, protanopia 35 (Ember/Charcoal), tritanopia
-42. Red-green confusion is avoided by never pairing red with green or orange among seats; the set spans dark, mid
-and light luminance.
+The seats use hues no terrain has (the board is orange, green, yellow, grey, teal): a red-magenta, a blue, a pink and
+a violet, so they pop on every tile, the sea and the walnut. Matte clay pieces keep these saturated but muted by
+`ClayPalette.seat`. Lightness is spread (L* 46, 41, 72, 25) so a colour-blind player still has a second cue.
 
-Seat vs terrain, weak pairs (ΔE < 15 in some simulation): Ember on Terracotta (deut 7, prot 10), Ember on Pine
-(prot 9), Cobalt on Deep water (trit 13), Ivory on Dune (trit 9). These are why every piece gets an outline plus a
-contrasting keyline: the outline `#231C17` has >= 2.6:1 against every terrain and the sea (3.9 clay, 4.4 ore, 11.6
-desert), and the cream keyline has 6.4:1 against Pine and 5.6:1 against the sea. Charcoal inverts it (cream outline,
-12.2:1 against its fill). So a piece always separates from the ground by a dark-light double line, and seats differ
-by fill.
+Seat vs seat, minimum ΔE (Machado simulations): normal 36, deuteranopia 40, protanopia 34, tritanopia 32. The one
+weak seat/terrain pair is Crimson on Terracotta and Pine under red-green blindness (deut 6, prot 7); the cream keyline
+and the rim light cover it, and Crimson is the only warm seat.
 
-HUD redundancy: each seat also has an emblem drawn next to its name and on its cards in the HUD: Ember circle,
-Cobalt triangle, Ivory square, Charcoal diamond.
+Every piece still gets an outline plus a contrasting keyline: the outline `#231C17` is dark against every terrain and
+the sea, and the cream keyline has 6.4:1 against Pine and 5.6:1 against the sea. Plum inverts it (cream outline). So
+a piece separates from the ground by a dark-light double line, and seats differ by fill.
+
+HUD redundancy: each seat also has an emblem drawn next to its name and on its cards in the HUD: Crimson circle,
+Cobalt triangle, Rose square, Plum diamond.
 
 ### UI surfaces and text
 
@@ -246,8 +247,8 @@ Layout spacing scale: 4, 8, 12, 16, 24, 32 px. Containers use `separation` 12; p
    `#EADDB6`, `SEA` `#2A6672`, `COAST` → `SHOAL` `#3E8790`, add `SAND` `#D9C48F`, `OUTLINE` `#231C17`, `KEYLINE`
    `#F4EFE3`, `CHIP` `#FBF5E6`, `CHIP_TEXT` `#2E241C`, `HOT_NUMBER` `#B5281F`, `CHIP_RIM` `#7A5E3A`, `PIER`
    `#7B5634`, `PIER_TIE` `#5C3F26`, `TARGET` `#F3C54A`, `ROBBER` `#3A3036`; drop `TILE_EDGE` and `HIGHLIGHT`.
-2. `SEAT_COLORS` → Ember, Cobalt, Ivory, Charcoal; add `static func seat_outline(seat)` and
-   `seat_keyline(seat)` (Charcoal inverts) and use them in `_draw_road`, `_draw_settlement`, `_draw_city`.
+2. `SEAT_COLORS` → Crimson, Cobalt, Rose, Plum; add `static func seat_outline(seat)` and
+   `seat_keyline(seat)` (Plum inverts) and use them in `_draw_road`, `_draw_settlement`, `_draw_city`.
 3. `draw_sea`: wave marks on the fixed grid; then shoal (1.18) and sand (1.05) hexes.
 4. `_draw_tile`: scale 0.955, darker same-hue outline 0.02, bevel polygon, `_draw_motif(tile)`; delete
    `_draw_resource_label` (the tile tooltip in `Board` takes over the name).

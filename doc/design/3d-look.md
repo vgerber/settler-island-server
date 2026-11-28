@@ -30,7 +30,7 @@ direction); hot numbers 6 and 8 stay `HOT_NUMBER`; budget is 60 fps at 1600x900 
   per resource, ratio on a hanging sign (`Label3D`).
 - **Robber:** faceted pawn (lathe profile via `SurfaceTool`, 8 sides), charcoal with a cream band; hops on move.
 - **Seat pieces:** road = long bevelled box; settlement = gabled house prism; city = house plus tower with a
-  stepped roof. Flat seat colour, inverted-hull outline in `OUTLINE` (cream for Charcoal).
+  stepped roof. Flat seat colour, inverted-hull outline in `OUTLINE` (cream for Plum).
 - **Lighting and shadow:** one warm `DirectionalLight3D` at about 45 degrees with a single shadow map (orthogonal
   mode, no cascades needed for a table), warm flat ambient tinted `#3A2C23`, no SSAO, dark vignette background.
 - **Camera:** perspective, FOV 40, 55 degrees pitch, board centred, orbit +-35 degrees yaw, zoom 0.7-1.4x, reset.

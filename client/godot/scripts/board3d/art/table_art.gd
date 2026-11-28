@@ -41,7 +41,7 @@ static func seat_stand_inlay() -> ArrayMesh:
 	return _mesh("stand_inlay", _build_stand_inlay)
 
 
-## Ivory frame under the inlay of the charcoal seat, so its dark colour reads on the walnut stand.
+## Ivory frame under the inlay of the dark seat, so its dark colour reads on the walnut stand.
 static func seat_stand_rim() -> ArrayMesh:
 	return _mesh("stand_rim", _build_stand_rim)
 
@@ -117,7 +117,7 @@ static func _build_stand_inlay(result: ClayBuilder) -> void:
 
 static func _build_stand_rim(result: ClayBuilder) -> void:
 	var outline := rounded_rectangle.bind(STAND_HALF_WIDTH - 0.07, STAND_HALF_DEPTH - 0.06, 4.0)
-	var ivory := ClayPalette.mute(Palette.SEAT_COLORS[Palette.IVORY_SEAT])
+	var ivory := ClayPalette.mute(Palette.KEYLINE)
 	result.add_slab(outline, 0.036, 0.015, ivory, ClayPalette.shade(ivory, 0.85), ClayPalette.shade(ivory, 0.6), 0.8, 1, 24, -INLAY_LIFT)
 
 

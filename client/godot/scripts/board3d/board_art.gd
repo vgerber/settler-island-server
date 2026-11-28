@@ -99,12 +99,12 @@ static func robber(tile_center: Vector2, grounded := true) -> Node3D:
 	return node
 
 
-## A seat stand at `position` (turned by `yaw`): wooden tray with the seat colour inlaid, lit or dimmed; the charcoal
+## A seat stand at `position` (turned by `yaw`): wooden tray with the seat colour inlaid, lit or dimmed; the plum
 ## seat gets an ivory rim.
 static func stand(seat: int, position: Vector3, yaw: float, lit: bool) -> Node3D:
 	var node := _mesh(TableArt.seat_stand_base(), ClayMaterials.terrain(), position)
 	node.rotation.y = yaw
-	if seat % Palette.SEAT_COLORS.size() == Palette.CHARCOAL_SEAT:
+	if seat % Palette.SEAT_COLORS.size() == Palette.DARK_SEAT:
 		node.add_child(_mesh(TableArt.seat_stand_rim(), ClayMaterials.terrain(), Vector3.ZERO))
 	node.add_child(_mesh(TableArt.seat_stand_inlay(), ClayMaterials.stand(seat, lit), Vector3.ZERO))
 	return node

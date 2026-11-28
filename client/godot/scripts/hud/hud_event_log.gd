@@ -1,7 +1,7 @@
 class_name HudEventLog
 extends RichTextLabel
 ## The game so far as readable lines, newest at the bottom. A line starts with the chip of its seat; text
-## stays ink on parchment because seat colours as text colour are unreadable for Ivory and Charcoal.
+## stays ink on parchment because seat colours as text colour are unreadable for Rose and Plum.
 
 ## Older lines are dropped so a long game does not grow the label without bound.
 const MAX_LINES := 200

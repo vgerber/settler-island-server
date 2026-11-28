@@ -26,7 +26,7 @@ static func terrain() -> ShaderMaterial:
 
 ## A seat's pieces: the muted seat colour with the rim of its outline rule.
 static func piece(seat_index: int) -> ShaderMaterial:
-	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.IVORY_SEAT else RIM_LIGHT
+	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.LIGHT_SEAT else RIM_LIGHT
 	return _clay("piece%d" % seat_index, ClayPalette.seat(seat_index), 0.7, rim, 0.018)
 
 
@@ -42,7 +42,7 @@ static func stock() -> ShaderMaterial:
 
 ## The inlay of a seat stand: the seat colour, dimmed unless the seat is lit (current or pending).
 static func stand(seat_index: int, lit: bool) -> ShaderMaterial:
-	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.IVORY_SEAT else RIM_LIGHT
+	var rim := RIM_DARK if seat_index % Palette.SEAT_COLORS.size() == Palette.LIGHT_SEAT else RIM_LIGHT
 	var tint := ClayPalette.seat(seat_index)
 	return _clay("stand%d%s" % [seat_index, lit], tint if lit else ClayPalette.shade(tint, STAND_DIM), 0.7, rim, 0.018)
 
