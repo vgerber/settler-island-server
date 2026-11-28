@@ -262,7 +262,7 @@ static func _add_field(result: ClayBuilder, generator: RandomNumberGenerator, ta
 			_add_crop_cell(result, generator, _ground_at(SiResource.WHEAT, spot.x, spot.z), turn, row, column)
 
 
-## One bed: a strip of earth between furrows and two fat stalk clumps with golden ears. The row decides the
+## One bed: a strip of earth between furrows and four stalk clumps with golden ears. The row decides the
 ## ripeness: green-gold, gold, amber.
 static func _add_crop_cell(result: ClayBuilder, generator: RandomNumberGenerator, spot: Vector3, turn: float, row: int, column: int) -> void:
 	var tones: Array[Color] = [RIPENING_GREEN, ClayPalette.STRAW, RIPE_AMBER]
@@ -270,16 +270,16 @@ static func _add_crop_cell(result: ClayBuilder, generator: RandomNumberGenerator
 	var ear := ClayPalette.mute(ClayPalette.EAR_GOLD)
 	var heading := Basis(Vector3.UP, turn)
 	var scale := _front_scale(spot, 0.2)
-	result.add_box(Transform3D(heading, spot + Vector3(0.0, 0.012, 0.0)), Vector3(0.076, 0.012, 0.056), ClayPalette.mute(SOIL), 0.5)
-	for clump in 2:
-		var offset := heading * Vector3((clump - 0.5) * 0.075, 0.0, generator.randf_range(-0.012, 0.012))
+	result.add_box(Transform3D(heading, spot + Vector3(0.0, 0.012, 0.0)), Vector3(0.076, 0.012, 0.07), ClayPalette.mute(SOIL), 0.5)
+	for clump in 4:
+		var offset := heading * Vector3((clump % 2 - 0.5) * 0.075, 0.0, (float(clump / 2) - 0.5) * 0.06 + generator.randf_range(-0.008, 0.008))
 		var height := generator.randf_range(0.1, 0.15) * scale
 		var shade := ClayPalette.shade(tone, generator.randf_range(0.94, 1.08))
 		var tilt := Basis.from_euler(Vector3(generator.randf_range(-0.12, 0.12), 0.0, generator.randf_range(-0.12, 0.12)))
 		var transform := Transform3D(heading * tilt, spot + offset + Vector3(0.0, 0.022, 0.0))
 		result.add_lathe(PackedVector2Array([Vector2(0.05, 0.0), Vector2(0.046, height * 0.8), Vector2(0.03, height)]), transform, shade, 0.45, 4)
 		var ear_shade := ClayPalette.shade(ear, 0.9 + 0.12 * float((row + column + clump) % 2))
-		result.add_lathe(PackedVector2Array([Vector2(0.034, height * 0.9), Vector2(0.036, height * 1.2), Vector2(0.0, height * 1.55)]), transform, ear_shade, 0.8, 4)
+		result.add_lathe(PackedVector2Array([Vector2(0.04, height * 0.9), Vector2(0.044, height * 1.25), Vector2(0.0, height * 1.65)]), transform, ear_shade, 0.8, 4)
 
 
 ## A tied sheaf standing in the field: a fat straw cone with a band and a tuft of ears on top.

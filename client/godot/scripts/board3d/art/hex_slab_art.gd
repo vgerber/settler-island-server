@@ -18,6 +18,9 @@ const SAND_SHARE := 0.55
 ## Rings of the relief top as shares of the outline: the chip disc ends at the first (a hex scaled by it), the last is the rim.
 const RELIEF_RINGS: Array[float] = [0.4, 0.62, 0.82, 1.0]
 const RELIEF_COLUMNS := 24
+const WHEAT_SOIL := Color("#9A6B2A")
+const WHEAT_SOIL_SHARE := 0.6
+
 ## The relief starts above the flat slab top so the two never fight for the same pixels.
 const RELIEF_LIFT := 0.004
 const FACET_SHADES: Array[float] = [0.86, 1.0, 1.12]
@@ -41,6 +44,8 @@ static func slab(terrain: String) -> ArrayMesh:
 
 static func builder(terrain: String) -> ClayBuilder:
 	var top := ClayPalette.mute(terrain_color(terrain))
+	if terrain == SiResource.WHEAT:
+		top = top.lerp(WHEAT_SOIL, WHEAT_SOIL_SHARE) # deeper straw so the golden crop separates from the ground
 	var sand := ClayPalette.mute(Palette.SAND)
 	var side := ClayPalette.shade(top.lerp(sand, SAND_SHARE), 0.88)
 	var base := ClayPalette.shade(sand, 0.62)
