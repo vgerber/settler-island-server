@@ -414,21 +414,30 @@ func _add_opponent_hand(frame: Node3D, data: Dictionary) -> void:
 	var tray := Node3D.new()
 	tray.position = Vector3(0.0, SeatStationArt.STAND_TOP, 0.0)
 	tray.scale = Vector3.ONE * OPPONENT_SCALE
+	# The cards lean toward their owner at the table edge, so the island and the other seats see their backs.
+	tray.rotation.y = PI
 	frame.add_child(tray)
 	_mesh(tray, OwnSideArt.hand_tray(), ClayMaterials.terrain())
 	var hand := int(data["hand"])
 	for slot in 5:
 		var count := hand / 5 + (1 if slot < hand % 5 else 0)
 		for layer in count:
-			var lift := Transform3D(Basis.IDENTITY, Vector3(0.012 * layer, CardArt.THICKNESS * layer, -0.05 * layer))
-			_mesh(tray, CardArt.card_back(), ClayMaterials.stock(), OwnSideArt.hand_slot(slot) * lift)
+			_mesh(tray, CardArt.card_back(), ClayMaterials.stock(), _held_card(OwnSideArt.HAND_FIRST_SLOT + OwnSideArt.HAND_SLOT_PITCH * slot, layer))
 	for layer in int(data["development"]):
-		var lift := Transform3D(Basis.IDENTITY, Vector3(0.012 * layer, CardArt.THICKNESS * layer, -0.05 * layer))
-		_mesh(tray, CardArt.dev_back(), ClayMaterials.stock(), OwnSideArt.hand_slot(5) * lift)
+		_mesh(tray, CardArt.dev_back(), ClayMaterials.stock(), _held_card(OwnSideArt.HAND_DEV_SLOT - 0.15, layer))
 	var chip := Transform3D(Basis(Vector3.RIGHT, SeatStationArt.PLATE_TILT), Vector3(-OwnSideArt.HAND_HALF_WIDTH * OPPONENT_SCALE, SeatStationArt.STAND_TOP, CHIP_Z))
 	_add_count_chip(frame, SeatStationArt.count_chip(), chip.origin, str(hand))
 	if int(data["development"]) > 0:
 		_add_count_chip(frame, SeatStationArt.dev_count_chip(), Vector3(OwnSideArt.HAND_DEV_SLOT * OPPONENT_SCALE, SeatStationArt.STAND_TOP, CHIP_Z), str(data["development"]))
+
+
+## A card an opponent holds: standing almost upright in their tray, face toward its owner at the table edge (tray +z
+## after the half turn), back design toward the island; later layers fan out to the side so every card shows.
+func _held_card(slot_x: float, layer: int) -> Transform3D:
+	var lean := deg_to_rad(80.0)
+	var basis := Basis(Vector3.RIGHT, lean) * Basis(Vector3.BACK, PI)
+	var rise := CardArt.HALF.y * sin(lean)
+	return Transform3D(basis, Vector3(slot_x + 0.07 * layer, 0.3 + rise, -0.05 + 0.012 * layer))
 
 
 ## The own supply rack at the opponent scale with their remaining pieces; the empty sockets show what is built.
