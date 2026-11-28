@@ -107,3 +107,22 @@ func _line(from: Vector2, to: Vector2, color: Color) -> void:
 
 func _point(unit: Vector2) -> Vector2:
 	return _center + unit * _size
+
+
+## A development card icon (knight, road building, year of plenty, monopoly, victory point) from `IconShapes`, the
+## same shapes the 3D cards print. Same box and outline rules as `draw_icon`.
+static func draw_development_icon(canvas: CanvasItem, kind: String, center: Vector2, size: float) -> void:
+	var outline_width := clampf(size * 0.06, 0.8, 1.5)
+	var layers := IconShapes.layers(kind)
+	for layer in layers:
+		if layer["ink"]:
+			canvas.draw_colored_polygon(_scaled(IconShapes.grown(layer["points"], outline_width / size), center, size), Palette.INK)
+	for layer in layers:
+		canvas.draw_colored_polygon(_scaled(layer["points"], center, size), layer["fill"])
+
+
+static func _scaled(points: PackedVector2Array, center: Vector2, size: float) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	for point in points:
+		result.append(center + point * size)
+	return result

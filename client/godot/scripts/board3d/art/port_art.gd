@@ -10,6 +10,8 @@ const PIER_LENGTH := 0.82
 const DECK_HEIGHT := 0.11
 const FLAG_TILT := 0.5
 const FLAG_HEIGHT := 0.3
+const ROUNDEL_SIDES := 12
+const ROUNDEL_LIFT := 0.0006
 
 static var _piers: Dictionary = {}
 static var _flags: Dictionary = {}
@@ -137,5 +139,26 @@ static func flag_builder(ratio: int, resource: String) -> ClayBuilder:
 	var plate_centre := Vector3(0.0, FLAG_HEIGHT + 0.03, 0.0)
 	result.add_box(Transform3D(plate_basis, plate_centre), Vector3(0.17, 0.016, 0.115), cloth, 0.8)
 	var surface := plate_centre + plate_basis * Vector3(0.0, 0.016 + 0.003, 0.0)
-	StrokeFont.add_text(result, "%d:1" % ratio, Transform3D(plate_basis, surface), 0.1, 0.02, ink)
+	var face := Transform3D(plate_basis, surface)
+	if resource.is_empty():
+		StrokeFont.add_text(result, "%d:1" % ratio, face, 0.1, 0.02, ink)
+		return result
+	_add_resource_mark(result, face, ratio, resource, ink)
 	return result
+
+
+## A 2:1 flag: a card-stock roundel with the flat resource icon on the left, the ratio on the right.
+static func _add_resource_mark(result: ClayBuilder, face: Transform3D, ratio: int, resource: String, ink: Color) -> void:
+	var centre := Vector2(-0.065, 0.0)
+	var rim: Array[Vector3] = []
+	for side in ROUNDEL_SIDES:
+		var around := Vector2.from_angle(TAU * side / ROUNDEL_SIDES) * 0.094 + centre
+		rim.append(face * Vector3(around.x, ROUNDEL_LIFT, around.y))
+	var points := PackedVector3Array()
+	var colors := PackedColorArray()
+	for side in ROUNDEL_SIDES:
+		points.append_array([face * Vector3(centre.x, ROUNDEL_LIFT, centre.y), rim[side], rim[(side + 1) % ROUNDEL_SIDES]])
+		colors.append(ClayPalette.mute(Palette.CREAM_MUTED.lerp(Palette.CARD_STOCK, 0.3)))
+	result.add_facets(points, colors)
+	FlatIconArt.add(result, resource, face, centre, 0.14, ROUNDEL_LIFT)
+	StrokeFont.add_text(result, "%d:1" % ratio, face.translated_local(Vector3(0.085, 0.0, 0.0)), 0.07, 0.016, ink)
