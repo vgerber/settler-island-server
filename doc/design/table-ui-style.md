@@ -46,5 +46,5 @@ cream `#F3EADB` on walnut, ink `#231C17` on card stock. No slashed zero. Text fa
 (tilted with its plate), not billboarded, so it sits in the world.
 
 ## Budgets (triangles)
-Card 120, chip 60, token 120, plate 150, supply rack (empty) 900, bank rack 900, bell 600, sign 500, award board 600,
+Card 160, chip 60, token 120, plate 150, supply rack (empty) 900, bank rack 900, bell 600, sign 500, award board 600,
 trade mat 500, ledger 400, settings board 900.
