@@ -7,7 +7,7 @@ extends SceneTree
 const PROP_RING_LIMIT := 0.86
 ## Low poly: no mesh of the kit exceeds its triangle budget (the lead's rule: faceted, few segments).
 const BUDGET_SLAB := 600
-const BUDGET_PROPS := 1 # dense wheat beds (3.4k) are the costliest tile; 19 tiles stay near 30k triangles
+const BUDGET_PROPS := 2700 # straight wheat rows (2.6k) are the costliest tile; 19 tiles stay near 24k triangles
 const BUDGET_CHIP := 400
 const BUDGET_PIECE := 700
 const BUDGET_ROBBER := 600
