@@ -29,9 +29,6 @@ const HAND_ORIGIN := Vector3(0.0, 0.0, 5.7)
 const BELL_ORIGIN := Vector3(3.8, WaterArt.HEIGHT, 4.4)
 const COVERED_BELL_ORIGIN := Vector3(5.2, WaterArt.HEIGHT, 4.4)
 const SIGN_ORIGIN := Vector3(-4.6, WaterArt.HEIGHT, -2.4)
-const MINI_CARD_SCALE := 0.3
-## Half the long side of a mini card standing at 75 degrees, so its foot rests on the ledge.
-const MINI_CARD_LIFT := 0.074
 const SIGN_TEXT := "Place a road"
 const TEXT_COLOR := Color("#F3EADB")
 
@@ -115,7 +112,6 @@ func _print_triangles() -> void:
 		"bell_cover": OwnSideArt.bell_cover(),
 		"prompt_sign": OwnSideArt.prompt_sign(),
 		"prompt_sign_tab": OwnSideArt.prompt_sign_tab(),
-		"placeholder_card": OwnSideArt.placeholder_card(),
 	}
 	for mesh_name: String in meshes:
 		var mesh: ArrayMesh = meshes[mesh_name]
@@ -195,17 +191,16 @@ func _add_rack() -> void:
 func _fill_row(rack: Node3D, kind: String, mesh: Mesh) -> void:
 	var count: int = OwnSideArt.RACK_ROWS[kind]["count"]
 	for index in range(count - int(SUPPLY_LEFT[kind]), count):
-		var piece := _add_mesh(mesh, ClayMaterials.piece(SEAT), OwnSideArt.supply_slot(kind, index), rack)
-		piece.rotation.y = OwnSideArt.supply_yaw(kind)
+		var piece := _add_mesh(mesh, ClayMaterials.piece(SEAT), Vector3.ZERO, rack)
+		piece.transform = OwnSideArt.supply_piece(kind, index)
 
 
 ## Two or three small cards standing on the ledge in front of each row.
 func _add_mini_cards(rack: Node3D, kind: String) -> void:
 	var ledge := OwnSideArt.supply_ledge(kind)
-	var turn := Basis(Vector3.RIGHT, deg_to_rad(75.0)) * Basis.IDENTITY.scaled(Vector3.ONE * MINI_CARD_SCALE)
-	var lift := Vector3(0.0, MINI_CARD_LIFT, 0.0)
+	var turn := Basis(Vector3.RIGHT, OwnSideArt.COST_CARD_LEAN).scaled_local(Vector3.ONE * OwnSideArt.COST_CARD_SCALE)
 	for index in 3:
-		var card := _add_mesh(OwnSideArt.placeholder_card(), ClayMaterials.stock(), ledge + lift + Vector3((index - 1) * 0.16, 0.0, 0.0), rack)
+		var card := _add_mesh(CardArt.resource_card(SiResource.VALUES[index]), ClayMaterials.stock(), ledge + Vector3((index - 1) * OwnSideArt.COST_CARD_PITCH, 0.0, 0.0), rack)
 		card.basis = turn
 
 
@@ -214,7 +209,7 @@ func _add_hand() -> void:
 	_add_shadow(tray, 1.7)
 	for slot in HAND_COUNTS.size():
 		for layer in int(HAND_COUNTS[slot]):
-			var card := _add_mesh(OwnSideArt.placeholder_card(), ClayMaterials.stock(), Vector3.ZERO, tray)
+			var card := _add_mesh(CardArt.development_card("Knight") if slot > 4 else CardArt.resource_card(SiResource.VALUES[slot]), ClayMaterials.stock(), Vector3.ZERO, tray)
 			card.transform = OwnSideArt.hand_slot(slot) * Transform3D(Basis.IDENTITY, Vector3(0.012 * layer, 0.016 * layer, 0.0))
 
 

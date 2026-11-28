@@ -38,8 +38,8 @@ const RACK_WALL_HEIGHT := 0.1
 const MARKER_RADIUS := 0.13
 
 ## Trade token: a clay disc.
-const TOKEN_RADIUS := 0.06
-const TOKEN_HEIGHT := 0.03
+const TOKEN_RADIUS := 0.08
+const TOKEN_HEIGHT := 0.036
 
 ## Trade mat: the felt top is at `MAT_FELT`, the border rises to `MAT_BORDER`.
 const MAT_HALF_WIDTH := 1.0
@@ -248,14 +248,16 @@ static func _add_bay(result: ClayBuilder, index: int) -> void:
 
 static func _build_token(result: ClayBuilder) -> void:
 	var profile := PackedVector2Array(
-		[Vector2(0.0, 0.0), Vector2(TOKEN_RADIUS, 0.0), Vector2(TOKEN_RADIUS, 0.022), Vector2(TOKEN_RADIUS - 0.008, TOKEN_HEIGHT), Vector2(0.0, TOKEN_HEIGHT)]
+		[Vector2(0.0, 0.0), Vector2(TOKEN_RADIUS, 0.0), Vector2(TOKEN_RADIUS, 0.026), Vector2(TOKEN_RADIUS - 0.01, TOKEN_HEIGHT), Vector2(0.0, TOKEN_HEIGHT)]
 	)
 	result.add_lathe(profile, Transform3D.IDENTITY, LIGHT_WOOD, 0.75, 8)
-	_box(result, Vector3(0.0, TOKEN_HEIGHT + 0.012, 0.0), Vector3(0.005, 0.012, 0.005), BRASS_DARK, 0.9)
-	_box(result, Vector3(0.0, TOKEN_HEIGHT + 0.026, 0.0), Vector3(0.04, 0.004, 0.005), BRASS_LIGHT, 1.0)
+	# The scale is drawn for a token of 0.06; `grow` carries it to the token's radius.
+	var grow := TOKEN_RADIUS / 0.06
+	_box(result, Vector3(0.0, TOKEN_HEIGHT + 0.012 * grow, 0.0), Vector3(0.005, 0.012, 0.005) * grow, BRASS_DARK, 0.9)
+	_box(result, Vector3(0.0, TOKEN_HEIGHT + 0.026 * grow, 0.0), Vector3(0.04, 0.004, 0.005) * grow, BRASS_LIGHT, 1.0)
 	for side in [-1.0, 1.0]:
-		_box(result, Vector3(side * 0.036, TOKEN_HEIGHT + 0.0485, 0.0), Vector3(0.0025, 0.0075, 0.0025), BRASS_DARK, 0.9)
-		_box(result, Vector3(side * 0.036, TOKEN_HEIGHT + 0.008, 0.0), Vector3(0.017, 0.003, 0.014), BRASS, 0.9)
+		_box(result, Vector3(side * 0.036 * grow, TOKEN_HEIGHT + 0.0485 * grow, 0.0), Vector3(0.0025, 0.0075, 0.0025) * grow, BRASS_DARK, 0.9)
+		_box(result, Vector3(side * 0.036 * grow, TOKEN_HEIGHT + 0.008 * grow, 0.0), Vector3(0.017, 0.003, 0.014) * grow, BRASS, 0.9)
 
 
 static func _build_mat(result: ClayBuilder) -> void:

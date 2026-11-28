@@ -1,6 +1,6 @@
 extends SceneTree
 ## Renders stills of the bank, trade and menu fixtures (`BankArt`) on a small island: the bank rack with
-## placeholder card piles and one empty bay, the trade token, an open trade mat with cards and two buttons, the
+## card piles, the trade token, an open trade mat with cards and two buttons, the
 ## settings board, both ledgers and the game-over sign with `Label3D` texts. The stills go to
 ## `<output directory>/bank_<renderer>_<shot>.png` at 1600x900; the triangle counts are printed. Needs a window,
 ## quits by itself.
@@ -13,9 +13,8 @@ const SQUARE_ROOT_OF_THREE := 1.7320508
 const FIELD_OF_VIEW := 38.0
 const PITCH := deg_to_rad(55.0)
 const TILES := [[0, 0, "Desert", 0], [1, 0, "Clay", 6], [0, 1, "Wood", 8], [-1, 1, "Sheep", 11], [-1, 0, "Wheat", 12], [0, -1, "Ore", 2]]
-const CARD_HALF := Vector3(0.18, 0.007, 0.25)
 ## Pile heights per bay: clay, wood, sheep, wheat, ore, development deck (empty).
-const PILE_HEIGHTS: Array[int] = [19, 12, 6, 17, 3, 0]
+const PILE_HEIGHTS: Array[int] = [19, 12, 6, 17, 3, 8]
 const CREAM_TEXT := Color("#F3EADB")
 const BOLD_FONT := "res://theme/fonts/Bitter-Bold.res"
 const LABEL_FONT := "res://theme/fonts/AtkinsonHyperlegible-Bold.res"
@@ -28,7 +27,6 @@ var _renderer := ""
 var _shots: Array[Dictionary] = []
 var _frames_left := -1
 var _exit_code := 0
-var _card_meshes: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -197,22 +195,14 @@ static func _flat(point: Vector3) -> Transform3D:
 	return Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), point)
 
 
-func _card_mesh(color: Color) -> ArrayMesh:
-	if not _card_meshes.has(color):
-		var builder := ClayBuilder.new()
-		builder.add_bevelled_box(Transform3D.IDENTITY, CARD_HALF, 0.005, color, 0.85)
-		_card_meshes[color] = builder.to_mesh()
-	return _card_meshes[color]
-
-
-## Placeholder cards stacked on `base`, slightly turned so the pile reads as a heap.
-func _add_pile(parent: Node3D, base: Vector3, count: int, color: Color) -> void:
+## Cards stacked on `base`, slightly turned so the pile reads as a heap.
+func _add_pile(parent: Node3D, base: Vector3, count: int, mesh: Mesh) -> void:
 	for index in count:
 		var yaw := 0.05 * sin(index * 2.3)
-		var position := base + Vector3(0.006 * sin(index * 1.7), CARD_HALF.y + index * CARD_HALF.y * 2.0, 0.0)
+		var position := base + Vector3(0.006 * sin(index * 1.7), index * CardArt.THICKNESS, 0.0)
 		var instance := MeshInstance3D.new()
-		instance.mesh = _card_mesh(color)
-		instance.material_override = ClayMaterials.terrain()
+		instance.mesh = mesh
+		instance.material_override = ClayMaterials.stock()
 		instance.position = position
 		instance.rotation.y = yaw
 		parent.add_child(instance)
@@ -227,7 +217,12 @@ func _fixture(mesh: Mesh, material: Material, position: Vector3, shadow_extent: 
 func _add_rack(origin: Vector3) -> void:
 	var rack := _fixture(BankArt.bank_rack(), ClayMaterials.terrain(), origin, Vector2(BankArt.RACK_HALF_WIDTH, BankArt.RACK_HALF_DEPTH))
 	for index in BankArt.BAY_COUNT:
-		_add_pile(rack, BankArt.pile_point(index), PILE_HEIGHTS[index], BankArt.bay_color(index))
+		_add_pile(rack, BankArt.pile_point(index), PILE_HEIGHTS[index], _bay_mesh(index))
+
+
+func _bay_mesh(index: int) -> Mesh:
+	var resource := BankArt.bay_resource(index)
+	return CardArt.dev_back() if resource.is_empty() else CardArt.resource_card(resource)
 
 
 func _add_token(origin: Vector3) -> void:
@@ -236,11 +231,9 @@ func _add_token(origin: Vector3) -> void:
 
 func _add_mat(origin: Vector3) -> void:
 	var mat := _fixture(BankArt.trade_mat(), ClayMaterials.terrain(), origin, Vector2(BankArt.MAT_HALF_WIDTH, BankArt.MAT_HALF_DEPTH))
-	var wood := ClayPalette.mute(Palette.resource_color(SiResource.WOOD))
-	var wheat := ClayPalette.mute(Palette.resource_color(SiResource.WHEAT))
-	_add_pile(mat, BankArt.mat_card_point(-1) + Vector3(-0.07, 0.0, 0.0), 1, wood)
-	_add_pile(mat, BankArt.mat_card_point(-1) + Vector3(0.07, 0.0, 0.0), 1, wood)
-	_add_pile(mat, BankArt.mat_card_point(1), 1, wheat)
+	_add_pile(mat, BankArt.mat_card_point(-1) + Vector3(-0.1, 0.0, 0.0), 1, CardArt.resource_card(SiResource.WOOD))
+	_add_pile(mat, BankArt.mat_card_point(-1) + Vector3(0.1, 0.0, 0.0), 1, CardArt.resource_card(SiResource.WOOD))
+	_add_pile(mat, BankArt.mat_card_point(1), 1, CardArt.resource_card(SiResource.WHEAT))
 	_add_label(mat, "Bot 2 gives", _flat(Vector3(-BankArt.MAT_HALF_X, BankArt.MAT_FELT + 0.002, BankArt.MAT_LABEL_Z)), 0.1)
 	_add_label(mat, "You give", _flat(Vector3(BankArt.MAT_HALF_X, BankArt.MAT_FELT + 0.002, BankArt.MAT_LABEL_Z)), 0.1)
 	_add_button(mat, -1, BankArt.ButtonKind.TEAL, "Accept")

@@ -57,11 +57,10 @@ const PLATE_STRIPE_X := -0.52
 const CHIP_RADIUS := 0.09
 const CHIP_TOP := 0.042
 
-## Card holder and cards (placeholder backs, scaled to `CARD_SCALE` on the holder).
+## Card holder and cards (`CardArt` backs, scaled to `CARD_SCALE` on the holder).
 const HOLDER_OFFSET := Vector3(0.0, STAND_TOP, -0.1)
 const HOLDER_HALF_WIDTH := 0.86
 const HOLDER_FLOOR := 0.05
-const CARD_HALF := Vector3(0.18, 0.007, 0.25)
 const CARD_SCALE := 0.62
 const CARD_LEAN := deg_to_rad(62.0)
 const CARD_PITCH := 0.105
@@ -146,14 +145,14 @@ static func card_holder() -> ArrayMesh:
 	return _mesh("card_holder", _build_card_holder)
 
 
-## Placeholder card back, lying flat with its back up.
+## The card back of `CardArt`, lying flat with its back up.
 static func card_back() -> ArrayMesh:
-	return _mesh("card_back", _build_card_back.bind(WALNUT, BRASS))
+	return CardArt.card_back()
 
 
-## Placeholder development card back, plum.
+## The development card back of `CardArt`, plum.
 static func dev_card_back() -> ArrayMesh:
-	return _mesh("dev_card_back", _build_card_back.bind(DEV_PLUM, BRASS))
+	return CardArt.dev_back()
 
 
 ## Place of hand card `index` (0 to 7) relative to the holder: leaning against the back lip, fanned, later cards on top.
@@ -277,17 +276,12 @@ static func _build_card_holder(result: ClayBuilder) -> void:
 	result.add_box(_at(Vector3(0.3, HOLDER_FLOOR + divider.y, -0.005)), divider, BRASS, 0.8)
 
 
-static func _build_card_back(result: ClayBuilder, body: Color, emblem: Color) -> void:
-	result.add_bevelled_box(_at(Vector3(0.0, CARD_HALF.y, 0.0)), CARD_HALF, 0.005, body, 0.85)
-	result.add_box(_at(Vector3(0.0, CARD_HALF.y * 2.0 + 0.001, 0.0), Basis(Vector3.UP, PI * 0.25)), Vector3(0.05, 0.0015, 0.05), emblem, 1.0)
-
-
 ## A card leaning back against the lip at x, fanned by `roll` around its own normal, layered by `layer`.
 static func _card_transform(x: float, layer: int, roll: float) -> Transform3D:
 	var basis := Basis(Vector3.RIGHT, CARD_LEAN) * Basis(Vector3.UP, -roll)
 	var scaled := basis.scaled_local(Vector3.ONE * CARD_SCALE)
 	var foot := Vector3(x, HOLDER_FLOOR + 0.004, 0.035)
-	var bottom_edge := scaled * Vector3(0.0, 0.0, CARD_HALF.z)
+	var bottom_edge := scaled * Vector3(0.0, 0.0, CardArt.HALF.y)
 	return Transform3D(scaled, foot - bottom_edge + basis * Vector3(0.0, layer * CARD_LAYER_LIFT, 0.0))
 
 

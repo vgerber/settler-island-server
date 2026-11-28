@@ -2,8 +2,7 @@ class_name OwnSideArt
 extends RefCounted
 ## The fixtures at the own seat of the 3D table UI (doc/design/table-ui-style.md): the supply rack, the hand
 ## tray, the end-turn bell with its cover, and the prompt sign. All are walnut and brass vertex colours for
-## `ClayMaterials.terrain()`, except `prompt_sign_tab` (white clay for `ClayMaterials.piece(seat)`) and
-## `placeholder_card` (`ClayMaterials.stock()`). Origin at the base centre, resting on y = 0, front toward +z.
+## `ClayMaterials.terrain()`, except `prompt_sign_tab` (white clay for `ClayMaterials.piece(seat)`). Cards are `CardArt`. Origin at the base centre, resting on y = 0, front toward +z.
 
 const WALNUT := Color("#5A3E2A")
 const WALNUT_TOP := Color("#7B5634")
@@ -16,27 +15,36 @@ const DEV_PLUM := Color("#5B4378")
 const TAB_CLAY := Color(0.92, 0.92, 0.92)
 const BEVEL := 0.012
 
-const CARD_HALF := Vector3(0.18, 0.007, 0.25)
+## Cost cards on the rack ledges are real cards (CardArt) leaning against the tier above, at this scale and pitch.
+const COST_CARD_SCALE := 0.3
+const COST_CARD_LEAN := deg_to_rad(75.0)
+const COST_CARD_PITCH := 0.12
 
-## Supply rack: three stepped tiers, roads in front (low), settlements, cities at the back (tall pieces). Per row:
-## the tier's front and back z, its top height, the socket pitch and half size. Roads lie along z in their sockets.
-const RACK_HALF_WIDTH := 1.45
-const RACK_LEDGE_DEPTH := 0.18
-const RACK_PAD_HALF_HEIGHT := 0.003
+## Supply rack: a low drawer, 2.8 wide and 0.6 deep, with a block per piece kind side by side (roads, settlements,
+## cities) and a ledge for the cost cards in front of them. Pieces stand at `SUPPLY_PIECE_SCALE`, so the rack is
+## about half the size of one that holds full-size pieces. Per block: the count, the columns (the pieces fill
+## column by column), the socket pitch and half size, and the block centre x. Roads lie along x.
+const RACK_HALF_WIDTH := 1.4
+const RACK_HALF_DEPTH := 0.3
+const RACK_BASE_HEIGHT := 0.03
+const RACK_LEDGE_DEPTH := 0.11
+const RACK_ROWS_CENTRE_Z := -0.04
+const RACK_PAD_HALF_HEIGHT := 0.0015
+const SUPPLY_PIECE_SCALE := 0.5
 const RACK_ROWS := {
-	"road": {"count": 15, "pitch": 0.16, "front": 0.98, "back": 0.11, "height": 0.08, "pad": Vector2(0.07, 0.34), "yaw": PI * 0.5},
-	"settlement": {"count": 5, "pitch": 0.34, "front": 0.11, "back": -0.47, "height": 0.19, "pad": Vector2(0.15, 0.13), "yaw": 0.0},
-	"city": {"count": 4, "pitch": 0.66, "front": -0.47, "back": -1.12, "height": 0.30, "pad": Vector2(0.31, 0.18), "yaw": 0.0},
+	"road": {"count": 15, "columns": 3, "pitch": Vector2(0.34, 0.085), "pad": Vector2(0.16, 0.037), "x": -0.9},
+	"settlement": {"count": 5, "columns": 3, "pitch": Vector2(0.2, 0.2), "pad": Vector2(0.08, 0.07), "x": 0.15},
+	"city": {"count": 4, "columns": 2, "pitch": Vector2(0.34, 0.3), "pad": Vector2(0.16, 0.08), "x": 0.95},
 }
 
 ## Hand tray: a sloped board between cheeks; five resource slots, a divider, then the dev section.
-const HAND_HALF_WIDTH := 1.72
+const HAND_HALF_WIDTH := 1.65
 const HAND_TILT := deg_to_rad(34.0)
 const HAND_SLOPE_LENGTH := 0.66
 const HAND_FRONT_TOP := Vector3(0.0, 0.10, 0.33)
-const HAND_SLOT_PITCH := 0.46
-const HAND_FIRST_SLOT := -1.40
-const HAND_DEV_SLOT := 1.2
+const HAND_SLOT_PITCH := 0.42
+const HAND_FIRST_SLOT := -1.26
+const HAND_DEV_SLOT := 1.15
 const HAND_FRONT_Z := 0.38
 const HAND_BACK_Z := -0.30
 
@@ -82,33 +90,35 @@ static func prompt_sign_tab() -> ArrayMesh:
 	return _mesh("sign_tab", _build_sign_tab)
 
 
-static func placeholder_card() -> ArrayMesh:
-	return _mesh("card", _build_card)
-
-
-## Where the piece of `kind` ("road", "settlement", "city") number `index` rests, in rack-local space.
+## Where the piece of `kind` ("road", "settlement", "city") number `index` rests, in rack-local space. The pieces
+## fill column by column, so the last indices are the right-hand columns.
 static func supply_slot(kind: String, index: int) -> Vector3:
 	var row: Dictionary = RACK_ROWS[kind]
-	var x: float = (index - (int(row["count"]) - 1) * 0.5) * float(row["pitch"])
-	return Vector3(x, float(row["height"]) + RACK_PAD_HALF_HEIGHT * 2.0, _socket_z(row))
+	var rows := _rows(row)
+	var pitch: Vector2 = row["pitch"]
+	var column := index / rows
+	var line := index % rows
+	var x := float(row["x"]) + (column - (int(row["columns"]) - 1) * 0.5) * pitch.x
+	var z := RACK_ROWS_CENTRE_Z + (line - (rows - 1) * 0.5) * pitch.y
+	return Vector3(x, RACK_BASE_HEIGHT + RACK_PAD_HALF_HEIGHT * 2.0, z)
 
 
-## Yaw of the piece in its socket (roads lie along z).
-static func supply_yaw(kind: String) -> float:
-	return RACK_ROWS[kind]["yaw"]
+## The piece mesh transform at its socket: scaled to `SUPPLY_PIECE_SCALE`.
+static func supply_piece(kind: String, index: int) -> Transform3D:
+	return Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * SUPPLY_PIECE_SCALE), supply_slot(kind, index))
 
 
-## The centre of the ledge in front of a row, on its top: the spot for the mini cost cards.
+## The centre of the ledge in front of a block, on its top: the spot for the mini cost cards.
 static func supply_ledge(kind: String) -> Vector3:
 	var row: Dictionary = RACK_ROWS[kind]
-	return Vector3(0.0, float(row["height"]), float(row["front"]) - RACK_LEDGE_DEPTH * 0.5)
+	return Vector3(row["x"], RACK_BASE_HEIGHT, RACK_HALF_DEPTH - 0.04 - RACK_LEDGE_DEPTH * 0.5)
 
 
 ## Where the card stack of slot `slot` (0 to 4 the resources, 5 the dev section) lies, in tray-local space.
 static func hand_slot(slot: int) -> Transform3D:
 	var slot_x := HAND_DEV_SLOT if slot > 4 else HAND_FIRST_SLOT + HAND_SLOT_PITCH * slot
 	var basis := Basis(Vector3.RIGHT, HAND_TILT)
-	var origin := HAND_FRONT_TOP + basis * Vector3(0.0, CARD_HALF.y, -(CARD_HALF.z + 0.04))
+	var origin := HAND_FRONT_TOP + basis * Vector3(0.0, 0.004, -(CardArt.HALF.y + 0.04))
 	return Transform3D(basis, Vector3(slot_x, origin.y, origin.z))
 
 
@@ -123,9 +133,8 @@ static func _sign_lean() -> Basis:
 	return Basis(Vector3.RIGHT, -SIGN_TILT)
 
 
-static func _socket_z(row: Dictionary) -> float:
-	var pad: Vector2 = row["pad"]
-	return float(row["front"]) - RACK_LEDGE_DEPTH - 0.02 - pad.y
+static func _rows(row: Dictionary) -> int:
+	return ceili(float(row["count"]) / float(row["columns"]))
 
 
 static func _mesh(key: String, build: Callable) -> ArrayMesh:
@@ -146,33 +155,27 @@ static func _bar(result: ClayBuilder, centre: Vector3, half: Vector3, color: Col
 	result.add_bevelled_box(transform, half, minf(bevel, limit), color, 0.6)
 
 
-static func _build_card(result: ClayBuilder) -> void:
-	result.add_bevelled_box(Transform3D(Basis.IDENTITY, Vector3(0.0, CARD_HALF.y, 0.0)), CARD_HALF, 0.004, ClayPalette.shade(ClayPalette.mute(ClayPalette.CHIP_FACE), 0.8), 0.85)
-
-
 static func _build_rack(result: ClayBuilder) -> void:
-	_bar(result, Vector3(0.0, 0.015, -0.07), Vector3(RACK_HALF_WIDTH + 0.08, 0.015, 1.12), WALNUT_GROOVE, 0.0)
+	_bar(result, Vector3(0.0, RACK_BASE_HEIGHT * 0.5, 0.0), Vector3(RACK_HALF_WIDTH, RACK_BASE_HEIGHT * 0.5, RACK_HALF_DEPTH), WALNUT)
+	_bar(result, Vector3(0.0, RACK_BASE_HEIGHT + 0.001, 0.0), Vector3(RACK_HALF_WIDTH - 0.03, 0.001, RACK_HALF_DEPTH - 0.03), WALNUT_TOP, 0.0)
+	var back := Vector3(0.0, RACK_BASE_HEIGHT + 0.03, -RACK_HALF_DEPTH + 0.02)
+	_bar(result, back, Vector3(RACK_HALF_WIDTH, 0.03, 0.02), WALNUT)
+	_bar(result, back + Vector3(0.0, 0.035, 0.0), Vector3(RACK_HALF_WIDTH - 0.02, 0.006, 0.012), BRASS, 0.004)
 	for kind: String in RACK_ROWS:
-		_add_tier(result, kind, RACK_ROWS[kind])
-	_bar(result, Vector3(0.0, 0.2, -1.09), Vector3(RACK_HALF_WIDTH, 0.2, 0.03), WALNUT)
+		_add_block(result, kind, RACK_ROWS[kind])
+	for side in [-1.0, 1.0]:
+		_bar(result, Vector3(side * (RACK_HALF_WIDTH - 0.02), RACK_BASE_HEIGHT + 0.03, 0.0), Vector3(0.02, 0.03, RACK_HALF_DEPTH), WALNUT)
 
 
-## One stepped block: a light ledge with a front lip, a groove, then dark socket pads.
-static func _add_tier(result: ClayBuilder, kind: String, row: Dictionary) -> void:
-	var height: float = row["height"]
-	var front: float = row["front"]
-	var back: float = row["back"]
-	var half_width := RACK_HALF_WIDTH - 0.03
-	_bar(result, Vector3(0.0, height * 0.5, (front + back) * 0.5), Vector3(RACK_HALF_WIDTH, height * 0.5, (front - back) * 0.5 - 0.005), WALNUT)
-	_bar(result, Vector3(0.0, height + 0.001, (front + back) * 0.5), Vector3(half_width, 0.001, (front - back) * 0.5 - 0.03), WALNUT_TOP, 0.0)
-	var ledge_middle := front - RACK_LEDGE_DEPTH * 0.5
-	_bar(result, Vector3(0.0, height + 0.003, ledge_middle), Vector3(half_width, 0.002, RACK_LEDGE_DEPTH * 0.5 - 0.03), ClayPalette.shade(WALNUT_TOP, 1.2), 0.0)
-	_bar(result, Vector3(0.0, height + 0.012, front - 0.03), Vector3(half_width, 0.014, 0.014), WALNUT_TOP, 0.007)
-	_bar(result, Vector3(0.0, height + 0.002, front - RACK_LEDGE_DEPTH - 0.01), Vector3(half_width, 0.002, 0.006), WALNUT_GROOVE, 0.0)
+## A dark socket under every piece of a block and a light ledge strip in front of it for the cost cards.
+static func _add_block(result: ClayBuilder, kind: String, row: Dictionary) -> void:
 	var pad: Vector2 = row["pad"]
 	for index in int(row["count"]):
 		var slot := supply_slot(kind, index)
-		_bar(result, Vector3(slot.x, height + RACK_PAD_HALF_HEIGHT, slot.z), Vector3(pad.x, RACK_PAD_HALF_HEIGHT, pad.y), WALNUT_GROOVE, 0.0)
+		_bar(result, Vector3(slot.x, RACK_BASE_HEIGHT + RACK_PAD_HALF_HEIGHT, slot.z), Vector3(pad.x, RACK_PAD_HALF_HEIGHT, pad.y), WALNUT_GROOVE, 0.0)
+	var ledge := supply_ledge(kind)
+	var half_width := float(row["columns"]) * 0.5 * (row["pitch"] as Vector2).x + 0.05
+	_bar(result, Vector3(ledge.x, RACK_BASE_HEIGHT + 0.002, ledge.z), Vector3(half_width, 0.002, RACK_LEDGE_DEPTH * 0.5), LIGHT_WOOD, 0.0)
 
 
 ## A point on the slope `across` from the front edge (up the slope), lifted by `lift` along the slope normal.
@@ -207,15 +210,15 @@ static func _add_cheeks(result: ClayBuilder) -> void:
 
 
 static func _add_hand_floors(result: ClayBuilder, slope: Basis) -> void:
-	var card_middle := CARD_HALF.z + 0.04
+	var card_middle := CardArt.HALF.y + 0.04
 	for slot in 5:
 		var slot_x := HAND_FIRST_SLOT + HAND_SLOT_PITCH * slot
 		var centre := _on_slope(card_middle, 0.0015)
-		_bar(result, Vector3(slot_x, centre.y, centre.z), Vector3(0.2, 0.0015, CARD_HALF.z + 0.02), LIGHT_WOOD, 0.0, slope)
+		_bar(result, Vector3(slot_x, centre.y, centre.z), Vector3(0.19, 0.0015, CardArt.HALF.y + 0.02), LIGHT_WOOD, 0.0, slope)
 	var dev := _on_slope(card_middle, 0.0015)
-	_bar(result, Vector3(HAND_DEV_SLOT, dev.y, dev.z), Vector3(0.4, 0.0015, CARD_HALF.z + 0.02), ClayPalette.shade(LIGHT_WOOD, 0.85), 0.0, slope)
-	var rail := _on_slope(CARD_HALF.z + 0.04, 0.0035)
-	_bar(result, Vector3(HAND_DEV_SLOT, rail.y, rail.z), Vector3(0.4, 0.0015, 0.012), DEV_PLUM, 0.0, slope)
+	_bar(result, Vector3(HAND_DEV_SLOT, dev.y, dev.z), Vector3(0.46, 0.0015, CardArt.HALF.y + 0.02), ClayPalette.shade(LIGHT_WOOD, 0.85), 0.0, slope)
+	var rail := _on_slope(CardArt.HALF.y + 0.04, 0.0035)
+	_bar(result, Vector3(HAND_DEV_SLOT, rail.y, rail.z), Vector3(0.46, 0.0015, 0.012), DEV_PLUM, 0.0, slope)
 
 
 ## Thin posts between the resource slots and a plum-topped one before the dev section.
