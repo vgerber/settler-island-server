@@ -10,8 +10,9 @@ the requirements in `doc/design/hud-drafts/README.md`.
    ticker, plates and chips. Text exists only as `Label3D` on a mesh (plate, chip, sign). No `Control` widget is
    drawn over the 3D view in a game, except the 2D fallback while a wave is not done.
 3. Opponents' hands are 3D card stacks (backs) at their seats, readable as a count.
-4. The own remaining pieces stand on the table at the own side (supply rack), for immersion; opponents get a small
-   supply at their seat too.
+4. The own remaining pieces stand on the table at the own side (supply rack), for immersion. Every opponent gets the
+   same furniture at their side (user, 2026-11-28): the same hand tray with their cards as backs, the same supply
+   rack with their remaining pieces, dev backs, plate, knights, awards; same models, at most a shared smaller scale.
 5. Every action, own or remote, is a proper animation: objects move from source to destination, counts change on
    arrival, nothing snaps (requirement 3 in the README). The speed setting (normal, fast, instant) scales all of it;
    `finish_all` ends every tween on a cut.
