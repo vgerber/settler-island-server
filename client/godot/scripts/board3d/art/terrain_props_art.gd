@@ -1,7 +1,7 @@
 class_name TerrainPropsArt
 extends RefCounted
 ## Clay props of one tile, placed by a hash of its cube coordinates (`q`, `r`), dense enough to read at the default
-## zoom: pine and broadleaf forests, sheep with a fence, ploughed wheat beds with a windmill, hay cart, scarecrow and stooks, snowy peaks
+## zoom: pine and broadleaf forests, sheep with a fence, ploughed wheat rows with a windmill, hay cart and stook, snowy peaks
 ## with a mine, a terraced clay pit with a kiln, dunes with a cactus. The mesh origin is the tile centre on the
 ## slab top (y = `HexSlabArt.HEIGHT` on the table); every prop stands on `HexSlabArt.ground`. Props stay between
 ## radius `RING_MIN` and `RING_MAX` (the number chip owns the middle, the settlements the corners), tall ones
@@ -17,7 +17,7 @@ const PLACEMENT_TRIES := 40
 ## Tall props nearer the camera shrink so their tops stay clear of the chip (about the camera's tilt).
 const FRONT_SLOPE := 1.6
 const FRONT_MIN_SCALE := 0.5
-const WINDMILL_SIZE := 1.7
+const WINDMILL_SIZE := 1.2
 ## Where the robber stands (`BoardArt.ROBBER_OFFSET`) and how much room it needs.
 const ROBBER_SPOT := Vector2(-0.5, 0.05)
 const ROBBER_ROOM := 0.2
@@ -226,60 +226,118 @@ const SOIL := Color("#6E4B30")
 const POPPY_RED := Color("#C8412F")
 const RIPENING_GREEN := Color("#A8A940")
 const RIPE_AMBER := Color("#C98A2E")
-const FIELD_CELL := Vector2(0.152, 0.18)
-const CROP_REACH := 0.745
+const CROP_REACH := 0.76
+const ROW_PITCH := 0.046
+const TRACK_HALF := 0.035
+const MIN_ROW := 0.07
 
 
 static func _add_wheat(result: ClayBuilder, generator: RandomNumberGenerator, taken: Array[Vector3]) -> void:
 	_add_windmill(result, generator, taken)
 	_add_hay_cart(result, generator, taken)
-	_add_scarecrow(result, generator, taken)
-	for index in 2:
-		var stook := _claim(SiResource.WHEAT, generator, taken, 0.07)
-		if stook.is_finite():
-			_add_stook(result, generator, stook)
-	for index in 6:
+	var stook := _claim(SiResource.WHEAT, generator, taken, 0.07)
+	if stook.is_finite():
+		_add_stook(result, generator, stook)
+	for index in 4:
 		var poppy := _claim(SiResource.WHEAT, generator, taken, 0.02)
 		if poppy.is_finite():
 			_add_poppy(result, generator, poppy)
 	_add_field(result, generator, taken)
 
 
-## Ploughed beds in rows of two golden tones with a dark furrow between them, turned by a seeded angle.
+## Two fields of long straight rows split by a track; the track runs at a seeded angle and the second field's
+## rows cross the first one's.
 static func _add_field(result: ClayBuilder, generator: RandomNumberGenerator, taken: Array[Vector3]) -> void:
-	var turn := generator.randf_range(-0.5, 0.5)
-	var basis := Basis(Vector3.UP, turn)
-	var rows := 8
-	var columns := 10
-	for row in rows:
-		var local_z := (row - (rows - 1) * 0.5) * FIELD_CELL.y
-		for column in columns:
-			var local_x := (column - (columns - 1) * 0.5) * FIELD_CELL.x
-			var spot := basis * Vector3(local_x, 0.0, local_z)
-			var flat := Vector2(spot.x, spot.z)
-			if flat.length() < RING_MIN + 0.05 or flat.length() > CROP_REACH or not _is_free(flat, 0.05, taken):
-				continue
-			_add_crop_cell(result, generator, _ground_at(SiResource.WHEAT, spot.x, spot.z), turn, row, column)
+	var track_angle := generator.randf_range(0.0, PI)
+	var track_normal := Vector2(-sin(track_angle), cos(track_angle))
+	var track_offset := generator.randf_range(-0.12, 0.12)
+	var turn := generator.randf_range(0.5, 1.0) * (1.0 if generator.randf() < 0.5 else -1.0)
+	var tones: Array[Color] = [ClayPalette.STRAW, RIPENING_GREEN]
+	var angles: Array[float] = [track_angle, track_angle + turn]
+	for side in 2:
+		var sign := 1.0 if side == 0 else -1.0
+		var tone := ClayPalette.mute(tones[side])
+		_add_rows(result, angles[side], tone, taken, track_normal * sign, track_offset * sign)
+	_add_track(result, track_angle, track_offset, taken)
 
 
-## One bed: a strip of earth between furrows and four stalk clumps with golden ears. The row decides the
-## ripeness: green-gold, gold, amber.
-static func _add_crop_cell(result: ClayBuilder, generator: RandomNumberGenerator, spot: Vector3, turn: float, row: int, column: int) -> void:
-	var tones: Array[Color] = [RIPENING_GREEN, ClayPalette.STRAW, RIPE_AMBER]
-	var tone := ClayPalette.mute(tones[row % 3])
-	var ear := ClayPalette.mute(ClayPalette.EAR_GOLD)
-	var heading := Basis(Vector3.UP, turn)
-	var scale := _front_scale(spot, 0.2)
-	result.add_box(Transform3D(heading, spot + Vector3(0.0, 0.012, 0.0)), Vector3(0.076, 0.012, 0.07), ClayPalette.mute(SOIL), 0.5)
-	for clump in 4:
-		var offset := heading * Vector3((clump % 2 - 0.5) * 0.075, 0.0, (float(clump / 2) - 0.5) * 0.06 + generator.randf_range(-0.008, 0.008))
-		var height := generator.randf_range(0.1, 0.15) * scale
-		var shade := ClayPalette.shade(tone, generator.randf_range(0.94, 1.08))
-		var tilt := Basis.from_euler(Vector3(generator.randf_range(-0.12, 0.12), 0.0, generator.randf_range(-0.12, 0.12)))
-		var transform := Transform3D(heading * tilt, spot + offset + Vector3(0.0, 0.022, 0.0))
-		result.add_lathe(PackedVector2Array([Vector2(0.05, 0.0), Vector2(0.046, height * 0.8), Vector2(0.03, height)]), transform, shade, 0.45, 4)
-		var ear_shade := ClayPalette.shade(ear, 0.9 + 0.12 * float((row + column + clump) % 2))
-		result.add_lathe(PackedVector2Array([Vector2(0.04, height * 0.9), Vector2(0.044, height * 1.25), Vector2(0.0, height * 1.65)]), transform, ear_shade, 0.8, 4)
+## Rows at `angle`, kept to the half plane `normal . p >= offset + TRACK_HALF`.
+static func _add_rows(result: ClayBuilder, angle: float, tone: Color, taken: Array[Vector3], normal: Vector2, offset: float) -> void:
+	var along := Vector2(cos(angle), sin(angle))
+	var across := Vector2(-along.y, along.x)
+	var count := int(CROP_REACH / ROW_PITCH)
+	for row in range(-count, count + 1):
+		var shift := row * ROW_PITCH
+		var shade := 0.95 + 0.1 * float(posmod(row, 2))
+		for span in _free_spans(along, across, shift, normal, offset + TRACK_HALF, taken):
+			_add_row(result, along, across * shift, span, ClayPalette.shade(tone, shade))
+
+
+## The stretches of a line (`across * shift + along * t`) that lie inside the crop disc and the half plane and
+## outside the chip and every claimed prop.
+static func _free_spans(along: Vector2, across: Vector2, shift: float, normal: Vector2, limit: float, taken: Array[Vector3]) -> Array[Vector2]:
+	var reach := sqrt(maxf(CROP_REACH * CROP_REACH - shift * shift, 0.0))
+	var low := -reach
+	var high := reach
+	var origin := across * shift
+	var slope := normal.dot(along)
+	var base := normal.dot(origin) - limit
+	if absf(slope) < 0.0001:
+		if base < 0.0:
+			return []
+	elif slope > 0.0:
+		low = maxf(low, -base / slope)
+	else:
+		high = minf(high, -base / slope)
+	var spans: Array[Vector2] = [Vector2(low, high)]
+	spans = _cut_circle(spans, along, origin, Vector2.ZERO, RING_MIN + 0.01)
+	for other in taken:
+		spans = _cut_circle(spans, along, origin, Vector2(other.x, other.z), other.y + 0.03)
+	return spans
+
+
+static func _cut_circle(spans: Array[Vector2], along: Vector2, origin: Vector2, centre: Vector2, radius: float) -> Array[Vector2]:
+	var offset := centre - origin
+	var middle := offset.dot(along)
+	var gap := radius * radius - (offset.length_squared() - middle * middle)
+	if gap <= 0.0:
+		return spans
+	var half := sqrt(gap)
+	var result: Array[Vector2] = []
+	for span in spans:
+		if span.x < middle - half:
+			result.append(Vector2(span.x, minf(span.y, middle - half)))
+		if span.y > middle + half:
+			result.append(Vector2(maxf(span.x, middle + half), span.y))
+	return result
+
+
+## A soil strip with a low ridge of crop on it and a lighter line of ears along the top.
+static func _add_row(result: ClayBuilder, along: Vector2, origin: Vector2, span: Vector2, tone: Color) -> void:
+	if span.y - span.x < MIN_ROW:
+		return
+	var middle := origin + along * (span.x + span.y) * 0.5
+	var half_length := (span.y - span.x) * 0.5
+	var ground := _ground_at(SiResource.WHEAT, middle.x, middle.y)
+	var heading := Basis(Vector3.UP, -atan2(along.y, along.x))
+	var ears := ClayPalette.shade(ClayPalette.mute(ClayPalette.EAR_GOLD), tone.v + 0.1)
+	result.add_box(Transform3D(heading, ground + Vector3(0.0, 0.004, 0.0)), Vector3(half_length, 0.004, ROW_PITCH * 0.5), ClayPalette.mute(SOIL), 0.5)
+	result.add_box(Transform3D(heading, ground + Vector3(0.0, 0.017, 0.0)), Vector3(half_length, 0.013, 0.011), tone, 0.5)
+	result.add_box(Transform3D(heading, ground + Vector3(0.0, 0.034, 0.0)), Vector3(half_length, 0.004, 0.007), ears, 0.8)
+
+
+## A pale packed-earth track between the fields.
+static func _add_track(result: ClayBuilder, angle: float, offset: float, taken: Array[Vector3]) -> void:
+	var along := Vector2(cos(angle), sin(angle))
+	var across := Vector2(-along.y, along.x)
+	var track := ClayPalette.mute(ClayPalette.STRAW).lerp(ClayPalette.mute(SOIL), 0.5)
+	for span in _free_spans(along, across, offset, Vector2.ZERO, -1.0, taken):
+		if span.y - span.x < MIN_ROW:
+			continue
+		var middle := across * offset + along * (span.x + span.y) * 0.5
+		var ground := _ground_at(SiResource.WHEAT, middle.x, middle.y)
+		var heading := Basis(Vector3.UP, -atan2(along.y, along.x))
+		result.add_box(Transform3D(heading, ground + Vector3(0.0, 0.004, 0.0)), Vector3((span.y - span.x) * 0.5, 0.004, TRACK_HALF), track, 0.6)
 
 
 ## A tied sheaf standing in the field: a fat straw cone with a band and a tuft of ears on top.
@@ -297,25 +355,6 @@ static func _add_poppy(result: ClayBuilder, generator: RandomNumberGenerator, sp
 	var stem := ClayPalette.mute(ClayPalette.BUSH_GREEN)
 	result.add_box(_placed(spot + Vector3(0.0, 0.035, 0.0), Vector3.ONE), Vector3(0.005, 0.035, 0.005), stem, 0.8)
 	result.add_sphere(_placed(spot + Vector3(0.0, 0.08, 0.0), Vector3(0.024, 0.016, 0.024), generator.randf() * TAU), _varied(ClayPalette.mute(POPPY_RED), generator), 0.9, 5)
-
-
-## A post with a crossbar, a straw head and a floppy hat.
-static func _add_scarecrow(result: ClayBuilder, generator: RandomNumberGenerator, taken: Array[Vector3]) -> void:
-	var spot := _claim(SiResource.WHEAT, generator, taken, 0.08)
-	if not spot.is_finite():
-		return
-	var wood := ClayPalette.mute(ClayPalette.WOOD_BROWN)
-	var straw := ClayPalette.mute(ClayPalette.STRAW)
-	var coat := ClayPalette.mute(ClayPalette.BARN_RED)
-	var scale := _front_scale(spot, 0.36)
-	var base := _placed(spot, Vector3.ONE * scale, generator.randf() * TAU)
-	result.add_box(base * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.14, 0.0)), Vector3(0.011, 0.14, 0.011), wood, 0.7)
-	result.add_box(base * Transform3D(Basis(Vector3.BACK, 0.04), Vector3(0.0, 0.22, 0.0)), Vector3(0.011, 0.011, 0.085), wood, 0.8)
-	result.add_bevelled_box(base * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.19, 0.0)), Vector3(0.026, 0.04, 0.04), 0.012, coat, 0.7)
-	result.add_sphere(base * Transform3D(Basis.from_scale(Vector3.ONE * 0.03), Vector3(0.0, 0.285, 0.0)), straw, 0.8, 6)
-	result.add_lathe(PackedVector2Array([Vector2(0.06, 0.305), Vector2(0.035, 0.31), Vector2(0.0, 0.37)]), base, ClayPalette.shade(wood, 1.15), 0.8, 6)
-	for side in [-1.0, 1.0]:
-		result.add_box(base * Transform3D(Basis(Vector3.BACK, 0.0), Vector3(0.0, 0.19, side * 0.1)), Vector3(0.008, 0.02, 0.008), straw, 0.8)
 
 
 ## A cart of hay: a plank bed on two wheels, a mound of straw and a pair of shafts.
