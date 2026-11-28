@@ -56,6 +56,8 @@ func _initialize() -> void:
 		_shot("robber_close", Vector3(0.0, 0.2, 0.0), 1.1, deg_to_rad(52.0)),
 		_shot("pier_close", Vector3(3.05, 0.1, 0.0), 2.0, deg_to_rad(52.0)),
 		_shot("road_close", Vector3(-1.3, 0.15, 0.75), 1.4, deg_to_rad(52.0)),
+		_shot("wheat_close", Vector3(-1.73, 0.1, 0.1), 2.6, deg_to_rad(55.0)),
+		_shot("wood_close", Vector3(0.87, 0.1, 1.6), 2.6, deg_to_rad(55.0)),
 	]
 
 
